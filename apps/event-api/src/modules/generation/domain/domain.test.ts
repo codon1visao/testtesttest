@@ -1,7 +1,11 @@
 import { FeedbackIdSchema, MemberIdSchema } from "@event-desk/contracts";
 import { describe, expect, it } from "vitest";
 import { buildAttendanceOverview } from "./attendance-overview.js";
-import { isRetryableGatewayFailure } from "./batch-retry-policy.js";
+import {
+  attemptDeadline,
+  isRetryableGatewayFailure,
+  nextRetryDelayMs,
+} from "./batch-retry-policy.js";
 import { toGenerationItems } from "./generation-items.js";
 import { decideIncoming } from "./incoming-slot-rules.js";
 import { sameInput } from "./same-input.js";
@@ -192,5 +196,27 @@ describe("isRetryableGatewayFailure (F7 'Failures, retries', F8)", () => {
     ["INTERNAL", false, false],
   ] as const)("%s (notSent %s) → retryable %s", (code, notSent, expected) => {
     expect(isRetryableGatewayFailure(code, notSent)).toBe(expected);
+  });
+});
+
+describe("nextRetryDelayMs (F7: 3 attempts, 5 minutes, backoff with jitter, cooldown honoured)", () => {
+  const base = { attempt: 1, maxAttempts: 3, now: 0, executionDeadline: 300_000, random: 0.5 };
+  it("backs off exponentially with ±20% jitter", () => {
+    expect(nextRetryDelayMs(base)).toBe(2_000);
+    expect(nextRetryDelayMs({ ...base, attempt: 2 })).toBe(4_000);
+    expect(nextRetryDelayMs({ ...base, random: 0 })).toBe(1_600);
+    expect(nextRetryDelayMs({ ...base, random: 0.999_999 })).toBe(2_400);
+  });
+  it("waits at least the provider's retry-after and the cooldown", () => {
+    expect(nextRetryDelayMs({ ...base, retryAfterMs: 30_000 })).toBe(30_000);
+    expect(nextRetryDelayMs({ ...base, cooldownRemainingMs: 45_000 })).toBe(45_000);
+  });
+  it("stops after the last attempt or when the wait would pass the deadline", () => {
+    expect(nextRetryDelayMs({ ...base, attempt: 3 })).toBeNull();
+    expect(nextRetryDelayMs({ ...base, now: 299_000 })).toBeNull();
+  });
+  it("caps one attempt's deadline at the execution deadline", () => {
+    expect(attemptDeadline(0, 300_000)).toEqual(new Date(60_000));
+    expect(attemptDeadline(280_000, 300_000)).toEqual(new Date(300_000));
   });
 });

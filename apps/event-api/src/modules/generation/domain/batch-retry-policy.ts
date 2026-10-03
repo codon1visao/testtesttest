@@ -27,3 +27,33 @@ export function isRetryableGatewayFailure(code: GatewayErrorCode, notSent: boole
       return assertNever(code, "gateway error code");
   }
 }
+
+export const BATCH_ATTEMPT_TIMEOUT_MS = 60_000;
+
+export interface RetryDelayInput {
+  attempt: number;
+  maxAttempts: number;
+  retryAfterMs?: number;
+  cooldownRemainingMs?: number;
+  now: number;
+  executionDeadline: number;
+  random: number;
+}
+
+/** F7: exponential backoff with ±20% jitter, never shorter than the provider's wait or the cooldown. */
+export function nextRetryDelayMs(input: RetryDelayInput): number | null {
+  if (input.attempt >= input.maxAttempts) return null;
+  const exponential = 2_000 * 2 ** (input.attempt - 1) * (0.8 + 0.4 * input.random);
+  const delay = Math.ceil(
+    Math.max(exponential, input.retryAfterMs ?? 0, input.cooldownRemainingMs ?? 0),
+  );
+  return input.now + delay >= input.executionDeadline ? null : delay;
+}
+
+export function attemptDeadline(
+  now: number,
+  executionDeadline: number,
+  timeoutMs = BATCH_ATTEMPT_TIMEOUT_MS,
+): Date {
+  return new Date(Math.min(now + timeoutMs, executionDeadline));
+}
