@@ -8,6 +8,8 @@ export const DEFAULT_NOTES: readonly string[] = [
   "The signs at the second junction were confusing.",
 ];
 
+const DEFAULT_ORIGIN = "http://localhost:5173";
+
 export class UsageError extends Error {
   constructor(message: string) {
     super(message);
@@ -32,7 +34,8 @@ function integer(
   max: number,
 ): number {
   if (raw === undefined) return fallback;
-  const value = Number(raw);
+  // Digits only: Number() would also accept "1e1", "0x3", " 3" and "".
+  const value = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
   if (!Number.isInteger(value) || value < min || value > max) {
     throw new UsageError(`--${name} must be a whole number from ${String(min)} to ${String(max)}.`);
   }
@@ -63,7 +66,7 @@ export function parseSimulateArgs(
   const file = values["text-file"];
   if (file !== undefined) {
     texts = readText(file)
-      .split("\n")
+      .split(/\r?\n/)
       .filter((line) => line.trim().length > 0);
     if (texts.length === 0) {
       throw new UsageError(`${file} has no notes (one note per non-blank line).`);
@@ -72,9 +75,9 @@ export function parseSimulateArgs(
       throw new UsageError("Each note must be at most 1,000 characters.");
     }
   }
-  const origin =
-    (env.ALLOWED_ORIGINS ?? "http://localhost:5173").split(",")[0]?.trim() ??
-    "http://localhost:5173";
+  // The first allowed origin, as the API reads it; an empty value counts as missing.
+  const first = env.ALLOWED_ORIGINS?.split(",")[0]?.trim() ?? "";
+  const origin = first === "" ? DEFAULT_ORIGIN : first;
   return {
     count: integer("count", values.count, 5, 1, 50),
     intervalMs: integer("interval-ms", values["interval-ms"], 200, 0, 60_000),

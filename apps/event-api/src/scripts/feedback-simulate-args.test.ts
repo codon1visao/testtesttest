@@ -27,7 +27,30 @@ describe("parseSimulateArgs (F3 script)", () => {
     expect(options).toMatchObject({ count: 3, intervalMs: 0, texts: ["First.", "Second."] });
   });
 
+  it("P16: splits Windows line endings without keeping the carriage return", () => {
+    const options = parseSimulateArgs(
+      ["--text-file", "notes.txt"],
+      env,
+      () => "First.\r\nSecond.\r\n",
+    );
+    expect(options.texts).toEqual(["First.", "Second."]);
+  });
+
+  it("P16: an empty ALLOWED_ORIGINS falls back to the coordinator origin", () => {
+    expect(parseSimulateArgs([], { ...env, ALLOWED_ORIGINS: "" }, noFile).origin).toBe(
+      "http://localhost:5173",
+    );
+    expect(parseSimulateArgs([], { ...env, ALLOWED_ORIGINS: " ,x" }, noFile).origin).toBe(
+      "http://localhost:5173",
+    );
+  });
+
   it.each([
+    [["--count", "1e1"]],
+    [["--count", "3.0"]],
+    [["--count", " 3"]],
+    [["--count", "0x3"]],
+    [["--interval-ms", ""]],
     [["--count", "0"]],
     [["--count", "51"]],
     [["--count", "two"]],

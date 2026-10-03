@@ -19,11 +19,19 @@ export async function runSimulation(
   for (let index = 0; index < options.count; index++) {
     if (index > 0) await deps.sleep(options.intervalMs);
     const text = options.texts[index % options.texts.length] ?? "";
-    const response = await deps.fetch(`${options.apiUrl}/api/events/${options.eventId}/feedback`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Origin: options.origin },
-      body: JSON.stringify({ submissionId: deps.newSubmissionId(), text }),
-    });
+    let response: Response;
+    try {
+      response = await deps.fetch(`${options.apiUrl}/api/events/${options.eventId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: options.origin },
+        body: JSON.stringify({ submissionId: deps.newSubmissionId(), text }),
+      });
+    } catch (error) {
+      throw new Error(
+        `Could not reach the event API at ${options.apiUrl} (is it running? try: pnpm dev).`,
+        { cause: error },
+      );
+    }
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       throw new Error(
