@@ -29,12 +29,15 @@ export type BriefingNotice =
 /**
  * The briefing text draft (F5). It is created from its base once; the panel remounts it (by
  * editorKey) only after an explicit select, save or discard, or while it is clean (T3 §11).
+ * `onReset` runs just before an explicit discard or reload drops the draft, so a remounted editor
+ * can take focus on its heading.
  */
 export function useBriefingForm(
   eventId: EventId,
   base: EditorBase,
   refetch: RefetchEvent,
   onSaved: (outcome: { reconciled: boolean }) => void,
+  onReset: () => void,
 ) {
   const form = useForm<BriefingFormValues, unknown, BriefingFormOutput>({
     resolver: zodResolver(BriefingFormSchema),
@@ -43,6 +46,8 @@ export function useBriefingForm(
   const { isDirty } = form.formState;
   // Synchronous double-submit guard: React state (isPending) lags a fast second click.
   const inFlight = useRef(false);
+  // The values of the last save attempt, for "Check again" after a failed re-read (F5).
+  const lastSubmitted = useRef<BriefingFormOutput | null>(null);
   const [notice, setNotice] = useState<BriefingNotice | null>(null);
   const [checking, setChecking] = useState(false);
   const save = useSaveBriefing(eventId);
@@ -76,7 +81,9 @@ export function useBriefingForm(
         code === "REFERENCE_INVALID"
           ? null
           : formFieldForApiField(error instanceof ApiError ? error.field : undefined);
-      if (path === null) setNotice({ kind: "invalid", message });
+      // A path with no rendered input (an item index the draft does not have) gets the banner.
+      const current: unknown = path === null ? undefined : form.getValues(path);
+      if (path === null || current === undefined) setNotice({ kind: "invalid", message });
       else form.setError(path, { type: "server", message }, { shouldFocus: true });
     } else {
       setNotice({ kind: "failed", message });
@@ -104,6 +111,7 @@ export function useBriefingForm(
   const saveDraft = async (values: BriefingFormOutput) => {
     if (inFlight.current) return;
     inFlight.current = true;
+    lastSubmitted.current = values;
     setNotice(null);
     try {
       // The draft's own base revision, never a refreshed one: a save elsewhere is a conflict (F5-06).
@@ -123,7 +131,21 @@ export function useBriefingForm(
 
   const submit = (event?: BaseSyntheticEvent) => form.handleSubmit(saveDraft)(event);
 
+  /** After a failed re-read: check again whether exactly the last submitted text was saved. */
+  const checkAgain = async () => {
+    const submitted = lastSubmitted.current;
+    if (submitted === null || inFlight.current) return;
+    inFlight.current = true;
+    setNotice(null);
+    try {
+      await reconcile(submitted);
+    } finally {
+      inFlight.current = false;
+    }
+  };
+
   const discard = () => {
+    onReset();
     form.reset();
     setNotice(null);
   };
@@ -145,6 +167,7 @@ export function useBriefingForm(
         );
         return false;
       }
+      onReset();
       form.reset();
       setNotice(null);
       return true;
@@ -154,5 +177,15 @@ export function useBriefingForm(
   };
 
   const isSaving = save.isPending || checking;
-  return { form, isDirty, isSaving, isBusy: isSaving, notice, submit, discard, reloadLatest };
+  return {
+    form,
+    isDirty,
+    isSaving,
+    isBusy: isSaving,
+    notice,
+    submit,
+    checkAgain,
+    discard,
+    reloadLatest,
+  };
 }

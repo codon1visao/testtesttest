@@ -16,6 +16,39 @@ beforeEach(() => {
   mswServer.use(...api.handlers());
 });
 
+/** A PUT that lands in the fake's saved briefing but whose response is lost (F5 lost response). */
+const saveThenLoseResponse = () =>
+  http.put("/api/events/:eventId/briefing", async ({ request }) => {
+    const { textEdits } = SaveBriefingRequestSchema.parse(await request.json());
+    api.view = {
+      ...api.view,
+      selectedPreview: null,
+      briefingRevision: 1,
+      savedBriefing: {
+        ...preview,
+        savedAt: FIXTURE_TIME,
+        content: {
+          ...preview.content,
+          themes: preview.content.themes.map((item, index) => ({
+            ...item,
+            text: textEdits.themes[index] ?? item.text,
+          })),
+        },
+      },
+    };
+    return HttpResponse.error();
+  });
+
+/** The editor's own heading holds keyboard focus (never <body>). */
+const expectEditorHeadingFocused = async (title: RegExp) => {
+  await waitFor(() => {
+    const active = document.activeElement;
+    expect(active?.tagName).toBe("H3");
+    expect(active?.isConnected).toBe(true);
+    expect(active?.textContent).toMatch(title);
+  });
+};
+
 const panel = async () => within(await screen.findByRole("region", { name: "Briefing" }));
 const field = (region: Awaited<ReturnType<typeof panel>>, label: string) =>
   region.getByLabelText<HTMLTextAreaElement>(label);
@@ -81,6 +114,33 @@ describe("briefing editor", () => {
     expect(api.view.savedBriefing).toBeNull();
   });
 
+  it("Spec 05 revision conflict: shows the latest saved briefing for review and keeps the draft", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    api.view = { ...api.view, savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME } };
+    api.saveBriefingElsewhere();
+    await user.type(field(region, "Theme 1"), " Mine.");
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(await region.findByText("The briefing changed elsewhere")).toBeTruthy();
+    expect(await region.findByRole("heading", { name: "Latest saved briefing" })).toBeTruthy();
+    expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time. Mine.");
+  });
+
+  it("F5-10 focus: Discard and reload after a conflict moves focus to the remounted editor heading", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    api.saveBriefingElsewhere();
+    await user.type(field(region, "Theme 1"), " Mine.");
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    await user.click(await region.findByRole("button", { name: "Reload saved briefing" }));
+    await user.click(await screen.findByRole("button", { name: "Discard and reload" }));
+    await waitFor(() => {
+      expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time.");
+    });
+    expect(region.queryByText("The briefing changed elsewhere")).toBeNull();
+    await expectEditorHeadingFocused(/^Generated preview/);
+  });
+
   it("F5-04: a blank item is caught before sending, on that field", async () => {
     const { user } = renderApp();
     const region = await panel();
@@ -109,6 +169,65 @@ describe("briefing editor", () => {
     expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time. Kept.");
   });
 
+  it("M1: a section-level server error, which has no single input, is shown in a banner", async () => {
+    mswServer.use(
+      http.put("/api/events/:eventId/briefing", () =>
+        apiErrorResponse(422, "CONTENT_INVALID", "Expected 1 items.", "textEdits.themes"),
+      ),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(await region.findByText("Expected 1 items.")).toBeTruthy();
+    expect(region.getByText("Briefing was not saved")).toBeTruthy();
+  });
+
+  it("M1: an error on an item that is not rendered is shown in a banner, not lost", async () => {
+    mswServer.use(
+      http.put("/api/events/:eventId/briefing", () =>
+        apiErrorResponse(422, "CONTENT_INVALID", "Theme 6 is invalid.", "textEdits.themes.5"),
+      ),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(await region.findByText("Theme 6 is invalid.")).toBeTruthy();
+    expect(region.getByText("Briefing was not saved")).toBeTruthy();
+  });
+
+  it("Spec 05 save failed: Retry save sends the kept draft again", async () => {
+    mswServer.use(
+      http.put(
+        "/api/events/:eventId/briefing",
+        () => apiErrorResponse(503, "STORE_UNAVAILABLE", "The database is not reachable."),
+        { once: true },
+      ),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.type(field(region, "Theme 1"), " Again.");
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(await region.findByText("Briefing was not saved")).toBeTruthy();
+    await user.click(region.getByRole("button", { name: "Retry save" }));
+    expect(await region.findByRole("heading", { name: /^Saved briefing/ })).toBeTruthy();
+    expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time. Again.");
+    expect(api.saveRequests).toHaveLength(1);
+  });
+
+  it("F5 lost response: Check again re-reads after a failed check and confirms the save", async () => {
+    mswServer.use(saveThenLoseResponse());
+    const { user } = renderApp();
+    const region = await panel();
+    mswServer.use(http.get("/api/events/:eventId", () => HttpResponse.error(), { once: true }));
+    await user.type(field(region, "Theme 1"), " Landed.");
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(await region.findByText("Could not check the saved briefing")).toBeTruthy();
+    expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time. Landed.");
+    await user.click(region.getByRole("button", { name: "Check again" }));
+    expect(await region.findByText("Your briefing changes were saved.")).toBeTruthy();
+    expect(region.getByRole("heading", { name: /^Saved briefing/ })).toBeTruthy();
+  });
+
   it("F5-10: Discard edits asks first; Cancel keeps the draft, Discard restores the text", async () => {
     const { user } = renderApp();
     const region = await panel();
@@ -121,6 +240,23 @@ describe("briefing editor", () => {
     await waitFor(() => {
       expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time.");
     });
+    await expectEditorHeadingFocused(/^Generated preview/);
+  });
+
+  it("F5-10 focus: Discard after the server moved on remounts the editor and focuses its heading", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    api.saveBriefingElsewhere();
+    await user.type(field(region, "Theme 1"), " Mine.");
+    // The conflict refreshes the view (new revision); the dirty draft keeps its old base meanwhile.
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(await region.findByText("The briefing changed elsewhere")).toBeTruthy();
+    await user.click(region.getByRole("button", { name: "Discard edits" }));
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
+    await waitFor(() => {
+      expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time.");
+    });
+    await expectEditorHeadingFocused(/^Generated preview/);
   });
 
   it("F5 saving state: fields are locked while the save is in flight", async () => {
@@ -138,28 +274,7 @@ describe("briefing editor", () => {
   });
 
   it("F5 lost response: one re-read confirms the save before reporting it", async () => {
-    mswServer.use(
-      http.put("/api/events/:eventId/briefing", async ({ request }) => {
-        const { textEdits } = SaveBriefingRequestSchema.parse(await request.json());
-        api.view = {
-          ...api.view,
-          selectedPreview: null,
-          briefingRevision: 1,
-          savedBriefing: {
-            ...preview,
-            savedAt: FIXTURE_TIME,
-            content: {
-              ...preview.content,
-              themes: preview.content.themes.map((item, index) => ({
-                ...item,
-                text: textEdits.themes[index] ?? item.text,
-              })),
-            },
-          },
-        };
-        return HttpResponse.error();
-      }),
-    );
+    mswServer.use(saveThenLoseResponse());
     const { user } = renderApp();
     const region = await panel();
     await user.type(field(region, "Theme 1"), " Landed.");

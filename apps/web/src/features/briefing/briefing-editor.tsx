@@ -17,6 +17,7 @@ import type {
   BriefingFormValues,
   EditorBase,
 } from "./briefing-form-model";
+import { BriefingPreview } from "./briefing-preview";
 import { FreshnessNotice } from "./freshness-notice";
 import { type BriefingNotice, useBriefingForm } from "./use-briefing-form";
 
@@ -59,10 +60,14 @@ function NoticeBanner({
   notice,
   isBusy,
   onReload,
+  onRetry,
+  onCheckAgain,
 }: {
   notice: BriefingNotice;
   isBusy: boolean;
   onReload: () => void;
+  onRetry: () => void;
+  onCheckAgain: () => void;
 }) {
   const reload = (
     <Button
@@ -92,15 +97,16 @@ function NoticeBanner({
         />
       );
     case "invalid":
-      return (
-        <Banner status="error" title="The briefing was not saved" description={notice.message} />
-      );
+      return <Banner status="error" title="Briefing was not saved" description={notice.message} />;
     case "failed":
       return (
         <Banner
           status="error"
           title="Briefing was not saved"
           description={`${notice.message} Your text is kept; press Save to try again.`}
+          endContent={
+            <Button label="Retry save" variant="secondary" isDisabled={isBusy} onClick={onRetry} />
+          }
         />
       );
     case "unconfirmed":
@@ -117,6 +123,14 @@ function NoticeBanner({
           status="warning"
           title="Could not check the saved briefing"
           description={`It is not known whether your text was saved. It is kept; try again. ${notice.message}`}
+          endContent={
+            <Button
+              label="Check again"
+              variant="secondary"
+              isDisabled={isBusy}
+              onClick={onCheckAgain}
+            />
+          }
         />
       );
     default:
@@ -131,6 +145,7 @@ export function BriefingEditor({
   base,
   refetch,
   onSaved,
+  onReset,
   consumePendingFocus,
 }: {
   eventId: EventId;
@@ -138,18 +153,30 @@ export function BriefingEditor({
   base: EditorBase;
   refetch: RefetchEvent;
   onSaved: (outcome: { reconciled: boolean }) => void;
+  /** Just before an explicit discard or reload drops the draft: a remounted editor takes focus. */
+  onReset: () => void;
   consumePendingFocus: () => boolean;
 }) {
-  const editor = useBriefingForm(eventId, base, refetch, onSaved);
+  const editor = useBriefingForm(eventId, base, refetch, onSaved, onReset);
   const [confirming, setConfirming] = useState<"discard" | "reload" | null>(null);
+  // The dialog is a native modal: while it is open the page is inert, and on close the browser
+  // returns focus to the trigger, which a reset unmounts. Focus moves only once it has closed.
+  // A request counter (not a boolean cleared in the effect): each request is handled once.
+  const [focusAfterClose, setFocusAfterClose] = useState(0);
+  const handledFocus = useRef(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const headingId = useId();
-  const focusHeading = () => {
-    headingRef.current?.focus();
-  };
   useEffect(() => {
     if (consumePendingFocus()) headingRef.current?.focus();
   }, [consumePendingFocus]);
+  useEffect(() => {
+    if (confirming !== null || focusAfterClose === handledFocus.current) return;
+    handledFocus.current = focusAfterClose;
+    headingRef.current?.focus();
+  }, [confirming, focusAfterClose]);
+  const requestFocusAfterClose = () => {
+    setFocusAfterClose((count) => count + 1);
+  };
 
   const { briefing } = base;
   const content = briefing.content;
@@ -256,8 +283,19 @@ export function BriefingEditor({
                 onReload={() => {
                   setConfirming("reload");
                 }}
+                onRetry={() => {
+                  void editor.submit();
+                }}
+                onCheckAgain={() => {
+                  void editor.checkAgain();
+                }}
               />
             )}
+            {(editor.notice?.kind === "conflict" || editor.notice?.kind === "unavailable") &&
+            view.savedBriefing !== null ? (
+              // Spec 05 "Revision conflict": the current saved state, read-only, beside the kept draft.
+              <BriefingPreview title="Latest saved briefing" briefing={view.savedBriefing} />
+            ) : null}
             <HStack gap={2}>
               <Button
                 type="submit"
@@ -291,7 +329,7 @@ export function BriefingEditor({
         onConfirm={() => {
           setConfirming(null);
           editor.discard();
-          focusHeading();
+          requestFocusAfterClose();
         }}
       />
       <ConfirmDialog
@@ -304,7 +342,9 @@ export function BriefingEditor({
         }}
         onConfirm={() => {
           setConfirming(null);
-          void editor.reloadLatest();
+          void editor.reloadLatest().then((reloaded) => {
+            if (reloaded) requestFocusAfterClose();
+          });
         }}
       />
     </article>

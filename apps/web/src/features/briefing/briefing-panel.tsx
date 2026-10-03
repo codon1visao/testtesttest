@@ -3,7 +3,7 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Heading } from "@astryxdesign/core/Text";
 import type { EventId, EventView } from "@event-desk/contracts";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUiStore } from "../../state/ui-store";
 import type { RefetchEvent } from "../attendance/use-attendance-form";
 import { BriefingEditor } from "./briefing-editor";
@@ -35,16 +35,28 @@ export function BriefingPanel({
     setWasDirty(briefingDirty);
     if (briefingDirty) setReconciled(false);
   }
-  const pendingFocus = useRef(false);
+  // The next editor focuses its heading after this tab's own action, so focus never falls to <body>.
+  // "remount": a save (or select) always changes the editor key; the saved view can reach this panel
+  // after the dirty flag settles, so the request waits for the remount that consumes it.
+  // "reset": a discard or reload remounts only if the server moved on meanwhile.
+  const pendingFocus = useRef<"remount" | "reset" | null>(null);
   const consumePendingFocus = useCallback(() => {
-    const pending = pendingFocus.current;
-    pendingFocus.current = false;
+    const pending = pendingFocus.current !== null;
+    pendingFocus.current = null;
     return pending;
   }, []);
   const onSaved = useCallback(({ reconciled: wasReconciled }: { reconciled: boolean }) => {
-    pendingFocus.current = true;
+    pendingFocus.current = "remount";
     setReconciled(wasReconciled);
   }, []);
+  const onReset = useCallback(() => {
+    pendingFocus.current = "reset";
+  }, []);
+  // A reset that did not remount the editor leaves its request behind: clear it once the dirty flag
+  // settles. A remount on the same commit consumes it first (child effects run before this one).
+  useEffect(() => {
+    if (pendingFocus.current === "reset") pendingFocus.current = null;
+  }, [briefingDirty]);
 
   return (
     <section aria-label="Briefing">
@@ -60,6 +72,7 @@ export function BriefingPanel({
             base={base}
             refetch={refetch}
             onSaved={onSaved}
+            onReset={onReset}
             consumePendingFocus={consumePendingFocus}
           />
         )}
