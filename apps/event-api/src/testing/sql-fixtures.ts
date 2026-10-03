@@ -189,3 +189,24 @@ export async function insertOutcome(dataSource: DataSource, spec: OutcomeFixture
     ],
   );
 }
+
+/** A note submitted through the feedback form (F3), with the event's next number moved past it. */
+export async function insertSubmittedNote(
+  dataSource: DataSource,
+  spec: { id: string; text: string; receivedAt?: Date },
+): Promise<void> {
+  const number = Number.parseInt(spec.id.slice(1), 10);
+  await dataSource.query(
+    `INSERT INTO feedback_notes (event_id, id, text, origin, submission_id, received_at, display_order)
+     VALUES (?, ?, ?, 'submitted', UUID(), ?, ?)`,
+    [SUPPLIED_EVENT.id, spec.id, spec.text, spec.receivedAt ?? FIXTURE_TIME, number],
+  );
+  await dataSource.query(
+    "UPDATE events SET next_feedback_number = GREATEST(next_feedback_number, ?)",
+    [number + 1],
+  );
+}
+
+export async function setFeedbackPending(dataSource: DataSource, at: Date | null): Promise<void> {
+  await dataSource.query("UPDATE events SET feedback_pending_since = ?", [at]);
+}

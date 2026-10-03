@@ -145,3 +145,49 @@ describe("ManualGenerationCoordinator", () => {
     await expect(failed).rejects.toBe(original);
   });
 });
+
+describe("whenIdle / whenAllIdle (T5 §2, F7 coordinator priority)", () => {
+  it("settles when the running generation finishes, even if it fails; immediately when idle", async () => {
+    const { coordinator, pending } = setup();
+    await expect(coordinator.whenIdle(E101)).resolves.toBeUndefined();
+    const run = coordinator.generate(E101, 0);
+    run.catch(() => undefined);
+    let idle = false;
+    const waiting = coordinator.whenIdle(E101).then(() => {
+      idle = true;
+    });
+    await vi.waitFor(() => {
+      expect(pending).toHaveLength(1);
+    });
+    expect(idle).toBe(false);
+    pending[0]?.result.reject(new AppError("PROVIDER_REFUSED", "refused."));
+    await waiting;
+    expect(idle).toBe(true);
+    await expect(coordinator.whenAllIdle()).resolves.toBeUndefined();
+    expect(coordinator.manualStatus(E101)).toBeNull();
+  });
+
+  it("whenAllIdle waits for every event's run and reports each run while it is in flight", async () => {
+    const { coordinator, pending } = setup();
+    const E102 = EventIdSchema.parse("E102");
+    void coordinator.generate(E101, 0);
+    void coordinator.generate(E102, 0);
+    await vi.waitFor(() => {
+      expect(pending).toHaveLength(2);
+    });
+    expect(coordinator.manualStatus(E101)).toEqual({
+      runId: pending[0]?.command.runId,
+      startedAt: START.toISOString(),
+    });
+    let drained = false;
+    const draining = coordinator.whenAllIdle().then(() => {
+      drained = true;
+    });
+    pending[0]?.result.resolve(buildBriefingView());
+    await settled();
+    expect(drained).toBe(false);
+    pending[1]?.result.resolve(buildBriefingView());
+    await draining;
+    expect(coordinator.manualStatus(E102)).toBeNull();
+  });
+});

@@ -1,8 +1,13 @@
 import type { EventId, GenerationId, RunId } from "@event-desk/contracts";
-import { FeedbackIdSchema, GenerationIdSchema } from "@event-desk/contracts";
+import {
+  FeedbackIdSchema,
+  GenerationIdSchema,
+  MemberAttendanceSchema,
+} from "@event-desk/contracts";
 import type { EntityManager } from "typeorm";
 import { z } from "zod";
 import { ITEM_SECTIONS, type ItemSection } from "../modules/generation/domain/generation-items.js";
+import type { InputSnapshot } from "../modules/generation/domain/same-input.js";
 import {
   AttendanceInputEntity,
   BriefingItemEntity,
@@ -33,6 +38,11 @@ const StructureSchema = z.object({
       sourceIds: z.array(FeedbackIdSchema),
     }),
   ),
+});
+
+const InputSnapshotSchema = z.object({
+  attendance: z.array(MemberAttendanceSchema),
+  feedbackIds: z.array(FeedbackIdSchema),
 });
 
 /**
@@ -145,6 +155,29 @@ export class TypeOrmGenerationWriteRepository implements GenerationWriteReposito
           })),
       },
       "briefing_items",
+    );
+  }
+
+  async latestInput(eventId: EventId): Promise<InputSnapshot | null> {
+    const newest = await this.manager.findOne(GenerationEntity, {
+      where: { eventId },
+      order: { inputCapturedAt: "DESC", id: "DESC" },
+      select: { id: true },
+    });
+    if (newest === null) return null;
+    const where = { generationId: newest.id };
+    const attendance = await this.manager.find(AttendanceInputEntity, { where });
+    const notes = await this.manager.find(FeedbackInputEntity, { where });
+    return parseStoredRow(
+      InputSnapshotSchema,
+      {
+        attendance: attendance.map((row) => ({
+          memberId: row.memberId,
+          attendance: row.attendance,
+        })),
+        feedbackIds: notes.map((row) => row.feedbackId),
+      },
+      "generation inputs",
     );
   }
 

@@ -16,6 +16,7 @@ import type {
   RunId,
 } from "@event-desk/contracts";
 import type { NewItem } from "../modules/generation/domain/generation-items.js";
+import type { InputSnapshot } from "../modules/generation/domain/same-input.js";
 
 /** The event row with its roster and notes, as one consistent read. */
 export interface EventAggregate {
@@ -45,6 +46,8 @@ export interface EventWriteRepository extends EventReadRepository {
   ): Promise<{ nextFeedbackNumber: number; pendingSince: Date | null }>;
   /** next_feedback_number + 1; feedback_pending_since = COALESCE(feedback_pending_since, at) (T4 TX9). */
   recordFeedbackReceived(eventId: EventId, at: Date): Promise<void>;
+  /** feedback_pending_since = NULL: a batch captured the event's notes (T4 TX10). */
+  clearFeedbackPending(eventId: EventId): Promise<void>;
 }
 
 export interface NewFeedbackNote {
@@ -83,20 +86,24 @@ export type LastOutcome = NonNullable<GenerationStatusView["lastOutcome"]>;
 
 export interface OutcomeReadRepository {
   latest(eventId: EventId): Promise<LastOutcome | null>;
+  /** Whether the run already has an outcome row (it finished). */
+  exists(runId: RunId): Promise<boolean>;
 }
 
 export type RunOutcomeStatus = (typeof RUN_OUTCOME_STATUSES)[number];
 
-export interface NewOutcome {
+/** A failed run always carries its code, any other outcome none (T4 ck_outcome_error). */
+export type OutcomeResult =
+  | { status: "failed"; errorCode: ErrorCode }
+  | { status: Exclude<RunOutcomeStatus, "failed">; errorCode: null };
+
+export type NewOutcome = OutcomeResult & {
   runId: RunId;
   eventId: EventId;
   trigger: GenerationTrigger;
-  status: RunOutcomeStatus;
-  /** Required when status is "failed" (T4 ck_outcome_error), otherwise null. */
-  errorCode: ErrorCode | null;
   generationId: GenerationId | null;
   finishedAt: Date;
-}
+};
 
 export interface OutcomeWriteRepository extends OutcomeReadRepository {
   /** Records the run's outcome (a repeated runId is a no-op) and keeps the event's latest 20. */
@@ -136,6 +143,8 @@ export interface GenerationWriteRepository {
   deleteIfUnreferenced(eventId: EventId, generationId: GenerationId): Promise<boolean>;
   /** The generation's fixed structure, or null when the event has no such generation. */
   structure(eventId: EventId, generationId: GenerationId): Promise<GenerationStructure | null>;
+  /** The input of the event's newest generation (by input_captured_at, then id), if any (F7 rule 6). */
+  latestInput(eventId: EventId): Promise<InputSnapshot | null>;
 }
 
 /** A slot's generation with the facts the incoming-slot rules need. */

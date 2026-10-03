@@ -87,6 +87,10 @@ export class TypeOrmEventRepository implements EventWriteRepository {
     );
   }
 
+  async clearFeedbackPending(eventId: EventId): Promise<void> {
+    await this.manager.update(EventEntity, { id: eventId }, { feedbackPendingSince: null });
+  }
+
   private async withChildren(row: EventRow): Promise<EventAggregate> {
     const event = parseStoredRow(
       EventSummarySchema,

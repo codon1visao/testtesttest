@@ -1,4 +1,4 @@
-import { type EventId, GenerationStatusViewSchema } from "@event-desk/contracts";
+import { type EventId, GenerationStatusViewSchema, type RunId } from "@event-desk/contracts";
 import type { EntityManager } from "typeorm";
 import { GenerationOutcomeEntity } from "../persistence/entities/generation-outcome.entity.js";
 import type { LastOutcome, NewOutcome, OutcomeWriteRepository } from "../ports/unit-of-work.js";
@@ -26,6 +26,10 @@ export class TypeOrmOutcomeRepository implements OutcomeWriteRepository {
       },
       "generation_outcomes",
     );
+  }
+
+  async exists(runId: RunId): Promise<boolean> {
+    return (await this.manager.count(GenerationOutcomeEntity, { where: { runId } })) > 0;
   }
 
   async record(outcome: NewOutcome): Promise<void> {

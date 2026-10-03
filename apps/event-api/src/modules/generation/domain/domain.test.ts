@@ -1,8 +1,10 @@
-import { FeedbackIdSchema } from "@event-desk/contracts";
+import { FeedbackIdSchema, MemberIdSchema } from "@event-desk/contracts";
 import { describe, expect, it } from "vitest";
 import { buildAttendanceOverview } from "./attendance-overview.js";
+import { isRetryableGatewayFailure } from "./batch-retry-policy.js";
 import { toGenerationItems } from "./generation-items.js";
 import { decideIncoming } from "./incoming-slot-rules.js";
+import { sameInput } from "./same-input.js";
 
 const ids = (...values: string[]) => values.map((value) => FeedbackIdSchema.parse(value));
 
@@ -116,5 +118,79 @@ describe("toGenerationItems", () => {
         sourceIds: ["F01", "F02"],
       },
     ]);
+  });
+});
+
+describe("decideIncoming edges (Plan 3B carry-forward)", () => {
+  const at = new Date("2026-10-04T10:00:00Z");
+  it("equal capture times: the later commit replaces (it read at least the same data)", () => {
+    expect(
+      decideIncoming(
+        { trigger: "feedback_batch", inputCapturedAt: at },
+        { trigger: "feedback_batch", inputCapturedAt: at },
+      ),
+    ).toEqual({ kind: "replace" });
+    expect(
+      decideIncoming(
+        { trigger: "feedback_batch", inputCapturedAt: at },
+        { trigger: "manual", inputCapturedAt: at },
+      ),
+    ).toEqual({ kind: "replace" });
+  });
+  it("an older automatic result never replaces a newer manual one", () => {
+    expect(
+      decideIncoming(
+        { trigger: "manual", inputCapturedAt: at },
+        { trigger: "feedback_batch", inputCapturedAt: new Date(at.getTime() - 1) },
+      ),
+    ).toEqual({ kind: "keep", outcome: "superseded" });
+  });
+});
+
+describe("sameInput (F7 rule 6)", () => {
+  const m = (id: string, attendance: "attended" | "absent" | "not_recorded") => ({
+    memberId: MemberIdSchema.parse(id),
+    attendance,
+  });
+  const base = {
+    attendance: [m("M01", "attended"), m("M02", "absent")],
+    feedbackIds: ids("F01", "F02"),
+  };
+  it("ignores order", () => {
+    expect(
+      sameInput(base, {
+        attendance: [m("M02", "absent"), m("M01", "attended")],
+        feedbackIds: ids("F02", "F01"),
+      }),
+    ).toBe(true);
+  });
+  it("differs on any status, any note, or a different roster", () => {
+    expect(sameInput(base, { ...base, attendance: [m("M01", "absent"), m("M02", "absent")] })).toBe(
+      false,
+    );
+    expect(sameInput(base, { ...base, feedbackIds: ids("F01", "F02", "F09") })).toBe(false);
+    expect(sameInput(base, { ...base, attendance: [m("M01", "attended")] })).toBe(false);
+  });
+});
+
+describe("isRetryableGatewayFailure (F7 'Failures, retries', F8)", () => {
+  it.each([
+    ["PROVIDER_TEMPORARY", false, true],
+    ["PROVIDER_RATE_LIMITED", false, true],
+    ["GATEWAY_UNAVAILABLE", true, true],
+    ["GATEWAY_UNAVAILABLE", false, false],
+    ["DEADLINE_EXCEEDED", true, true],
+    ["DEADLINE_EXCEEDED", false, false],
+    ["AI_OUTCOME_UNKNOWN", false, false],
+    ["GATEWAY_AUTH_FAILED", true, false],
+    ["PROVIDER_NOT_CONFIGURED", true, false],
+    ["PROVIDER_REFUSED", false, false],
+    ["OUTPUT_INVALID", false, false],
+    ["OUTPUT_INCOMPLETE", false, false],
+    ["DAILY_LIMIT_REACHED", true, false],
+    ["VALIDATION_FAILED", true, false],
+    ["INTERNAL", false, false],
+  ] as const)("%s (notSent %s) → retryable %s", (code, notSent, expected) => {
+    expect(isRetryableGatewayFailure(code, notSent)).toBe(expected);
   });
 });

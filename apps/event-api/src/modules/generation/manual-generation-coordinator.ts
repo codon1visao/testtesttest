@@ -51,13 +51,36 @@ export class ManualGenerationCoordinator implements GenerationActivity {
   }
 
   current(eventId: EventId): Promise<GenerationActivitySnapshot> {
-    const run = this.inFlight.get(eventId);
     return Promise.resolve({
-      manual:
-        run === undefined ? null : { runId: run.runId, startedAt: run.startedAt.toISOString() },
+      manual: this.manualStatus(eventId),
       batch: null,
       cooldownUntil: null,
     });
+  }
+
+  /** The event's running manual generation, if any. */
+  manualStatus(eventId: EventId): { runId: RunId; startedAt: string } | null {
+    const run = this.inFlight.get(eventId);
+    return run === undefined ? null : { runId: run.runId, startedAt: run.startedAt.toISOString() };
+  }
+
+  /**
+   * Settles when the event's manual generation (if any) finishes, after its finish flush; never
+   * rejects. A batch waits on it before calling the Gateway (T5 §2, F7 coordinator priority).
+   */
+  whenIdle(eventId: EventId): Promise<void> {
+    const run = this.inFlight.get(eventId);
+    return run === undefined
+      ? Promise.resolve()
+      : run.result.then(
+          () => undefined,
+          () => undefined,
+        );
+  }
+
+  /** Every running manual generation (shutdown drain). */
+  async whenAllIdle(): Promise<void> {
+    await Promise.all([...this.inFlight.keys()].map((eventId) => this.whenIdle(eventId)));
   }
 
   private async run(

@@ -144,3 +144,27 @@ describe("generation persistence (T4 TX5/TX6)", () => {
     expect(oldest[0]?.run_id).toBe("manual:run-3");
   });
 });
+
+describe("latestInput (F7 rule 6)", () => {
+  it("is null without generations, else the newest by capture time, then by id", async () => {
+    expect(await uow.run((tx) => tx.generations.latestInput(E101))).toBeNull();
+    const later = new Date(AT.getTime() + 1_000);
+    const notes = ["F01", "F05", "F06"].map((id) => FeedbackIdSchema.parse(id));
+    await uow.run(async (tx) => {
+      await tx.generations.insert(generation(1, { inputCapturedAt: later, feedbackIds: notes }));
+      await tx.generations.insert(generation(3));
+      await tx.generations.insert(
+        generation(2, {
+          inputCapturedAt: later,
+          feedbackIds: notes,
+          attendance: SUPPLIED_MEMBERS.map((m) => ({ memberId: m.id, attendance: "absent" })),
+        }),
+      );
+    });
+    const latest = await uow.run((tx) => tx.generations.latestInput(E101));
+    expect(latest?.feedbackIds.toSorted()).toEqual(notes);
+    expect(latest?.attendance.map((entry) => entry.attendance)).toEqual(
+      SUPPLIED_MEMBERS.map(() => "absent"),
+    );
+  });
+});

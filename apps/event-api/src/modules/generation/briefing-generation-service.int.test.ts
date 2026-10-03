@@ -19,9 +19,12 @@ import { AppError } from "../../shared/app-error.js";
 import { openTestDataSource, truncateAllTables } from "../../testing/database.js";
 import { FakeGenerationLimits } from "../../testing/fake-generation-limits.js";
 import {
+  GENERATION_FIXTURE_ID,
   insertEventFixture,
   insertGenerationFixture,
+  insertSubmittedNote,
   putPreviewSlot,
+  setFeedbackPending,
 } from "../../testing/sql-fixtures.js";
 import { silentLogger } from "../../testing/test-config.js";
 import { BriefingGenerationService } from "./briefing-generation-service.js";
@@ -311,5 +314,257 @@ describe("limits on the manual path", () => {
     );
     await expect(service.generateManual(command())).rejects.toBeInstanceOf(AppError);
     expect(limits.used).toEqual({ total: 0, batch: 0 });
+  });
+});
+
+function batch(runId = "batch_run-1", attempt = 1) {
+  const marks: string[] = [];
+  return {
+    marks,
+    command: {
+      eventId: E101,
+      runId: RunIdSchema.parse(runId),
+      attempt,
+      deadlineAt: new Date(NOW.getTime() + 60_000),
+      beforeDispatch: () => {
+        marks.push("sending");
+        return Promise.resolve();
+      },
+      afterDispatch: () => {
+        marks.push("settled");
+        return Promise.resolve();
+      },
+    },
+  };
+}
+const outcome = async (runId: string) =>
+  (
+    await dataSource.query<{ status: string; error_code: string | null; trigger_type: string }[]>(
+      "SELECT status, error_code, trigger_type FROM generation_outcomes WHERE run_id = ?",
+      [runId],
+    )
+  )[0];
+const pendingSince = async () =>
+  (
+    await dataSource.query<{ p: Date | null }[]>("SELECT feedback_pending_since AS p FROM events")
+  )[0]?.p;
+
+describe("generateBatch (T5 §1, F7)", () => {
+  it("captures and clears the pending flag (TX10), calls the background lane once and commits to incoming", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "More water stops, please." });
+    await setFeedbackPending(dataSource, NOW);
+    const { service, calls, publish } = setup(() => Promise.resolve(result()));
+    const { command, marks } = batch();
+    expect(await service.generateBatch(command)).toEqual({ kind: "finished", status: "succeeded" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ lane: "background", attemptId: "1", runId: "batch_run-1" });
+    expect(calls[0]?.input.feedback.map((note) => note.id)).toContain("F09");
+    expect(marks).toEqual(["sending", "settled"]);
+    expect(await outcome("batch_run-1")).toMatchObject({
+      status: "succeeded",
+      trigger_type: "feedback_batch",
+    });
+    expect(
+      await rows(
+        "SELECT g.trigger_type FROM preview_slots s JOIN briefing_generations g ON g.id = s.generation_id WHERE s.slot = 'incoming'",
+      ),
+    ).toEqual([{ trigger_type: "feedback_batch" }]);
+    expect(await pendingSince()).toBeNull();
+    expect(publish).toHaveBeenCalledWith(E101);
+  });
+
+  it("F7 rule 6 / F7-07: skips without a call when the input equals the newest generation's", async () => {
+    await insertGenerationFixture(dataSource); // the supplied attendance and F01–F08
+    await putPreviewSlot(dataSource, "incoming", GENERATION_FIXTURE_ID);
+    await setFeedbackPending(dataSource, NOW);
+    const { service, calls, publish } = setup(() => Promise.resolve(result()));
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "skipped",
+    });
+    expect(calls).toHaveLength(0);
+    expect(await outcome("batch_run-1")).toMatchObject({ status: "skipped", error_code: null });
+    expect(await pendingSince()).toBeNull();
+    expect(publish).toHaveBeenCalledWith(E101);
+  });
+
+  it("F7-08: never replaces an unreviewed manual preview", async () => {
+    await insertGenerationFixture(dataSource); // manual, captured at FIXTURE_TIME (before NOW)
+    await putPreviewSlot(dataSource, "incoming", GENERATION_FIXTURE_ID);
+    await insertSubmittedNote(dataSource, { id: "F09", text: "New note." });
+    const { service } = setup(() => Promise.resolve(result()));
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "superseded_by_manual",
+    });
+    expect(
+      (
+        await dataSource.query<{ g: string }[]>(
+          "SELECT generation_id AS g FROM preview_slots WHERE slot = 'incoming'",
+        )
+      )[0]?.g,
+    ).toBe(GENERATION_FIXTURE_ID);
+    expect(await count("briefing_generations")).toBe(1);
+  });
+
+  it("returns a retryable temporary failure without recording it, and keeps the paid reservation", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const limits = new FakeGenerationLimits();
+    const { service } = setup(
+      () => Promise.resolve({ ok: false, code: "PROVIDER_TEMPORARY", notSent: false }),
+      { limits },
+    );
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "retryable",
+      code: "PROVIDER_TEMPORARY",
+    });
+    expect(await count("generation_outcomes")).toBe(0);
+    expect(limits.used).toEqual({ total: 1, batch: 1 });
+  });
+
+  it("a rate limit starts the shared cooldown; while it lasts, attempts do not call the Gateway", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const limits = new FakeGenerationLimits();
+    const { service, calls } = setup(
+      () =>
+        Promise.resolve({
+          ok: false,
+          code: "PROVIDER_RATE_LIMITED",
+          notSent: true,
+          retryAfterMs: 20_000,
+        }),
+      { limits },
+    );
+    expect(await service.generateBatch(batch().command)).toMatchObject({
+      kind: "retryable",
+      code: "PROVIDER_RATE_LIMITED",
+      retryAfterMs: 20_000,
+    });
+    expect(limits.cooldownEnd).toEqual(new Date(NOW.getTime() + 20_000));
+    expect(limits.used).toEqual({ total: 0, batch: 0 });
+    expect(await service.generateBatch(batch("batch_run-1", 2).command)).toEqual({
+      kind: "retryable",
+      code: "PROVIDER_RATE_LIMITED",
+      retryAfterMs: 20_000,
+    });
+    expect(calls).toHaveLength(1);
+    expect(await count("generation_outcomes")).toBe(0);
+  });
+
+  it("an uncertain dispatch is terminal: recorded with the Gateway's code, never retried", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const { service } = setup(() =>
+      Promise.resolve({ ok: false, code: "GATEWAY_UNAVAILABLE", notSent: false }),
+    );
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "failed",
+    });
+    expect(await outcome("batch_run-1")).toMatchObject({
+      status: "failed",
+      error_code: "GATEWAY_UNAVAILABLE",
+      trigger_type: "feedback_batch",
+    });
+  });
+
+  it("a terminal failure is recorded with the Gateway's code", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const { service } = setup(() =>
+      Promise.resolve({ ok: false, code: "PROVIDER_REFUSED", notSent: false }),
+    );
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "failed",
+    });
+    expect(await outcome("batch_run-1")).toMatchObject({
+      status: "failed",
+      error_code: "PROVIDER_REFUSED",
+    });
+  });
+
+  it("F8: a result after the deadline is discarded and recorded as DEADLINE_EXCEEDED", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    let now = NOW;
+    const { service } = setup(
+      () => {
+        now = new Date(NOW.getTime() + 61_000);
+        return Promise.resolve(result());
+      },
+      { now: () => now },
+    );
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "failed",
+    });
+    expect(await outcome("batch_run-1")).toMatchObject({ error_code: "DEADLINE_EXCEEDED" });
+    expect(await count("briefing_generations")).toBe(0);
+  });
+
+  it("an invalid candidate is recorded as OUTPUT_INVALID", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const { service } = setup(() =>
+      Promise.resolve(
+        result({ ...okSections, suggestions: [{ text: "Consider it.", sourceIds: ["F10"] }] }),
+      ),
+    );
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "failed",
+    });
+    expect(await outcome("batch_run-1")).toMatchObject({ error_code: "OUTPUT_INVALID" });
+  });
+
+  it("F7-13: the batch cap fails visibly with DAILY_LIMIT_REACHED and no call", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const limits = new FakeGenerationLimits({ dailyAttempts: 20, batchDailyAttempts: 0 });
+    const { service, calls } = setup(() => Promise.resolve(result()), { limits });
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "failed",
+    });
+    expect(await outcome("batch_run-1")).toMatchObject({ error_code: "DAILY_LIMIT_REACHED" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("records superseded and failed outcomes for the processor, and reports whether a run finished", async () => {
+    const { service } = setup(() => Promise.resolve(result()));
+    expect(await service.hasOutcome(RunIdSchema.parse("batch_x"))).toBe(false);
+    await service.recordBatchOutcome(E101, RunIdSchema.parse("batch_x"), "superseded");
+    await service.recordBatchOutcome(
+      E101,
+      RunIdSchema.parse("batch_y"),
+      "failed",
+      "ATTEMPTS_EXHAUSTED",
+    );
+    expect(await service.hasOutcome(RunIdSchema.parse("batch_x"))).toBe(true);
+    expect(await outcome("batch_x")).toMatchObject({ status: "superseded", error_code: null });
+    expect(await outcome("batch_y")).toMatchObject({
+      status: "failed",
+      error_code: "ATTEMPTS_EXHAUSTED",
+    });
+  });
+});
+
+describe("Plan 3B carry-forward: a repeated runId commits at most once", () => {
+  it("a second manual run with the same runId stores nothing new, even with different content", async () => {
+    let first = true;
+    const { service, command } = setup(() => {
+      const sections = first
+        ? okSections
+        : { ...okSections, suggestions: [{ text: "Different.", sourceIds: ["F07"] }] };
+      first = false;
+      return Promise.resolve(result(sections));
+    });
+    const a = await service.generateManual({
+      ...command(),
+      runId: RunIdSchema.parse("manual:same"),
+    });
+    const b = await service.generateManual({
+      ...command(),
+      runId: RunIdSchema.parse("manual:same"),
+    });
+    expect(b.provenance.generationId).toBe(a.provenance.generationId);
+    expect(b.content.suggestions).toEqual(a.content.suggestions);
+    expect(await count("briefing_generations")).toBe(1);
   });
 });
