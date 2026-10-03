@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Frontend technologies](10-frontend-technologies.md) · [Backend technologies](11-backend-technologies.md) · [Data model and transactions (T4)](13-data-model-and-transactions.md) · [Queue implementation (T5)](14-generation-queue-implementation.md) · [Spec review](../reviews/2026-10-03-spec-review.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Every decision in §1 is confirmed. No code or dependencies exist yet.
+Status: **Confirmed by the user on 2026-10-03.** Every decision in §1 is confirmed. §9 and §13 updated 2026-10-03 to match the implemented AI Gateway (user-approved).
 
 This project must solve the client's problem **and** demonstrate deliberate architecture and code quality. §10 lists the engineering principles that apply to every app and package.
 
@@ -241,34 +241,39 @@ Behaviour is in [F4](04-ai-briefing-generation.md#generation-flow) (manual) and 
 
 ```text
 apps/ai-gateway/src/
-├─ main.ts                      # composition root; setTracingDisabled(true); graceful shutdown
-├─ config/env.ts                # Zod env schema; fail fast
-├─ transport/rpc-server.ts      # tcp-rpc server: frame limits, auth, op routing, concurrency = 1
-├─ operations/briefing-generate-v1.ts   # validate input → limits → run agent → map → validate output
-├─ ai/
-│  ├─ openai-client.ts          # new OpenAI({ maxRetries: 0, timeout }) → setDefaultOpenAIClient
+├─ main.ts                      # process: config, listen, graceful shutdown
+├─ compose.ts                   # composition root: wires model, limits, operation and transport by hand
+├─ config/env.ts                # Zod env schema; fail fast; copies only its own keys from .env
+├─ transport/rpc-server.ts      # tcp-rpc server: contract validation, op routing, safe error envelopes, reply self-check
+├─ operations/
+│  ├─ briefing-model.ts         # BriefingModel port (one provider request per call)
+│  └─ briefing-generate-v1.ts   # deadline ceiling → lane → backstop → model → evidence check
+├─ ai/                          # the only folder that imports openai / @openai/agents-*
+│  ├─ openai-client.ts          # new OpenAI({ maxRetries: 0, timeout, fixed baseURL, logLevel: "off" })
 │  ├─ briefing-prompt.ts        # PROMPT_VERSION, developer instructions (F4 + §4 wording rules), user-data message
-│  ├─ briefing-agent.ts         # buildBriefingAgent(feedbackIds): outputType = buildGeneratedSectionsSchema(ids)
+│  ├─ openai-briefing-model.ts  # the BriefingModel adapter: Runner with an injected OpenAIProvider client,
+│  │                            # setTracingDisabled(true), outputType = buildGeneratedSectionsSchema(ids)
 │  └─ provider-error-mapper.ts  # SDK/provider errors → gateway codes, notSent, retryAfterMs
-└─ limits/usage-backstop.ts
+└─ limits/lane-gate.ts · limits/usage-backstop.ts
 ```
 
 Concurrency: one in-flight call per lane (`interactive`, `background`).
 
 Agents SDK settings, verified against the installed version and covered by tests:
 
-- `modelSettings: { store: false, maxTokens: 4000 }`
-- `run(agent, input, { maxTurns: 1, signal })`
+- `modelSettings: { store: false, maxTokens: 4000, retry: { maxRetries: 0 } }`, plus `reasoning.effort` when configured
+- `run(agent, input, { maxTurns: 1, signal })`; the signal aborts the provider call `GATEWAY_RESPONSE_MARGIN_MS` before the deadline
 - no tools and no handoffs
-- tracing disabled
-- client `maxRetries: 0`
+- tracing disabled globally (`setTracingDisabled(true)`) and per run (`tracingDisabled: true`)
+- client `maxRetries: 0`, fixed `baseURL`, SDK logging off
+- a failure with `notSent: false` (any code, including `DEADLINE_EXCEEDED`) means the provider may have received and billed the request: callers confirm before Retry and never replay it
 
 TCP protocol (`packages/tcp-rpc`):
 
 - **Framing.** Each frame is a `uint32 BE` length followed by UTF-8 JSON. The length is checked before buffering (64 KiB request, 128 KiB response). A streaming decoder handles fragmented and combined chunks.
 - **One connection per attempt.** Connect with a 2 s timeout, send one request, read one response, close.
 - **Error classification.** A refused connection or connect timeout means `notSent: true`. A socket that closes after the request was written, or a passed deadline, means `AI_OUTCOME_UNKNOWN`.
-- **Envelope.** `{ v: 1, auth, requestId, operation, jobId, attemptId, deadlineAt, input }`. The server compares `auth` with `timingSafeEqual` over SHA-256 digests and strips it before the handler runs.
+- **Envelope.** `{ v: 1, auth, requestId, operation, runId, attemptId, lane, deadlineAt, input }` ([F8](09-ai-gateway.md#tcp-operation)). The server compares `auth` with `timingSafeEqual` over SHA-256 digests and strips it before the handler runs.
 - **Binding.** Loopback only.
 
 ## 10. Engineering principles (showcase quality)
@@ -394,12 +399,15 @@ Reset refuses to run while `/api/health` answers. It drops and recreates only `e
 | `REDIS_URL` | event-api | `redis://127.0.0.1:6379/0` |
 | `ALLOWED_ORIGINS` | event-api | `http://localhost:5173` |
 | `EVENT_VIEW_CACHE_TTL_MS` | event-api | `30000` |
+| `MYSQL_QUERY_TIMEOUT_MS` | event-api | `5000` (also bounds row-lock waits and pool acquisition) |
 | `BRIEFING_BATCH_WINDOW_MS` | event-api | `3000` |
 | `BATCH_MAX_ATTEMPTS`, `MANUAL_GENERATION_TIMEOUT_MS` | event-api | `3`, `60000` |
 | `GENERATION_DAILY_ATTEMPT_LIMIT`, `GENERATION_BATCH_DAILY_LIMIT` | event-api | `20`, `15` |
 | `FEEDBACK_SUBMISSION_ENABLED`, `FEEDBACK_MAX_NOTES_PER_EVENT` | event-api | `true`, `100` |
 | `GATEWAY_HOST`, `GATEWAY_PORT`, `GATEWAY_SERVICE_SECRET` | both | `127.0.0.1`, `4100`, required (≥ 32 bytes) |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TIMEOUT_MS`, `MAX_OUTPUT_TOKENS` | ai-gateway only | chosen at implementation; `50000`; `4000` |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT` | ai-gateway only | unset (Gateway answers `PROVIDER_NOT_CONFIGURED`); `gpt-5-mini`; `low` |
+| `OPENAI_TIMEOUT_MS`, `MAX_OUTPUT_TOKENS` | ai-gateway only | `50000`, `4000` |
+| `GATEWAY_MAX_CALL_MS`, `GATEWAY_RESPONSE_MARGIN_MS`, `GATEWAY_DAILY_CALL_LIMIT` | ai-gateway only | `60000`, `1000`, `40` (in-memory backstop; the event API owns the real budget) |
 
 CI (GitHub Actions) runs install with the pnpm cache, then lint, typecheck, dependency-cruiser, unit tests, integration tests (MySQL and Redis service containers) and Playwright. The live model is never called in CI.
 
