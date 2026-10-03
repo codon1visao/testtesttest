@@ -294,7 +294,11 @@ export function BriefingEditor({
             {(editor.notice?.kind === "conflict" || editor.notice?.kind === "unavailable") &&
             view.savedBriefing !== null ? (
               // Spec 05 "Revision conflict": the current saved state, read-only, beside the kept draft.
-              <BriefingPreview title="Latest saved briefing" briefing={view.savedBriefing} />
+              <BriefingPreview
+                title="Latest saved briefing"
+                briefing={view.savedBriefing}
+                view={view}
+              />
             ) : null}
             <HStack gap={2}>
               <Button

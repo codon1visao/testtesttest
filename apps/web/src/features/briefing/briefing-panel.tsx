@@ -2,16 +2,21 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Heading } from "@astryxdesign/core/Text";
-import type { EventId, EventView } from "@event-desk/contracts";
+import type { BriefingView, EventId, EventView, GenerationId } from "@event-desk/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSelectPreview } from "../../data/mutations/use-select-preview";
 import { useUiStore } from "../../state/ui-store";
 import type { RefetchEvent } from "../attendance/use-attendance-form";
 import { BriefingEditor } from "./briefing-editor";
 import { type EditorBase, editorKey, toEditorBase } from "./briefing-form-model";
 import { BriefingPreview } from "./briefing-preview";
 import { GenerateBriefingControl } from "./generate-briefing-control";
+import { IncomingPreviewNotice } from "./incoming-preview-notice";
 
-/** Generate/Retry, the briefing editor (F5) and the incoming preview. Task 8 adds select and layout. */
+/**
+ * The briefing workspace (F4–F7): Generate, the incoming candidate, and one editor for the
+ * selected preview or the saved briefing. Nothing replaces unsaved text without an explicit choice.
+ */
 export function BriefingPanel({
   eventId,
   view,
@@ -24,9 +29,21 @@ export function BriefingPanel({
   const briefingDirty = useUiStore((state) => state.briefingDirty);
   const latest = toEditorBase(view);
   const [base, setBase] = useState<EditorBase | null>(latest);
+  // This tab's successful explicit review, until the view shows it as the selected preview.
+  const [opened, setOpened] = useState<GenerationId | null>(null);
   // A clean editor follows the saved records; a dirty draft keeps its base until save, discard or
   // explicit select (T3 §11). Adjusted during render, React's pattern for state derived from props.
-  if (!briefingDirty && editorKey(base) !== editorKey(latest)) setBase(latest);
+  // An explicit select is adopted from the view, not from the response: the response arrives before
+  // the refreshed view, and a base ahead of the view would be pulled back to the old one as soon as
+  // the remounted editor reports itself clean.
+  if (
+    opened !== null &&
+    latest?.slot === "selected" &&
+    latest.briefing.provenance.generationId === opened
+  ) {
+    setOpened(null);
+    if (editorKey(base) !== editorKey(latest)) setBase(latest);
+  } else if (!briefingDirty && editorKey(base) !== editorKey(latest)) setBase(latest);
   // "Your briefing changes were saved." stays until the next edit starts. The dirty flag lags the
   // form by one effect, so clear on the clean→dirty transition, not on "dirty" itself.
   const [reconciled, setReconciled] = useState(false);
@@ -58,13 +75,47 @@ export function BriefingPanel({
     if (pendingFocus.current === "reset") pendingFocus.current = null;
   }, [briefingDirty]);
 
+  const select = useSelectPreview(eventId);
+  // `explicit`: the coordinator pressed Review new preview (and confirmed any discard). Only then
+  // does the new preview replace a dirty draft, and the editor heading take focus.
+  const openPreview = (generationId: GenerationId, explicit: boolean) => {
+    select.mutate(generationId, {
+      onSuccess: (response) => {
+        if (!explicit) return;
+        // The new preview replaces the draft the coordinator chose to discard, as soon as the view
+        // (already updated in the cache) reaches this panel. A select always changes the editor
+        // key, so the focus request waits for that remount.
+        pendingFocus.current = "remount";
+        setOpened(response.selectedPreview.provenance.generationId);
+      },
+    });
+  };
+  // F4 step 7: only a clean editor follows this tab's own result; the flag is read on arrival.
+  // The clean editor then follows the view like any other clean editor, so text typed while the
+  // select is in flight is kept. Auto-select never moves focus: it stays on the Generate button.
+  const autoSelect = (preview: BriefingView) => {
+    if (!useUiStore.getState().briefingDirty) openPreview(preview.provenance.generationId, false);
+  };
+
+  const incoming = view.incomingPreview;
+
   return (
     <section aria-label="Briefing">
       <VStack gap={3}>
         <Heading level={2}>Briefing</Heading>
-        <GenerateBriefingControl eventId={eventId} view={view} />
+        <GenerateBriefingControl eventId={eventId} view={view} onGenerated={autoSelect} />
+        {incoming === null ? null : (
+          <IncomingPreviewNotice
+            preview={incoming}
+            isDirty={briefingDirty}
+            isOpening={select.isPending}
+            onReview={() => {
+              openPreview(incoming.provenance.generationId, true);
+            }}
+          />
+        )}
         {reconciled ? <Banner status="success" title="Your briefing changes were saved." /> : null}
-        {base === null ? null : (
+        {base !== null ? (
           <BriefingEditor
             key={editorKey(base)}
             eventId={eventId}
@@ -75,18 +126,15 @@ export function BriefingPanel({
             onReset={onReset}
             consumePendingFocus={consumePendingFocus}
           />
-        )}
-        {view.incomingPreview === null ? (
-          base === null ? (
-            <EmptyState
-              isCompact
-              headingLevel={3}
-              title="No briefing yet"
-              description="Press Generate briefing to create one from the saved records."
-            />
-          ) : null
+        ) : incoming !== null ? (
+          <BriefingPreview title="New preview (not yet reviewed)" briefing={incoming} view={view} />
         ) : (
-          <BriefingPreview title="New preview (not yet reviewed)" briefing={view.incomingPreview} />
+          <EmptyState
+            isCompact
+            headingLevel={3}
+            title="No briefing yet"
+            description="Press Generate briefing to create one from the saved records."
+          />
         )}
       </VStack>
     </section>

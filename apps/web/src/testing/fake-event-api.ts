@@ -51,6 +51,8 @@ export class FakeEventApi {
   readonly saveRequests: unknown[] = [];
   /** Holds each briefing save this long before replying, to observe the saving state. */
   saveDelayMs = 0;
+  /** Holds each preview select this long before replying, to act while it is in flight. */
+  selectDelayMs = 0;
   /** Replies for upcoming generation calls, consumed in order; an empty queue yields a manual preview. */
   readonly generationReplies: GenerationReply[] = [];
 
@@ -164,6 +166,7 @@ export class FakeEventApi {
       http.post("/api/events/:eventId/briefing-preview/select", async ({ request }) => {
         const body: unknown = await request.json();
         this.selectRequests.push(body);
+        if (this.selectDelayMs > 0) await delay(this.selectDelayMs);
         const parsed = SelectPreviewRequestSchema.safeParse(body);
         if (!parsed.success)
           return apiErrorResponse(400, "VALIDATION_FAILED", "Invalid select body.");

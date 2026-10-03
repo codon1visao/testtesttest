@@ -2,7 +2,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
-import type { EventId, EventView, HttpErrorCode } from "@event-desk/contracts";
+import type { BriefingView, EventId, EventView, HttpErrorCode } from "@event-desk/contracts";
 import { useState } from "react";
 import { ApiError, describeApiError } from "../../data/http/api-error";
 import { useGenerateBriefing } from "../../data/mutations/use-generate-briefing";
@@ -21,7 +21,16 @@ export function mayHaveBeenCharged(error: unknown): boolean {
 }
 
 /** Generate and Retry are the same synchronous call (A6); attendance must be saved first (F4). */
-export function GenerateBriefingControl({ eventId, view }: { eventId: EventId; view: EventView }) {
+export function GenerateBriefingControl({
+  eventId,
+  view,
+  onGenerated,
+}: {
+  eventId: EventId;
+  view: EventView;
+  /** After THIS tab's Generate succeeds (F4 step 7): the panel decides whether to open it. */
+  onGenerated?: (preview: BriefingView) => void;
+}) {
   const generation = useGenerateBriefing(eventId);
   const attendanceDirty = useUiStore((state) => state.attendanceDirty);
   const [confirmingRetry, setConfirmingRetry] = useState(false);
@@ -29,7 +38,10 @@ export function GenerateBriefingControl({ eventId, view }: { eventId: EventId; v
   const elsewhere = view.generation.manual !== null && !generation.isPending;
   const busy = generation.isPending || view.generation.manual !== null;
   const start = () => {
-    generation.mutate({ baseAttendanceRevision: view.attendanceRevision });
+    generation.mutate(
+      { baseAttendanceRevision: view.attendanceRevision },
+      { onSuccess: (response) => onGenerated?.(response.incomingPreview) },
+    );
   };
   const press = () => {
     if (busy || attendanceDirty) return;
