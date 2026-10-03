@@ -10,6 +10,7 @@ import type {
   BatchJobContext,
   BatchJobHandler,
   BatchJobStatus,
+  BatchStep,
   BriefingBatchQueue,
 } from "../ports/briefing-batch-queue.js";
 import type { Clock } from "../ports/clock.js";
@@ -113,9 +114,7 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
       maxStalledCount: 1,
       settings: {
         backoffStrategy: (_attemptsMade: number, _type?: string, error?: Error) =>
-          error instanceof RetryDelayError
-            ? error.delayMs
-            : (this.options.unexpectedRetryDelayMs ?? 5_000),
+          error instanceof RetryDelayError ? error.delayMs : this.unexpectedRetryDelayMs(),
       },
     });
     worker.on("active", (job) => {
@@ -129,14 +128,20 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
     worker.on("failed", (job, error) => {
       if (job === undefined) return;
       const data = JobDataSchema.safeParse(job.data);
+      // Our own UnrecoverableError (invalid data) has nothing to record: it never parses here.
       if (!data.success) return;
-      const exhausted = job.attemptsMade >= (job.opts.attempts ?? 1);
-      if (
-        exhausted &&
-        !(error instanceof RetryDelayError) &&
-        !(error instanceof UnrecoverableError)
-      ) {
-        logger.error({ err: error, runId: job.id }, "batch job abandoned after unexpected errors");
+      // Terminal: no attempts left, or an UnrecoverableError. BullMQ 6 fails a job that stalled
+      // more than maxStalledCount by setting a deferred failure and moving it back to wait; the
+      // next worker to take it fails it with UnrecoverableError("job stalled more than
+      // allowable limit") without running the processor, so that also arrives here.
+      const terminal =
+        error instanceof UnrecoverableError || job.attemptsMade >= (job.opts.attempts ?? 1);
+      // A retry step on the last attempt is a known failure the handler records itself.
+      if (terminal && !(error instanceof RetryDelayError)) {
+        logger.error(
+          { err: error, runId: job.id },
+          "batch job abandoned (unexpected errors or repeated stalls)",
+        );
         const runId = RunIdSchema.safeParse(job.id);
         if (runId.success) {
           handler
@@ -151,6 +156,18 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
       }
       notify(data.data.eventId);
     });
+    // A stalled job went back to wait: it runs again, or fails as above on its second stall.
+    worker.on("stalled", (jobId) => {
+      logger.warn({ runId: jobId }, "batch job stalled");
+      void this.eventOf(jobId).then(
+        (eventId) => {
+          if (eventId !== null) notify(eventId);
+        },
+        (error: unknown) => {
+          logger.warn({ err: error, runId: jobId }, "stalled batch job could not be read");
+        },
+      );
+    });
     worker.on("error", (error) => {
       logger.warn({ err: error }, "batch worker error");
     });
@@ -158,8 +175,17 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
   }
 
   async close(): Promise<void> {
-    await this.worker?.close();
-    await this.queue.close();
+    try {
+      await this.worker?.close();
+    } finally {
+      await this.queue.close();
+    }
+  }
+
+  private async eventOf(jobId: string): Promise<EventId | null> {
+    const job = await this.queue.getJob(jobId);
+    const data = JobDataSchema.safeParse(job?.data);
+    return data.success ? data.data.eventId : null;
   }
 
   /** Rejects when the producer connection has not become ready within the deadline. */
@@ -185,21 +211,25 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
     const parsed = JobDataSchema.safeParse(job.data);
     const runId = RunIdSchema.safeParse(job.id);
     if (!parsed.success || !runId.success) throw new UnrecoverableError("invalid batch job data");
-    let data: JobData = parsed.data;
+    const interruptedWhileSending = parsed.data.dispatch === "sending";
+    const firstStartedAt = parsed.data.firstStartedAt ?? this.options.clock.now().toISOString();
+    // Every execution starts without a phase: a stale "waiting" from a stopped execution must not
+    // carry into this one.
+    const { phase: stalePhase, ...fresh } = parsed.data;
+    let data: JobData = { ...fresh, firstStartedAt };
+    if (parsed.data.firstStartedAt === undefined || stalePhase !== undefined) {
+      await job.updateData(data);
+    }
     const update = async (patch: Partial<JobData>) => {
       data = { ...data, ...patch };
       await job.updateData(data);
     };
-    const interruptedWhileSending = data.dispatch === "sending";
-    if (data.firstStartedAt === undefined) {
-      await update({ firstStartedAt: this.options.clock.now().toISOString() });
-    }
     const context: BatchJobContext = {
       runId: runId.data,
       eventId: data.eventId,
       attempt: job.attemptsMade + 1,
       maxAttempts: job.opts.attempts ?? this.options.maxAttempts,
-      firstStartedAt: new Date(data.firstStartedAt ?? this.options.clock.now().toISOString()),
+      firstStartedAt: new Date(firstStartedAt),
       interruptedWhileSending,
       markSending: () => update({ dispatch: "sending" }),
       markSettled: () => update({ dispatch: "idle" }),
@@ -216,16 +246,40 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
         );
       },
     };
-    const step = await handler.handle(context);
+    let step: BatchStep;
+    try {
+      step = await handler.handle(context);
+    } catch (error) {
+      // An unexpected error retries after unexpectedRetryDelayMs: record when, for the UI.
+      if (!(error instanceof UnrecoverableError) && context.attempt < context.maxAttempts) {
+        try {
+          await this.saveNextAttempt(job, data, this.unexpectedRetryDelayMs());
+        } catch (saveError) {
+          this.options.logger.warn(
+            { err: saveError, runId: job.id },
+            "batch retry time could not be saved",
+          );
+        }
+      }
+      throw error;
+    }
     if (step.kind === "retry") {
-      const { phase: _phase, ...rest } = data;
-      data = {
-        ...rest,
-        nextAttemptAt: new Date(this.options.clock.now().getTime() + step.delayMs).toISOString(),
-      };
-      await job.updateData(data);
+      await this.saveNextAttempt(job, data, step.delayMs);
       throw new RetryDelayError(step.delayMs);
     }
+  }
+
+  private unexpectedRetryDelayMs(): number {
+    return this.options.unexpectedRetryDelayMs ?? 5_000;
+  }
+
+  /** Before a retry: when the next attempt starts, and no phase (the job is not running). */
+  private async saveNextAttempt(job: Job<JobData>, data: JobData, delayMs: number): Promise<void> {
+    const { phase: _phase, ...rest } = data;
+    await job.updateData({
+      ...rest,
+      nextAttemptAt: new Date(this.options.clock.now().getTime() + delayMs).toISOString(),
+    });
   }
 
   /** The event's not-yet-finished jobs, reduced to what the rules need. */
@@ -236,16 +290,20 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
         const data = JobDataSchema.safeParse(job.data);
         const jobId = RunIdSchema.safeParse(job.id);
         if (!data.success || !jobId.success || data.data.eventId !== eventId) continue;
+        const nextAttemptAt =
+          data.data.nextAttemptAt === undefined ? undefined : Date.parse(data.data.nextAttemptAt);
+        // On a retry BullMQ sets `delay` to the retry delay but keeps `timestamp` at creation, so
+        // a retried job's ready time is the persisted next attempt, not timestamp + delay.
+        const retrying = queueState === "delayed" && job.attemptsMade > 0;
         jobs.push({
           jobId: jobId.data,
           queueState,
           createdAt: job.timestamp,
-          readyAt: job.timestamp + job.delay,
+          readyAt:
+            retrying && nextAttemptAt !== undefined ? nextAttemptAt : job.timestamp + job.delay,
           attemptsMade: job.attemptsMade,
           ...(data.data.phase === undefined ? {} : { phase: data.data.phase }),
-          ...(data.data.nextAttemptAt === undefined
-            ? {}
-            : { nextAttemptAt: Date.parse(data.data.nextAttemptAt) }),
+          ...(nextAttemptAt === undefined ? {} : { nextAttemptAt }),
         });
       }
     }

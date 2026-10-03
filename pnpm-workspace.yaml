@@ -3,7 +3,7 @@ packages:
   - "packages/*"
   - "e2e"
 allowBuilds:
-  "@astryxdesign/core": false # postinstall only prints an `astryx init` hint; the spike works without it
+  "@astryxdesign/core": false # postinstall only prints an `astryx init` hint; apps/web works without it
   esbuild: true
   msgpackr-extract: false # optional accelerator pulled in by bullmq; false only skips its install/build script (the prebuilt @msgpackr-extract/msgpackr-extract-<platform> binary still loads where available, pure JS otherwise)
 # Supply-chain guard: pnpm refuses package versions published less than 8 hours ago (in minutes).
