@@ -79,7 +79,8 @@ export type GeneratedSectionsWire = z.infer<typeof GeneratedSectionsWireSchema>;
 export const BriefingGenerateV1ResultSchema = z.strictObject({
   sections: GeneratedSectionsWireSchema,
   model: z.string().min(1).max(100),
-  promptVersion: z.string().min(1).max(50),
+  /** VARCHAR(32) in briefing_generations, like GenerationProvenanceSchema. */
+  promptVersion: z.string().min(1).max(32),
   providerRequestId: z.string().min(1).max(200).nullable(),
   usage: z.strictObject({ inputTokens: z.int().min(0), outputTokens: z.int().min(0) }),
 });
@@ -91,9 +92,9 @@ export const GatewayErrorSchema = z.strictObject({
   message: z.string().min(1).max(300),
   /**
    * True only when the provider request is known not to have been sent: safe to try again.
-   * False means the provider may have received, and billed, the request, whatever the code
-   * (including DEADLINE_EXCEEDED after the send and AI_OUTCOME_UNKNOWN). Callers treat every
-   * `notSent: false` failure as a possibly paid attempt: confirm before a Retry, never replay it.
+   * False means the provider may have received, and billed, the request: never replay it
+   * automatically. The UI asks for confirmation before a Retry only after an uncertain outcome
+   * (AI_OUTCOME_UNKNOWN, DEADLINE_EXCEEDED); other failures retry directly when the user asks.
    */
   notSent: z.boolean(),
   retryAfterMs: z.int().min(0).optional(),

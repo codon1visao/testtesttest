@@ -135,6 +135,32 @@ describe("BriefingGenerateV1ResponseSchema", () => {
     expect(BriefingGenerateV1ResponseSchema.safeParse(ok).success).toBe(true);
   });
 
+  it("limits promptVersion to the 32 characters the store and provenance hold", () => {
+    const withPromptVersion = (promptVersion: string) => ({
+      v: 1,
+      ok: true,
+      ...correlation,
+      result: {
+        sections: {
+          feedbackSummary: { text: "Walk enjoyed.", sourceIds: ["F01"] },
+          themes: [],
+          conflicts: [],
+          suggestions: [],
+        },
+        model: "gpt-x",
+        promptVersion,
+        providerRequestId: null,
+        usage: { inputTokens: 1, outputTokens: 1 },
+      },
+    });
+    expect(
+      BriefingGenerateV1ResponseSchema.safeParse(withPromptVersion("p".repeat(32))).success,
+    ).toBe(true);
+    expect(
+      BriefingGenerateV1ResponseSchema.safeParse(withPromptVersion("p".repeat(33))).success,
+    ).toBe(false);
+  });
+
   it("accepts an error without correlation (a frame that could not be read)", () => {
     const error = {
       v: 1,
