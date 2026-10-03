@@ -176,7 +176,7 @@ type EventView = {
 | --- | --- |
 | 400 | `VALIDATION_FAILED` (fails the Zod request schema) |
 | 403 | `ORIGIN_REJECTED` |
-| 404 | `EVENT_NOT_FOUND` |
+| 404 | `EVENT_NOT_FOUND`, `NOT_FOUND` (unknown API route) |
 | 409 | `ATTENDANCE_CONFLICT`, `BRIEFING_CONFLICT`, `PREVIEW_CONFLICT`, `GENERATION_NOT_AVAILABLE` |
 | 422 | `CONTENT_INVALID`, `REFERENCE_INVALID` (well-formed but contradicts server state) |
 | 422 (feedback) | `FEEDBACK_LIMIT_REACHED` |
