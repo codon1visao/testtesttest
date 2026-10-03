@@ -1,11 +1,10 @@
-import { loadConfig, loadDotEnv } from "../config/env.js";
+import { ConfigError, loadConfig, loadDotEnv } from "../config/env.js";
 import { ResetRefusedError, resetStore } from "./reset-store.js";
 
-loadDotEnv(new URL("../../../../.env", import.meta.url));
-const config = loadConfig();
-const host = config.host.includes(":") ? `[${config.host}]` : config.host;
-
 try {
+  loadDotEnv(new URL("../../../../.env", import.meta.url));
+  const config = loadConfig();
+  const host = config.host.includes(":") ? `[${config.host}]` : config.host;
   const report = await resetStore({
     mysqlUrl: config.mysqlUrl,
     redisUrl: config.redisUrl,
@@ -24,7 +23,7 @@ try {
     ].join("\n"),
   );
 } catch (error) {
-  if (error instanceof ResetRefusedError) {
+  if (error instanceof ResetRefusedError || error instanceof ConfigError) {
     console.error(error.message);
     process.exitCode = 1;
   } else {
