@@ -1,4 +1,4 @@
-import { FeedbackIdSchema, RunIdSchema } from "@event-desk/contracts";
+import { FeedbackIdSchema, GenerationIdSchema, RunIdSchema } from "@event-desk/contracts";
 import { buildBriefingView, FIXTURE_TIME } from "@event-desk/contracts/testing";
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -26,6 +26,33 @@ const toastsWithText = (text: string) => {
   return screen
     .queryAllByText(text)
     .filter((el) => !el.hasAttribute("data-astryx-live-region") && briefing?.contains(el) !== true);
+};
+const batchPreview = (n: number) =>
+  buildBriefingView({
+    trigger: "feedback_batch",
+    provenance: {
+      ...buildBriefingView().provenance,
+      generationId: GenerationIdSchema.parse(`0199a4e8-7c1a-7cc2-9d6e-00000000000${String(n)}`),
+    },
+  });
+/** A change any later read carries: once it shows, that read has been rendered. */
+const addNote = (text: string) => {
+  api.view = {
+    ...api.view,
+    feedback: [
+      ...api.view.feedback,
+      {
+        id: FeedbackIdSchema.parse(`F${String(api.view.feedback.length + 50)}`),
+        text,
+        receivedAt: FIXTURE_TIME,
+      },
+    ],
+  };
+};
+const feedbackShows = async (text: string) => {
+  expect(
+    await within(screen.getByRole("region", { name: "Feedback" })).findByText(text),
+  ).toBeTruthy();
 };
 const generation = (overrides: Partial<typeof api.view.generation>) => ({
   ...api.view.generation,
@@ -188,10 +215,42 @@ describe("batch status (F7 'Generation state in the UI')", () => {
     const region = await panel();
     await user.click(region.getByRole("button", { name: "Generate briefing" }));
     expect(await region.findByRole("button", { name: "Retry" })).toBeTruthy();
+    addNote("Read after the failure.");
     await pushChange(); // the same incoming preview comes back
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await feedbackShows("Read after the failure.");
     expect(region.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(region.getByText("Briefing was not generated")).toBeTruthy();
+  });
+
+  it("keeps a failure that lands after a batch preview arrived mid-call, and clears it on a later preview", async () => {
+    const { promise: gate, resolve: release } = Promise.withResolvers<undefined>();
+    api.generationReplies.push({
+      kind: "error",
+      status: 503,
+      code: "GATEWAY_UNAVAILABLE",
+      message: "The AI service is not reachable.",
+      gate,
+    });
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Generate briefing" }));
+    await waitFor(() => {
+      expect(api.generationRequests).toHaveLength(1);
+    });
+    api.view = { ...api.view, incomingPreview: batchPreview(3) };
+    addNote("Read while generating.");
+    await pushChange(); // a batch committed while the manual call is in flight
+    await feedbackShows("Read while generating.");
+    release(undefined);
+    expect(await region.findByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(region.getByText("Briefing was not generated")).toBeTruthy();
+
+    api.view = { ...api.view, incomingPreview: batchPreview(4) };
+    await pushChange();
+    await waitFor(() => {
+      expect(region.queryByRole("button", { name: "Retry" })).toBeNull();
+    });
+    expect(region.queryByText("Briefing was not generated")).toBeNull();
   });
 
   it("Plan 3B carry-forward: a stale Retry banner clears when a new incoming preview arrives", async () => {

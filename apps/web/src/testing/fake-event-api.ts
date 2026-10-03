@@ -39,6 +39,8 @@ export type GenerationReply =
       code: HttpErrorCode;
       message: string;
       retryAfterMs?: number;
+      /** Holds the error reply until this settles, to act while the call is in flight. */
+      gate?: Promise<void>;
     };
 
 /**
@@ -155,6 +157,7 @@ export class FakeEventApi {
         }
         const reply = this.generationReplies.shift() ?? { kind: "preview" };
         if (reply.kind === "error") {
+          if (reply.gate !== undefined) await reply.gate;
           return HttpResponse.json(
             {
               error: {

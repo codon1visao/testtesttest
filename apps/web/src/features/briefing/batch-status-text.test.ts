@@ -28,6 +28,11 @@ describe("batch state text (F7 table, verbatim)", () => {
       batch({ state: "retry_wait", nextAttemptAt: "2026-10-04T14:02:40.000Z", attempt: 2 }),
       "Automatic briefing will retry at 14:02:40 (attempt 2 of 3).",
     ],
+    [batch({ state: "retry_wait" }), "Automatic briefing will retry shortly."],
+    [
+      batch({ state: "retry_wait", nextAttemptAt: "2026-10-04T14:02:40.000Z" }),
+      "Automatic briefing will retry at 14:02:40.",
+    ],
   ])("%#", (value, text) => {
     expect(batchStateText(value, clock)).toBe(text);
   });

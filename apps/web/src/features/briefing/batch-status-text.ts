@@ -30,8 +30,16 @@ export function batchStateText(
       return "Automatic briefing queued; waiting for the current generation to finish.";
     case "generating":
       return "Generating automatic briefing…";
-    case "retry_wait":
-      return `Automatic briefing will retry at ${batch.nextAttemptAt === undefined ? "shortly" : clock(batch.nextAttemptAt)} (attempt ${String(batch.attempt ?? 2)} of ${String(batch.maxAttempts ?? 3)}).`;
+    case "retry_wait": {
+      // No invented defaults: say only what the server reported.
+      const when =
+        batch.nextAttemptAt === undefined ? "shortly" : `at ${clock(batch.nextAttemptAt)}`;
+      const count =
+        batch.attempt === undefined || batch.maxAttempts === undefined
+          ? ""
+          : ` (attempt ${String(batch.attempt)} of ${String(batch.maxAttempts)})`;
+      return `Automatic briefing will retry ${when}${count}.`;
+    }
     default:
       return assertNever(batch.state, "batch state");
   }

@@ -3,7 +3,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import type { BriefingView, EventId, EventView, HttpErrorCode } from "@event-desk/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, describeApiError } from "../../data/http/api-error";
 import { useGenerateBriefing } from "../../data/mutations/use-generate-briefing";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
@@ -45,6 +45,12 @@ export function GenerateBriefingControl({
   // Plan 3B carry-forward: a Retry banner is stale once a different incoming preview arrives.
   const incomingId = view.incomingPreview?.provenance.generationId ?? null;
   const [incomingAtError, setIncomingAtError] = useState<string | null>(null);
+  // The failure is judged against the preview present when it lands, not when Generate was pressed:
+  // a batch may commit a new preview while the manual call is in flight.
+  const latestIncoming = useRef(incomingId);
+  useEffect(() => {
+    latestIncoming.current = incomingId;
+  }, [incomingId]);
   useEffect(() => {
     if (generation.isError && incomingId !== incomingAtError) generation.reset();
   }, [generation, incomingId, incomingAtError]);
@@ -59,7 +65,7 @@ export function GenerateBriefingControl({
       {
         onSuccess: (response) => onGenerated?.(response.incomingPreview),
         onError: () => {
-          setIncomingAtError(incomingId);
+          setIncomingAtError(latestIncoming.current);
         },
       },
     );
