@@ -9,6 +9,7 @@ import { NotFoundPage } from "../../shared/ui/not-found-page";
 import { LoadErrorState, LoadingState } from "../../shared/ui/page-states";
 import { PanelErrorBoundary } from "../../shared/ui/panel-error-boundary";
 import { AttendancePanel } from "../attendance/attendance-panel";
+import { displayedBriefing } from "../briefing/active-briefing";
 import { BriefingPanel } from "../briefing/briefing-panel";
 import { FeedbackPanel } from "../feedback/feedback-panel";
 import { EventHeader } from "./event-header";
@@ -48,6 +49,7 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
   }
 
   const view = query.data;
+  const displayed = displayedBriefing(view);
   return (
     <main {...stylex.props(styles.page)}>
       <VStack gap={6}>
@@ -63,7 +65,10 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
           <AttendancePanel eventId={eventId} view={view} refetch={query.refetch} />
         </PanelErrorBoundary>
         <PanelErrorBoundary name="Feedback">
-          <FeedbackPanel notes={view.feedback} />
+          <FeedbackPanel
+            notes={view.feedback}
+            newSinceBriefing={new Set(displayed?.freshness.newFeedbackIds ?? [])}
+          />
         </PanelErrorBoundary>
         <PanelErrorBoundary name="Briefing">
           <BriefingPanel eventId={eventId} view={view} />

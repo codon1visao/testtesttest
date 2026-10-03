@@ -1,5 +1,5 @@
 import { FeedbackIdSchema, SUPPLIED_FEEDBACK } from "@event-desk/contracts";
-import { FIXTURE_TIME } from "@event-desk/contracts/testing";
+import { buildBriefingView, FIXTURE_TIME } from "@event-desk/contracts/testing";
 import { screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { FakeEventApi } from "../../testing/fake-event-api";
@@ -50,5 +50,20 @@ describe("feedback panel", () => {
     expect(region.getByText('<img src=x onerror="alert(1)"> **bold**')).toBeTruthy();
     expect(region.queryByRole("img")).toBeNull();
     expect(document.querySelector("img[src='x']")).toBeNull();
+  });
+
+  it("F6-18: notes outside the displayed briefing's input say so", async () => {
+    const briefing = buildBriefingView({
+      freshness: {
+        current: false,
+        attendanceChanges: [],
+        newFeedbackIds: [FeedbackIdSchema.parse("F08")],
+      },
+    });
+    api.view = { ...api.view, savedBriefing: briefing };
+    renderApp();
+    const items = (await panel()).getAllByRole("listitem");
+    expect(within(items[7] ?? document.body).getByText("New since this briefing")).toBeTruthy();
+    expect(within(items[0] ?? document.body).queryByText("New since this briefing")).toBeNull();
   });
 });
