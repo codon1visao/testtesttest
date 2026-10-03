@@ -9,6 +9,7 @@ import {
   GATEWAY_ERROR_CODES,
   GATEWAY_INPUT_LIMITS,
   GatewayRequestHeaderSchema,
+  GeneratedSectionsWireSchema,
   utf8ByteLength,
 } from "./index.js";
 
@@ -158,6 +159,31 @@ describe("BriefingGenerateV1ResponseSchema", () => {
       error: { code: "ATTENDANCE_CONFLICT", message: "x", notSent: true },
     };
     expect(BriefingGenerateV1ResponseSchema.safeParse(error).success).toBe(false);
+  });
+});
+
+describe("GeneratedSectionsWireSchema", () => {
+  const sections = {
+    feedbackSummary: { text: "Walk enjoyed.", sourceIds: ["F01"] },
+    themes: [{ text: "Rest breaks.", sourceIds: ["F05", "F06"] }],
+    conflicts: [],
+    suggestions: [],
+  };
+
+  it("is the briefing content without the backend-owned attendance overview", () => {
+    expect(GeneratedSectionsWireSchema.safeParse(sections).success).toBe(true);
+    expect(
+      GeneratedSectionsWireSchema.safeParse({ ...sections, attendanceOverview: "12 attended." })
+        .success,
+    ).toBe(false);
+    expect(GeneratedSectionsWireSchema.safeParse({ ...sections, extra: [] }).success).toBe(false);
+  });
+
+  it("keeps the briefing content's section limits", () => {
+    const tooMany = Array.from({ length: 11 }, () => ({ text: "x", sourceIds: ["F01"] }));
+    expect(GeneratedSectionsWireSchema.safeParse({ ...sections, themes: tooMany }).success).toBe(
+      false,
+    );
   });
 });
 

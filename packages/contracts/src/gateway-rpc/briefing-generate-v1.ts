@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AttendanceCountsSchema } from "../attendance.js";
-import { EvidenceItemSchema, FeedbackSummarySchema, SECTION_LIMITS } from "../briefing-content.js";
+import { BriefingContentSchema } from "../briefing-content.js";
 import { EventSummarySchema } from "../event.js";
 import { FeedbackNoteSchema } from "../feedback.js";
 import { GatewayErrorCodeSchema } from "./gateway-error-codes.js";
@@ -69,14 +69,12 @@ export const BriefingGenerateV1RequestSchema = z.strictObject({
 });
 export type BriefingGenerateV1Request = z.infer<typeof BriefingGenerateV1RequestSchema>;
 
-/** The candidate's sections; the event backend still applies validateEvidenceSections (F4). */
-const itemList = z.array(EvidenceItemSchema).max(SECTION_LIMITS.itemsPerSection);
-export const GeneratedSectionsWireSchema = z.strictObject({
-  feedbackSummary: FeedbackSummarySchema,
-  themes: itemList,
-  conflicts: itemList,
-  suggestions: itemList,
-});
+/**
+ * The candidate's sections: the briefing content without the attendance overview, which the event
+ * backend derives from its own counts. The backend still applies validateEvidenceSections (F4).
+ */
+export const GeneratedSectionsWireSchema = BriefingContentSchema.omit({ attendanceOverview: true });
+export type GeneratedSectionsWire = z.infer<typeof GeneratedSectionsWireSchema>;
 
 export const BriefingGenerateV1ResultSchema = z.strictObject({
   sections: GeneratedSectionsWireSchema,
@@ -91,7 +89,12 @@ export type BriefingGenerateV1Result = z.infer<typeof BriefingGenerateV1ResultSc
 export const GatewayErrorSchema = z.strictObject({
   code: GatewayErrorCodeSchema,
   message: z.string().min(1).max(300),
-  /** True only when the provider request is known not to have been sent: safe to try again. */
+  /**
+   * True only when the provider request is known not to have been sent: safe to try again.
+   * False means the provider may have received, and billed, the request, whatever the code
+   * (including DEADLINE_EXCEEDED after the send and AI_OUTCOME_UNKNOWN). Callers treat every
+   * `notSent: false` failure as a possibly paid attempt: confirm before a Retry, never replay it.
+   */
   notSent: z.boolean(),
   retryAfterMs: z.int().min(0).optional(),
 });
