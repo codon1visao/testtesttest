@@ -69,16 +69,16 @@ export class BatchGenerationProcessor implements BatchJobHandler {
     if (this.deps.manual.manualStatus(eventId) !== null) {
       await job.reportPhase("waiting"); // F7 "Waiting"; then the nothing-new check usually skips (F7-07)
       await this.deps.manual.whenIdle(eventId);
-      // SIGTERM while waiting: the paid call would start in a process about to exit, a certain
-      // AI_OUTCOME_UNKNOWN. The job stays "waiting" and resumes on the next start.
-      if (job.isShuttingDown()) return this.parkUntilExit(job);
-      await job.reportPhase("generating");
     }
+    // SIGTERM before the call (also while waiting for a manual run): the paid call would start in
+    // a process about to exit, a certain AI_OUTCOME_UNKNOWN. The job resumes on the next start.
     if (job.isShuttingDown()) return this.parkUntilExit(job);
 
     const now = this.deps.clock.now().getTime();
     const executionDeadline = job.firstStartedAt.getTime() + BATCH_EXECUTION_DEADLINE_MS;
     if (now >= executionDeadline) return this.exhausted(eventId, runId);
+    // Until now the UI shows the active job as waiting (M5): it may still be superseded.
+    await job.reportPhase("generating");
 
     let result: BatchAttemptResult;
     try {

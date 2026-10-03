@@ -81,6 +81,25 @@ describe("batch status (F7 'Generation state in the UI')", () => {
     ).toBeTruthy();
   });
 
+  it("M3/P12: shows nothing for a collecting window whose notes a previous job captured", async () => {
+    api.view = {
+      ...api.view,
+      generation: generation({
+        batch: {
+          state: "collecting",
+          jobId: RunIdSchema.parse("batch_a"),
+          closesAt: "2026-10-04T14:02:03.000Z",
+          maxAttempts: 3,
+          newNoteIds: [],
+        },
+      }),
+    };
+    renderApp();
+    const region = await panel();
+    await region.findByRole("button", { name: "Generate briefing" });
+    expect(region.queryByText(/New feedback received/)).toBeNull();
+  });
+
   it("F7 Failed: explains a failed batch, keeps saved work, and offers Generate briefing", async () => {
     api.view = {
       ...api.view,

@@ -82,7 +82,21 @@ describe("BatchGenerationProcessor (T5 §3, F7)", () => {
   it("runs one attempt with a 60 s deadline and finishes", async () => {
     const { processor, job, events } = setup();
     expect(await processor.handle(job())).toEqual({ kind: "done" });
-    expect(events).toEqual([`generate:${new Date(NOW.getTime() + 60_000).toISOString()}`]);
+    expect(events).toEqual([
+      "phase:generating",
+      `generate:${new Date(NOW.getTime() + 60_000).toISOString()}`,
+    ]);
+  });
+
+  it("M5: reports no phase for a job that is superseded or already finished", async () => {
+    const superseded = setup();
+    await superseded.processor.handle(
+      superseded.job({ hasNewerReadyJob: () => Promise.resolve(true) }),
+    );
+    expect(superseded.events).toEqual(["record:superseded"]);
+    const finished = setup({ hasOutcome: true });
+    await finished.processor.handle(finished.job());
+    expect(finished.events).toEqual([]);
   });
 
   it("F7-11: an execution interrupted mid-call is AI_OUTCOME_UNKNOWN and never replayed", async () => {

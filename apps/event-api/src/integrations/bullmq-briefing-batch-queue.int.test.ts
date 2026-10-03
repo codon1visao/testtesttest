@@ -189,6 +189,7 @@ describe("BullMqBriefingBatchQueue (T5 §3, spike S-1/S-3/S-4)", () => {
     let newer: boolean | null = null;
     const h = handler(async (job, seen) => {
       if (seen.length === 1) {
+        await job.reportPhase("generating");
         await gate;
         newer = await job.hasNewerReadyJob();
       }
@@ -243,12 +244,13 @@ describe("BullMqBriefingBatchQueue (T5 §3, spike S-1/S-3/S-4)", () => {
       return { kind: "done" };
     });
     await queue.schedule(E101);
-    await crashWhileRunning({ dispatch: "sending", phase: "waiting" });
+    await crashWhileRunning({ dispatch: "sending", phase: "generating" });
     queue.start(h.value);
     await waitFor(() => during !== null, 15_000);
     expect(h.seen).toHaveLength(1);
     expect(h.seen[0]?.interrupted).toBe(true);
-    expect(during).toBe("generating");
+    // The stale "generating" is gone: an active job with no phase yet reads as waiting (M5).
+    expect(during).toBe("waiting");
   }, 30_000);
 
   it("a job that stalls a second time is abandoned once, without running the handler", async () => {

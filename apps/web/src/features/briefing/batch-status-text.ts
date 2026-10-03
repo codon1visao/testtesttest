@@ -13,14 +13,18 @@ export const formatClock: ClockFormat = (iso) => clockFormat.format(new Date(iso
 
 export const BATCH_READY_TEXT = "New automatic briefing ready to review.";
 
-/** F7 "Generation state in the UI" text for a live batch. */
+/**
+ * F7 "Generation state in the UI" text for a live batch; null for a collecting job whose notes a
+ * previous job already captured (it will find nothing new and skip).
+ */
 export function batchStateText(
   batch: NonNullable<GenerationStatusView["batch"]>,
   clock: ClockFormat = formatClock,
-): string {
+): string | null {
   switch (batch.state) {
     case "collecting": {
       const n = batch.newNoteIds.length;
+      if (n === 0) return null;
       const received = `New feedback received (${String(n)} ${n === 1 ? "note" : "notes"}).`;
       return batch.closesAt === undefined
         ? `${received} Preparing an automatic briefing.`

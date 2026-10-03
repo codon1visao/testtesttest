@@ -54,7 +54,9 @@ function describe(job: QueuedBatchJob, maxAttempts: number): BatchJobStatus {
     case "active":
       return {
         ...base,
-        state: job.phase === "waiting" ? "waiting" : "generating",
+        // Until the processor reports "generating" (just before the paid call) the job is only
+        // deciding: it may be superseded, skipped or wait for a manual run (M5).
+        state: job.phase === "generating" ? "generating" : "waiting",
         attempt: job.attemptsMade + 1,
       };
     case "delayed":
@@ -103,7 +105,9 @@ export function hasNewerReadyJob(
 /**
  * The contract shape of a batch job (T3 §5 GenerationStatusView). The window's new notes are those
  * received since the pending flag was set: the window's first note sets it and the job clears it
- * when it captures its input (T4 TX9/TX10), so these are exactly the notes the window holds.
+ * when it captures its input (T4 TX9/TX10), so these are exactly the notes the window holds. They
+ * describe a collecting window only; a running job's input is already captured. A collecting job
+ * can hold none: a previous job captured them after this one was scheduled.
  */
 export function toBatchStatusView(
   status: BatchJobStatus | null,
@@ -113,7 +117,7 @@ export function toBatchStatusView(
   if (status === null) return null;
   const since = pendingSince?.getTime();
   const newNoteIds =
-    since === undefined
+    since === undefined || status.state !== "collecting"
       ? []
       : notes
           .filter((note) => Date.parse(note.receivedAt) >= since)

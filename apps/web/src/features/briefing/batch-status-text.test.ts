@@ -37,6 +37,10 @@ describe("batch state text (F7 table, verbatim)", () => {
     expect(batchStateText(value, clock)).toBe(text);
   });
 
+  it("M3/P12: a collecting job with no new notes has no text (a previous job captured them)", () => {
+    expect(batchStateText(batch({ newNoteIds: [] }), clock)).toBeNull();
+  });
+
   it("words failures for the coordinator", () => {
     expect(batchFailureText("GATEWAY_UNAVAILABLE")).toBe(
       "Automatic briefing failed: AI service unavailable. Your saved briefing is unchanged.",

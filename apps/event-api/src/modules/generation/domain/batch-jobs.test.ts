@@ -28,7 +28,7 @@ describe("pickBatchStatus (F7 UI states)", () => {
   });
 
   it("prefers the running job, and reports waiting-for-manual as waiting", () => {
-    const running = job("batch_a", { queueState: "active", attemptsMade: 1 });
+    const running = job("batch_a", { queueState: "active", attemptsMade: 1, phase: "generating" });
     const next = job("batch_b", { createdAt: 5_000, readyAt: 8_000 });
     expect(pickBatchStatus([next, running], 3)).toMatchObject({
       jobId: "batch_a",
@@ -37,6 +37,15 @@ describe("pickBatchStatus (F7 UI states)", () => {
     });
     expect(pickBatchStatus([{ ...running, phase: "waiting" }], 3)).toMatchObject({
       state: "waiting",
+    });
+  });
+
+  it("M5: an active job that has not reported a phase yet is waiting, not generating", () => {
+    const started = job("batch_a", { queueState: "active", attemptsMade: 0 });
+    expect(pickBatchStatus([started], 3)).toMatchObject({ state: "waiting", attempt: 1 });
+    expect(pickBatchStatus([{ ...started, phase: "generating" }], 3)).toMatchObject({
+      state: "generating",
+      attempt: 1,
     });
   });
 
@@ -114,5 +123,17 @@ describe("toBatchStatusView (F7 'Collecting' text input)", () => {
       attempt: 1,
       newNoteIds: [],
     });
+  });
+  it("M3/P12: new notes belong to a collecting window only", () => {
+    const pendingSince = new Date("2026-10-04T10:00:00.000Z");
+    for (const state of ["waiting", "generating", "retry_wait"] as const) {
+      const status = {
+        jobId: RunIdSchema.parse("batch_a"),
+        state,
+        openedAt: new Date(0),
+        maxAttempts: 3,
+      };
+      expect(toBatchStatusView(status, notes, pendingSince)?.newNoteIds).toEqual([]);
+    }
   });
 });

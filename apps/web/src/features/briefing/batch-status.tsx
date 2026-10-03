@@ -15,12 +15,13 @@ export function BatchStatus({
   onGenerate: () => void;
 }) {
   const { batch, lastOutcome } = view.generation;
+  const text = batch === null ? null : batchStateText(batch);
   const failed =
     batch === null && lastOutcome?.trigger === "feedback_batch" && lastOutcome.status === "failed";
   return (
     <>
       <div role="status" aria-live="polite">
-        {batch === null ? null : <Text>{batchStateText(batch)}</Text>}
+        {text === null ? null : <Text>{text}</Text>}
       </div>
       {failed ? (
         <Banner
