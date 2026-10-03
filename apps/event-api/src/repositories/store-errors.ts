@@ -1,3 +1,4 @@
+import { driverErrorCode } from "../persistence/mysql-errors.js";
 import { AppError } from "../shared/app-error.js";
 
 const CONNECTION_ERROR_CODES = new Set([
@@ -8,21 +9,25 @@ const CONNECTION_ERROR_CODES = new Set([
   "EHOSTUNREACH",
   "ENOTFOUND",
   "PROTOCOL_CONNECTION_LOST",
-  "PROTOCOL_SEQUENCE_TIMEOUT",
   "ER_CON_COUNT_ERROR",
   "ER_SERVER_SHUTDOWN",
 ]);
 
-function errorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null) return undefined;
-  if ("code" in error && typeof error.code === "string") return error.code;
-  if ("driverError" in error) return errorCode(error.driverError);
-  return undefined;
-}
+/** Lock waits, deadlocks and mysql2's per-query timeout: the store is up but cannot answer in time. */
+const BUSY_ERROR_CODES = new Set([
+  "ER_LOCK_WAIT_TIMEOUT", // 1205
+  "ER_LOCK_DEADLOCK", // 1213
+  "PROTOCOL_SEQUENCE_TIMEOUT", // mysql2 `timeout` (MYSQL_QUERY_TIMEOUT_MS)
+]);
 
 export function isConnectionError(error: unknown): boolean {
-  const code = errorCode(error);
+  const code = driverErrorCode(error);
   return code !== undefined && CONNECTION_ERROR_CODES.has(code);
+}
+
+export function isBusyError(error: unknown): boolean {
+  const code = driverErrorCode(error);
+  return code !== undefined && BUSY_ERROR_CODES.has(code);
 }
 
 export function storeUnavailable(cause: unknown): AppError {
@@ -31,10 +36,17 @@ export function storeUnavailable(cause: unknown): AppError {
   });
 }
 
-/** Database failures become typed errors: connection loss is 503, anything else is 500. */
+export function storeBusy(cause: unknown): AppError {
+  return new AppError("STORE_UNAVAILABLE", "The event store is busy. Try again shortly.", {
+    cause,
+  });
+}
+
+/** Database failures become typed errors: connection loss and timeouts are 503, anything else is 500. */
 export function toStoreError(error: unknown): AppError {
   if (error instanceof AppError) return error;
   if (isConnectionError(error)) return storeUnavailable(error);
+  if (isBusyError(error)) return storeBusy(error);
   return new AppError("INTERNAL", "The event store could not complete the request.", {
     cause: error,
   });

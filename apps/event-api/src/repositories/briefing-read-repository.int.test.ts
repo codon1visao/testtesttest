@@ -12,7 +12,7 @@ import {
   OTHER_GENERATION_FIXTURE_ID,
   putPreviewSlot,
 } from "../testing/sql-fixtures.js";
-import { silentLogger } from "../testing/test-config.js";
+import { integrationConfig, silentLogger } from "../testing/test-config.js";
 import { TypeOrmUnitOfWork } from "./typeorm-unit-of-work.js";
 
 const E101 = SUPPLIED_EVENT.id;
@@ -21,7 +21,9 @@ let uow: TypeOrmUnitOfWork;
 
 beforeAll(async () => {
   dataSource = await openTestDataSource();
-  uow = new TypeOrmUnitOfWork(dataSource, silentLogger);
+  uow = new TypeOrmUnitOfWork(dataSource, silentLogger, {
+    queryTimeoutMs: integrationConfig().mysqlQueryTimeoutMs,
+  });
 });
 afterAll(async () => {
   await dataSource.destroy();

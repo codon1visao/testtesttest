@@ -40,7 +40,8 @@ export async function composeEventApi(
   config: AppConfig,
   { logger, clock = systemClock }: ComposeOptions,
 ): Promise<EventApi> {
-  const dataSource = createDataSource(config.mysqlUrl);
+  const queryTimeoutMs = config.mysqlQueryTimeoutMs;
+  const dataSource = createDataSource(config.mysqlUrl, { queryTimeoutMs });
   await dataSource.initialize();
   try {
     await bootstrapStore(dataSource, logger, clock.now());
@@ -51,7 +52,7 @@ export async function composeEventApi(
 
   const redis = createRedisClient(config.redisUrl, logger);
   await settleInitialConnection(redis);
-  const uow = new TypeOrmUnitOfWork(dataSource, logger);
+  const uow = new TypeOrmUnitOfWork(dataSource, logger, { queryTimeoutMs });
   const cache = new RedisEventViewCache(redis, logger);
   const bypass = new CacheBypass();
   const notifier = new InProcessChangeNotifier(logger);

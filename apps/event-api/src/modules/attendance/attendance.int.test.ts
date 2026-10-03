@@ -213,4 +213,31 @@ describe("PUT /api/events/:eventId/attendance", () => {
       .send({ baseAttendanceRevision: 0, members: roster() });
     expect(res.status).toBe(404);
   });
+
+  it("answers 503 STORE_UNAVAILABLE while the event row stays locked, then saves once it is free", async () => {
+    const busy = await composeEventApi(integrationConfig({ mysqlQueryTimeoutMs: 1_000 }), {
+      logger: silentLogger,
+    });
+    const holder = dataSource.createQueryRunner();
+    const body = { baseAttendanceRevision: 0, members: roster({ M03: "attended" }) };
+    try {
+      await holder.startTransaction();
+      await holder.query("SELECT id FROM events WHERE id = ? FOR UPDATE", [E101]);
+      const started = Date.now();
+      const blocked = await save(body, busy.app).timeout(10_000);
+      expect(blocked.status).toBe(503);
+      expect(errorCodeOf(blocked)).toBe("STORE_UNAVAILABLE");
+      expect(Date.now() - started).toBeLessThan(3_000);
+      expect(await revision()).toBe(0);
+
+      await holder.rollbackTransaction();
+      const saved = await save(body, busy.app).timeout(10_000);
+      expect(saved.status).toBe(200);
+      expect(SaveAttendanceResponseSchema.parse(saved.body).attendanceRevision).toBe(1);
+    } finally {
+      if (holder.isTransactionActive) await holder.rollbackTransaction();
+      await holder.release();
+      await busy.close();
+    }
+  });
 });

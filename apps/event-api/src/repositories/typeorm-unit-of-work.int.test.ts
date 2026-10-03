@@ -6,18 +6,20 @@ import {
   SUPPLIED_MEMBERS,
 } from "@event-desk/contracts";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { DataSource, EntityManager } from "typeorm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDataSource } from "../persistence/data-source.js";
+import type { DataSource, EntityManager, QueryRunner } from "typeorm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TransactionScope } from "../ports/unit-of-work.js";
+import { createDataSource, MYSQL_POOL_SIZE } from "../persistence/data-source.js";
 import { AppError } from "../shared/app-error.js";
 import { openTestDataSource, truncateAllTables } from "../testing/database.js";
 import { insertEventFixture } from "../testing/sql-fixtures.js";
-import { silentLogger, testMysqlUrl } from "../testing/test-config.js";
+import { integrationConfig, silentLogger, testMysqlUrl } from "../testing/test-config.js";
 import { TypeOrmUnitOfWork } from "./typeorm-unit-of-work.js";
 
 const E101 = SUPPLIED_EVENT.id;
 const E999 = EventIdSchema.parse("E999");
 const M03 = MemberIdSchema.parse("M03");
+const { mysqlQueryTimeoutMs } = integrationConfig();
 let dataSource: DataSource;
 let uow: TypeOrmUnitOfWork;
 
@@ -31,7 +33,7 @@ const chrisStatus = async () => {
 
 beforeAll(async () => {
   dataSource = await openTestDataSource();
-  uow = new TypeOrmUnitOfWork(dataSource, silentLogger);
+  uow = new TypeOrmUnitOfWork(dataSource, silentLogger, { queryTimeoutMs: mysqlQueryTimeoutMs });
 });
 afterAll(async () => {
   await dataSource.destroy();
@@ -41,13 +43,37 @@ beforeEach(async () => {
   await insertEventFixture(dataSource);
 });
 
-/** Exposes the manager of the read-only transaction so a test can ask the server about it. */
+/** Exposes the manager of the current transaction so a test can ask the server about it. */
 class ManagerCapturingUnitOfWork extends TypeOrmUnitOfWork {
   captured: EntityManager | undefined;
   protected override readScope(manager: EntityManager) {
     this.captured = manager;
     return super.readScope(manager);
   }
+  protected override transactionScope(
+    manager: EntityManager,
+    effects: (() => Promise<void>)[],
+  ): TransactionScope {
+    this.captured = manager;
+    return super.transactionScope(manager, effects);
+  }
+  manager(): EntityManager {
+    if (this.captured === undefined) throw new Error("manager was not captured");
+    return this.captured;
+  }
+}
+
+/** Opens a data source whose queries time out after `queryTimeoutMs`, and its unit of work. */
+async function openTimedStore(queryTimeoutMs: number) {
+  const store = createDataSource(testMysqlUrl(), { queryTimeoutMs });
+  await store.initialize();
+  return { store, timed: new ManagerCapturingUnitOfWork(store, silentLogger, { queryTimeoutMs }) };
+}
+
+async function connectRunners(store: DataSource, count: number): Promise<QueryRunner[]> {
+  const runners = Array.from({ length: count }, () => store.createQueryRunner());
+  await Promise.all(runners.map((runner) => runner.connect()));
+  return runners;
 }
 
 describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
@@ -186,10 +212,12 @@ describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
   });
 
   it("fails fast with STORE_UNAVAILABLE when the store is gone", async () => {
-    const gone = createDataSource(testMysqlUrl());
+    const gone = createDataSource(testMysqlUrl(), { queryTimeoutMs: mysqlQueryTimeoutMs });
     await gone.initialize();
     await gone.destroy();
-    const unavailable = new TypeOrmUnitOfWork(gone, silentLogger);
+    const unavailable = new TypeOrmUnitOfWork(gone, silentLogger, {
+      queryTimeoutMs: mysqlQueryTimeoutMs,
+    });
     await expect(
       unavailable.readSnapshot((scope) => scope.events.findAggregate(E101)),
     ).rejects.toMatchObject({
@@ -198,14 +226,13 @@ describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
   });
   it("reads a REPEATABLE READ snapshot even when the connection defaults to READ COMMITTED (T4 §6)", async () => {
     // A fresh pool holds one connection, so sequential calls reuse it and the session setting sticks.
-    const single = createDataSource(testMysqlUrl());
+    const single = createDataSource(testMysqlUrl(), { queryTimeoutMs: mysqlQueryTimeoutMs });
     await single.initialize();
     try {
-      const capturing = new ManagerCapturingUnitOfWork(single, silentLogger);
-      const managerInTransaction = (): EntityManager => {
-        if (capturing.captured === undefined) throw new Error("manager was not captured");
-        return capturing.captured;
-      };
+      const capturing = new ManagerCapturingUnitOfWork(single, silentLogger, {
+        queryTimeoutMs: mysqlQueryTimeoutMs,
+      });
+      const managerInTransaction = () => capturing.manager();
       await capturing.readSnapshot(async () => {
         await managerInTransaction().query(
           "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
@@ -233,6 +260,79 @@ describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
       expect(names.after).toBe(names.before);
     } finally {
       await single.destroy();
+    }
+  });
+});
+
+describe("TypeOrmUnitOfWork deadlines (MYSQL_QUERY_TIMEOUT_MS)", () => {
+  it("bounds row-lock waits in every write transaction by the query timeout, in whole seconds", async () => {
+    const { store, timed } = await openTimedStore(1_500);
+    try {
+      const seconds = await timed.run(async (tx) => {
+        await tx.events.lockForUpdate(E101);
+        const [row] = await timed
+          .manager()
+          .query<{ seconds: number }[]>("SELECT @@session.innodb_lock_wait_timeout AS seconds");
+        return Number(row?.seconds);
+      });
+      expect(seconds).toBe(2);
+    } finally {
+      await store.destroy();
+    }
+  });
+
+  it("abandons a query that outlives the timeout without waiting for it, and discards its connection", async () => {
+    const consoleSpies = (["log", "warn", "error"] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => undefined),
+    );
+    const { store, timed } = await openTimedStore(500);
+    try {
+      const started = Date.now();
+      const failure = timed.readSnapshot(() =>
+        timed.manager().query("SELECT SLEEP(?) AS slept, ? AS note", [3, "Secret feedback text"]),
+      );
+      await expect(failure).rejects.toMatchObject({
+        code: "STORE_UNAVAILABLE",
+        message: "The event store is busy. Try again shortly.",
+      });
+      // A rollback queued behind the sleeping query would only answer after 3 s.
+      expect(Date.now() - started).toBeLessThan(1_500);
+
+      const next = Date.now();
+      expect(await timed.readSnapshot((scope) => scope.events.findAggregate(E101))).not.toBeNull();
+      // The pool must not hand out the connection that is still busy sleeping.
+      expect(Date.now() - next).toBeLessThan(1_000);
+      // TypeORM logs slow queries with their parameters to the console unless told not to.
+      for (const spy of consoleSpies) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of consoleSpies) spy.mockRestore();
+      await store.destroy();
+    }
+  });
+
+  it("stops waiting for a pooled connection at the deadline, and returns it once it arrives", async () => {
+    const { store, timed } = await openTimedStore(500);
+    let held = await connectRunners(store, MYSQL_POOL_SIZE);
+    try {
+      const started = Date.now();
+      await expect(
+        timed.readSnapshot((scope) => scope.events.findAggregate(E101)),
+      ).rejects.toMatchObject({
+        code: "STORE_UNAVAILABLE",
+        message: "The event store is busy. Try again shortly.",
+      });
+      expect(Date.now() - started).toBeLessThan(1_500);
+
+      await Promise.all(held.map((runner) => runner.release()));
+      await sleep(50);
+      // The late connection went back to the pool: the whole pool can be checked out again.
+      held = await Promise.race([
+        connectRunners(store, MYSQL_POOL_SIZE),
+        sleep(2_000).then(() => Promise.reject(new Error("a pooled connection leaked"))),
+      ]);
+    } finally {
+      await Promise.all(held.map((runner) => runner.release()));
+      await store.destroy();
     }
   });
 });

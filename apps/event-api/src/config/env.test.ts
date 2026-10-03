@@ -13,6 +13,7 @@ describe("loadConfig", () => {
       allowedOrigins: ["http://localhost:5173"],
       allowedHosts: ["localhost", "127.0.0.1", "[::1]"],
       eventViewCacheTtlMs: 30_000,
+      mysqlQueryTimeoutMs: 5_000,
       logLevel: "info",
     });
   });
@@ -23,10 +24,18 @@ describe("loadConfig", () => {
       PORT: "4100",
       ALLOWED_ORIGINS: "http://localhost:5173, http://127.0.0.1:5173",
       EVENT_VIEW_CACHE_TTL_MS: "0",
+      MYSQL_QUERY_TIMEOUT_MS: "1500",
     });
     expect(config.port).toBe(4100);
     expect(config.allowedOrigins).toEqual(["http://localhost:5173", "http://127.0.0.1:5173"]);
     expect(config.eventViewCacheTtlMs).toBe(0);
+    expect(config.mysqlQueryTimeoutMs).toBe(1_500);
+  });
+
+  it.each(["499", "60001", "2.5"])("rejects MYSQL_QUERY_TIMEOUT_MS=%s", (value) => {
+    expect(() => loadConfig({ MYSQL_URL, MYSQL_QUERY_TIMEOUT_MS: value })).toThrow(
+      /MYSQL_QUERY_TIMEOUT_MS/,
+    );
   });
 
   it("refuses to bind anywhere but loopback (S1)", () => {

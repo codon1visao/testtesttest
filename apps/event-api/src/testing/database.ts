@@ -1,12 +1,14 @@
 import type { DataSource } from "typeorm";
 import { createDataSource } from "../persistence/data-source.js";
 import { SCHEMA_TABLES_CHILD_FIRST } from "../persistence/migrations/1790985600000-initial-schema.js";
-import { testMysqlUrl } from "./test-config.js";
+import { integrationConfig, testMysqlUrl } from "./test-config.js";
 
 export const APPLICATION_TABLES = SCHEMA_TABLES_CHILD_FIRST;
 
 export async function openTestDataSource(): Promise<DataSource> {
-  const dataSource = createDataSource(testMysqlUrl());
+  const dataSource = createDataSource(testMysqlUrl(), {
+    queryTimeoutMs: integrationConfig().mysqlQueryTimeoutMs,
+  });
   await dataSource.initialize();
   return dataSource;
 }

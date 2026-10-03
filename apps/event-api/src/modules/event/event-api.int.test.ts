@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { composeEventApi, type EventApi } from "../../compose.js";
 import { eventViewKey } from "../../integrations/redis-keys.js";
 import { openTestDataSource, truncateAllTables } from "../../testing/database.js";
+import { startFreezableTcpProxy } from "../../testing/freezable-tcp-proxy.js";
 import { errorCodeOf } from "../../testing/http.js";
 import { clearApplicationKeys, openTestRedis } from "../../testing/redis.js";
 import {
@@ -18,7 +19,7 @@ import {
   insertGenerationFixture,
   putPreviewSlot,
 } from "../../testing/sql-fixtures.js";
-import { integrationConfig, silentLogger } from "../../testing/test-config.js";
+import { integrationConfig, silentLogger, testMysqlUrl } from "../../testing/test-config.js";
 
 const E101 = SUPPLIED_EVENT.id;
 let dataSource: DataSource;
@@ -130,6 +131,64 @@ describe("degraded stores", () => {
     expect(res.status).toBe(503);
     expect(errorCodeOf(res)).toBe("STORE_UNAVAILABLE");
     expect(JSON.stringify(res.body)).not.toMatch(/stack|SELECT|mysql:\/\//i);
+  });
+
+  /** An API whose MySQL traffic runs through a proxy the test can freeze; warmed with one read. */
+  async function withStallableApi(
+    use: (stallable: EventApi, freeze: () => void) => Promise<void>,
+  ): Promise<void> {
+    const mysqlUrl = new URL(testMysqlUrl());
+    const proxy = await startFreezableTcpProxy({
+      host: mysqlUrl.hostname,
+      port: Number(mysqlUrl.port || "3306"),
+    });
+    mysqlUrl.host = proxy.address;
+    let stallable: EventApi | undefined;
+    try {
+      stallable = await composeEventApi(
+        integrationConfig({ mysqlUrl: mysqlUrl.toString(), mysqlQueryTimeoutMs: 1_000 }),
+        { logger: silentLogger },
+      );
+      expect((await getEvent(stallable.app)).status).toBe(200);
+      await use(stallable, () => {
+        proxy.freeze();
+      });
+    } finally {
+      proxy.thaw();
+      await stallable?.close();
+      await proxy.close();
+    }
+  }
+
+  async function expectFastStoreUnavailable(stallable: EventApi): Promise<void> {
+    const started = Date.now();
+    const res = await getEvent(stallable.app).timeout(10_000);
+    expect({ status: res.status, code: errorCodeOf(res) }).toEqual({
+      status: 503,
+      code: "STORE_UNAVAILABLE",
+    });
+    expect(Date.now() - started).toBeLessThan(3_000);
+  }
+
+  it("answers 503 STORE_UNAVAILABLE within the query timeout when MySQL stops answering", async () => {
+    await withStallableApi(async (stallable, freeze) => {
+      freeze();
+      await stallable.changes.publish(E101);
+      await expectFastStoreUnavailable(stallable);
+      // Again: the second read must not borrow the connection still waiting on the first.
+      await expectFastStoreUnavailable(stallable);
+    });
+  });
+
+  it("reports MySQL down while it is stalled, without leaving the probe's connection in the pool", async () => {
+    await withStallableApi(async (stallable, freeze) => {
+      freeze();
+      await stallable.changes.publish(E101);
+      const health = await request(stallable.app).get("/api/health").timeout(10_000);
+      expect(health.status).toBe(503);
+      expect(health.body).toMatchObject({ mysql: "down" });
+      await expectFastStoreUnavailable(stallable);
+    });
   });
 
   it("fails startup clearly, without seeding, when MySQL is unreachable", async () => {

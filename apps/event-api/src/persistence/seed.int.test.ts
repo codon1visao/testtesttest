@@ -8,7 +8,7 @@ import type { DataSource } from "typeorm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { TypeOrmUnitOfWork } from "../repositories/typeorm-unit-of-work.js";
 import { openTestDataSource, truncateAllTables } from "../testing/database.js";
-import { silentLogger } from "../testing/test-config.js";
+import { integrationConfig, silentLogger } from "../testing/test-config.js";
 import { seedIfMissing } from "./seed.js";
 import { bootstrapStore } from "./store-bootstrap.js";
 
@@ -23,7 +23,9 @@ const countOf = async (table: string) => {
 
 beforeAll(async () => {
   dataSource = await openTestDataSource();
-  uow = new TypeOrmUnitOfWork(dataSource, silentLogger);
+  uow = new TypeOrmUnitOfWork(dataSource, silentLogger, {
+    queryTimeoutMs: integrationConfig().mysqlQueryTimeoutMs,
+  });
 });
 afterAll(async () => {
   await dataSource.destroy();

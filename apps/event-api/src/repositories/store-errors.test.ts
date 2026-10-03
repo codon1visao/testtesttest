@@ -17,6 +17,25 @@ describe("toStoreError", () => {
       );
       expect(direct.code).toBe("STORE_UNAVAILABLE");
       expect(wrapped.code).toBe("STORE_UNAVAILABLE");
+      expect(direct.message).toBe("The event store is unavailable. Try again shortly.");
+    },
+  );
+
+  it.each([
+    ["ER_LOCK_WAIT_TIMEOUT", 1205],
+    ["ER_LOCK_DEADLOCK", 1213],
+    ["PROTOCOL_SEQUENCE_TIMEOUT", undefined],
+  ])(
+    "maps %s (a lock wait, deadlock or query timeout) to a busy STORE_UNAVAILABLE",
+    (code, errno) => {
+      const driverError = Object.assign(new Error("x"), { code, errno });
+      const direct = toStoreError(driverError);
+      const wrapped = toStoreError(Object.assign(new Error("query failed"), { driverError }));
+      for (const error of [direct, wrapped]) {
+        expect(error.code).toBe("STORE_UNAVAILABLE");
+        expect(error.message).toBe("The event store is busy. Try again shortly.");
+      }
+      expect(direct.cause).toBe(driverError);
     },
   );
 

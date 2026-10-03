@@ -17,6 +17,7 @@ export function integrationConfig(overrides: Partial<AppConfig> = {}): AppConfig
     allowedOrigins: ["http://localhost:5173"],
     allowedHosts: ["127.0.0.1", "localhost"],
     eventViewCacheTtlMs: 30_000,
+    mysqlQueryTimeoutMs: 5_000,
     logLevel: "silent",
     ...overrides,
   };

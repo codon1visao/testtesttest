@@ -34,6 +34,7 @@ const EnvSchema = z.object({
   ALLOWED_ORIGINS: csv("http://localhost:5173"),
   ALLOWED_HOSTS: csv("localhost,127.0.0.1,[::1]"),
   EVENT_VIEW_CACHE_TTL_MS: z.coerce.number().int().min(0).max(300_000).default(30_000),
+  MYSQL_QUERY_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
   LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
 });
 
@@ -45,6 +46,8 @@ export interface AppConfig {
   allowedOrigins: string[];
   allowedHosts: string[];
   eventViewCacheTtlMs: number;
+  /** Per-query deadline; also bounds lock waits and waiting for a pooled connection. */
+  mysqlQueryTimeoutMs: number;
   logLevel: LogLevel;
 }
 
@@ -74,6 +77,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowedOrigins: e.ALLOWED_ORIGINS,
     allowedHosts: e.ALLOWED_HOSTS,
     eventViewCacheTtlMs: e.EVENT_VIEW_CACHE_TTL_MS,
+    mysqlQueryTimeoutMs: e.MYSQL_QUERY_TIMEOUT_MS,
     logLevel: e.LOG_LEVEL,
   };
 }

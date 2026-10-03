@@ -1,6 +1,6 @@
 import { createConnection } from "mysql2/promise";
 import { createDataSource } from "../persistence/data-source.js";
-import { testMysqlUrl } from "./test-config.js";
+import { integrationConfig, testMysqlUrl } from "./test-config.js";
 
 /** Recreates event_desk_test once per integration run and applies the migrations. */
 export default async function setup(): Promise<void> {
@@ -20,7 +20,9 @@ export default async function setup(): Promise<void> {
   } finally {
     await connection.end();
   }
-  const dataSource = createDataSource(url.toString());
+  const dataSource = createDataSource(url.toString(), {
+    queryTimeoutMs: integrationConfig().mysqlQueryTimeoutMs,
+  });
   await dataSource.initialize();
   try {
     await dataSource.runMigrations({ transaction: "none" });
