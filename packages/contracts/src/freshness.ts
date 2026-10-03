@@ -16,6 +16,9 @@ export const FreshnessSchema = z.strictObject({
 });
 export type Freshness = z.infer<typeof FreshnessSchema>;
 
+/** One member whose saved status differs from a snapshot (also the shape of an attendance diff). */
+export type AttendanceChange = Freshness["attendanceChanges"][number];
+
 /** What a generation captured: per-member statuses and the note set it read. */
 export interface FreshnessBaseline {
   attendance: readonly MemberAttendance[];

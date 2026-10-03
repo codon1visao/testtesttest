@@ -10,6 +10,7 @@ describe("error codes (T3 §5)", () => {
     ["VALIDATION_FAILED", 400],
     ["ORIGIN_REJECTED", 403],
     ["EVENT_NOT_FOUND", 404],
+    ["NOT_FOUND", 404],
     ["ATTENDANCE_CONFLICT", 409],
     ["GENERATION_NOT_AVAILABLE", 409],
     ["REFERENCE_INVALID", 422],

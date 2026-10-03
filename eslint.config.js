@@ -21,6 +21,10 @@ export default defineConfig(
       "@typescript-eslint/no-import-type-side-effects": "error",
       "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
       "@typescript-eslint/switch-exhaustiveness-check": "error",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
   {
@@ -30,5 +34,9 @@ export default defineConfig(
   {
     files: ["spikes/**"],
     rules: { "no-console": "off", "@typescript-eslint/require-await": "off" },
+  },
+  {
+    files: ["apps/*/src/scripts/**"],
+    rules: { "no-console": "off" },
   },
 );
