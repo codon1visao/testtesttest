@@ -16,10 +16,11 @@ import { storeBusy, storeUnavailable, toStoreError } from "./store-errors.js";
 type Effect = () => Promise<void>;
 
 /**
- * Commits, then runs the after-commit effects. If COMMIT itself fails its outcome is unknown (a
- * timeout may follow a COMMIT the server applied): run them anyway, then rethrow. The effects
- * flush cached views, which is safe when nothing changed (T3 §7). `commit` must reject only for
- * a failed COMMIT, never for failed work: work errors leave no effects to run.
+ * Commits, then runs the after-commit effects. If `commit` rejects, the COMMIT may still have
+ * reached the server (a timeout after the server applied it), so the effects run anyway, then the
+ * error is rethrown. The effects flush cached views, which is safe when nothing changed (T3 §7).
+ * `commit` may reject for any reason, provided effects are collected only by work that reached
+ * COMMIT: `run()` discards the effects of work that failed before it.
  */
 export async function commitThenEffects<T>(
   commit: () => Promise<T>,

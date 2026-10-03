@@ -72,6 +72,7 @@ function setup(
       return Promise.resolve();
     },
     hasNewerReadyJob: () => Promise.resolve(false),
+    isShuttingDown: () => false,
     ...overrides,
   });
   return { processor, job, events, generation, publish, releaseManual };
@@ -117,6 +118,26 @@ describe("BatchGenerationProcessor (T5 §3, F7)", () => {
       "phase:generating",
       `generate:${new Date(NOW.getTime() + 60_000).toISOString()}`,
     ]);
+  });
+
+  it("T3 §10: a shutdown that starts while waiting for a manual run parks the job without a call", async () => {
+    const { processor, job, events, generation, releaseManual } = setup({ manualRunning: true });
+    let shuttingDown = false;
+    let settled = false;
+    void processor.handle(job({ isShuttingDown: () => shuttingDown })).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => {
+      expect(events).toEqual(["phase:waiting", "whenIdle"]);
+    });
+    shuttingDown = true;
+    releaseManual();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Never finished, failed or recorded: the job stalls and resumes on the next start.
+    expect(settled).toBe(false);
+    expect(generation.generateBatch).not.toHaveBeenCalled();
+    expect(generation.recordBatchOutcome).not.toHaveBeenCalled();
+    expect(events).toEqual(["phase:waiting", "whenIdle"]);
   });
 
   it("F7-12: a temporary failure retries after the provider's wait", async () => {

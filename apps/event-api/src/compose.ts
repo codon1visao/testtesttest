@@ -1,5 +1,4 @@
 import type { Express } from "express";
-import { setTimeout as sleep } from "node:timers/promises";
 import { createApp } from "./app.js";
 import type { AppConfig } from "./config/env.js";
 import { createRedisClient, settleInitialConnection } from "./integrations/redis-client.js";
@@ -39,13 +38,14 @@ import type { Clock } from "./ports/clock.js";
 import type { IdGenerator } from "./ports/id-generator.js";
 import { TypeOrmUnitOfWork } from "./repositories/typeorm-unit-of-work.js";
 import type { Logger } from "./shared/logger.js";
+import { closeApiResources } from "./shutdown.js";
 
 export interface EventApi {
   readonly app: Express;
   readonly changes: EventChangePublisher;
   /** Ends every open change stream; the HTTP server cannot close while one is open. */
   stopStreams(): void;
-  /** Ends streams, stops the worker, drains manual runs, then closes the stores (T3 §10). */
+  /** Ends streams, stops the worker while manual runs drain, then closes the stores (T3 §10). */
   close(): Promise<void>;
 }
 
@@ -170,16 +170,21 @@ export async function composeEventApi(
     stopStreams() {
       hub.closeAll();
     },
-    async close() {
-      hub.closeAll();
-      await batchQueue.close();
-      // A manual run records its outcome before the stores go away (carry-forward from Plan 4).
-      await Promise.race([
-        manualGeneration.whenAllIdle(),
-        sleep(MANUAL_DRAIN_MS, undefined, { ref: false }),
-      ]);
-      redis.disconnect();
-      await dataSource.destroy();
+    close() {
+      return closeApiResources({
+        logger,
+        stopStreams: () => {
+          hub.closeAll();
+        },
+        closeBatchQueue: () => batchQueue.close(),
+        // A manual run records its outcome before the stores go away (carry-forward from Plan 4).
+        whenManualIdle: () => manualGeneration.whenAllIdle(),
+        manualDrainMs: MANUAL_DRAIN_MS,
+        closeRedis: () => {
+          redis.disconnect();
+        },
+        closeDatabase: () => dataSource.destroy(),
+      });
     },
   };
 }

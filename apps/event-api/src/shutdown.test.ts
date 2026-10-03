@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLogger } from "./shared/logger.js";
-import { gracefulShutdown } from "./shutdown.js";
+import { closeApiResources, gracefulShutdown } from "./shutdown.js";
 
 function setup() {
   const lines: string[] = [];
@@ -66,5 +66,72 @@ describe("gracefulShutdown", () => {
     });
     shutdown("SIGTERM");
     expect(order).toEqual(["streams", "server"]);
+  });
+});
+
+describe("closeApiResources (T3 §10)", () => {
+  const after = (ms: number) =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+
+  function resources(overrides: {
+    closeBatchQueue?: () => Promise<void>;
+    whenManualIdle?: () => Promise<void>;
+  }) {
+    const order: string[] = [];
+    const lines: string[] = [];
+    return {
+      order,
+      lines,
+      value: {
+        logger: createLogger("info", { write: (chunk: string) => void lines.push(chunk) }),
+        stopStreams: () => void order.push("streams"),
+        closeBatchQueue: overrides.closeBatchQueue ?? (() => Promise.resolve()),
+        whenManualIdle: overrides.whenManualIdle ?? (() => Promise.resolve()),
+        closeRedis: () => void order.push("redis"),
+        closeDatabase: () => {
+          order.push("database");
+          return Promise.resolve();
+        },
+        manualDrainMs: 8_000,
+      },
+    };
+  }
+
+  it("closes the batch queue and drains manual runs in parallel, within the grace period", async () => {
+    vi.useFakeTimers();
+    const r = resources({
+      closeBatchQueue: () => after(5_000).then(() => void r.order.push("queue")),
+      whenManualIdle: () => after(6_000).then(() => void r.order.push("manual")),
+    });
+    let closed = false;
+    void closeApiResources(r.value).then(() => {
+      closed = true;
+    });
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(closed).toBe(true);
+    expect(r.order).toEqual(["streams", "queue", "manual", "redis", "database"]);
+  });
+
+  it("stops waiting for manual runs after the drain bound", async () => {
+    vi.useFakeTimers();
+    const r = resources({ whenManualIdle: () => new Promise<void>(() => undefined) });
+    let closed = false;
+    void closeApiResources(r.value).then(() => {
+      closed = true;
+    });
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(closed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(closed).toBe(true);
+    expect(r.order).toEqual(["streams", "redis", "database"]);
+  });
+
+  it("still closes the stores when the batch queue fails to close, and logs it", async () => {
+    const r = resources({ closeBatchQueue: () => Promise.reject(new Error("queue close failed")) });
+    await closeApiResources(r.value);
+    expect(r.order).toEqual(["streams", "redis", "database"]);
+    expect(r.lines.join("")).toContain("batch queue did not close cleanly");
   });
 });

@@ -30,8 +30,12 @@ const FIRST_CONNECTION_TIMEOUT_MS = 2_000;
 /** `status` is read by every event view, which must answer quickly while Redis is down (T3 §7). */
 const STATUS_FIRST_CONNECTION_TIMEOUT_MS = 250;
 
-/** How long shutdown waits for the worker's active job, and then for the queue connection. */
-const CLOSE_TIMEOUT_MS = 5_000;
+/**
+ * Shutdown waits this long for the worker's active job, then this long for the producer
+ * connection: 7 s at most, inside the 8 s manual drain that runs alongside (T3 §10).
+ */
+const WORKER_CLOSE_TIMEOUT_MS = 5_000;
+const QUEUE_CLOSE_TIMEOUT_MS = 2_000;
 
 /** True when `promise` resolves within `timeoutMs`; false when it is still pending. Rejections pass through. */
 async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
@@ -88,6 +92,8 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
   private worker: Worker<JobData> | null = null;
   /** Both worker connections came up at least once, so it may hold a job. */
   private workerReady = false;
+  /** close() has started: the running job must not start a Gateway call. */
+  private closing = false;
 
   constructor(private readonly options: BullMqBatchQueueOptions) {
     this.queue = new Queue<JobData>(QUEUE_NAME, {
@@ -200,26 +206,28 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
   }
 
   /**
-   * Waits up to 5 s for the active job, then stops waiting: BullMQ 6.3.11's `close(true)` after a
-   * pending graceful close returns that same promise, so forcing cannot shorten it. An abandoned
-   * job keeps its lock until the process exits, then stalls and re-runs with its dispatch marker
-   * (the crash path, T5 §3).
+   * Tells the running job that shutdown has started, waits up to 5 s for it, then stops waiting:
+   * BullMQ 6.3.11's `close(true)` after a pending graceful close returns that same promise, so
+   * forcing cannot shorten it. An abandoned job keeps its lock until the process exits, then
+   * stalls and re-runs with its dispatch marker (the crash path, T5 §3). The producer connection
+   * then gets 2 s.
    */
   async close(): Promise<void> {
     const { logger } = this.options;
+    this.closing = true;
     try {
       // BullMQ also waits forever for worker connections that never came up; a worker that never
       // connected holds no job: force it.
       const worker = this.worker?.close(!this.workerReady);
-      if (worker !== undefined && !(await settlesWithin(worker, CLOSE_TIMEOUT_MS))) {
+      if (worker !== undefined && !(await settlesWithin(worker, WORKER_CLOSE_TIMEOUT_MS))) {
         logger.warn(
-          { timeoutMs: CLOSE_TIMEOUT_MS },
+          { timeoutMs: WORKER_CLOSE_TIMEOUT_MS },
           "batch worker still busy at shutdown; its job will re-run after a stall",
         );
       }
     } finally {
-      if (!(await settlesWithin(this.queue.close(), CLOSE_TIMEOUT_MS))) {
-        logger.warn({ timeoutMs: CLOSE_TIMEOUT_MS }, "batch queue did not close in time");
+      if (!(await settlesWithin(this.queue.close(), QUEUE_CLOSE_TIMEOUT_MS))) {
+        logger.warn({ timeoutMs: QUEUE_CLOSE_TIMEOUT_MS }, "batch queue did not close in time");
       }
     }
   }
@@ -287,6 +295,7 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
           hasNewerReadyJob(current, jobs, this.options.clock.now().getTime())
         );
       },
+      isShuttingDown: () => this.closing,
     };
     let step: BatchStep;
     try {

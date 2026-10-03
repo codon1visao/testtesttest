@@ -57,8 +57,12 @@ export class BatchGenerationProcessor implements BatchJobHandler {
     if (this.deps.manual.manualStatus(eventId) !== null) {
       await job.reportPhase("waiting"); // F7 "Waiting"; then the nothing-new check usually skips (F7-07)
       await this.deps.manual.whenIdle(eventId);
+      // SIGTERM while waiting: the paid call would start in a process about to exit, a certain
+      // AI_OUTCOME_UNKNOWN. The job stays "waiting" and resumes on the next start.
+      if (job.isShuttingDown()) return this.parkUntilExit(job);
       await job.reportPhase("generating");
     }
+    if (job.isShuttingDown()) return this.parkUntilExit(job);
 
     const now = this.deps.clock.now().getTime();
     const executionDeadline = job.firstStartedAt.getTime() + BATCH_EXECUTION_DEADLINE_MS;
@@ -106,6 +110,19 @@ export class BatchGenerationProcessor implements BatchJobHandler {
 
   stateChanged(eventId: EventId): Promise<void> {
     return this.deps.changes.publish(eventId);
+  }
+
+  /**
+   * Never settles: the job is neither finished, failed nor recorded and uses no attempt. The
+   * queue's bounded close stops waiting for it; after the exit it stalls with no dispatch marker
+   * and runs normally on the next start.
+   */
+  private parkUntilExit(job: BatchJobContext): Promise<never> {
+    this.deps.logger.info(
+      { runId: job.runId },
+      "batch job left for the next start (shutting down)",
+    );
+    return new Promise<never>(() => undefined);
   }
 
   private async exhausted(eventId: EventId, runId: RunId): Promise<BatchStep> {

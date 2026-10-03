@@ -266,6 +266,23 @@ describe("BullMqBriefingBatchQueue (T5 §3, spike S-1/S-3/S-4)", () => {
     expect(await queue.status(E101)).toBeNull();
   }, 30_000);
 
+  it("tells the running job once shutdown has started (no new paid call, T3 §10)", async () => {
+    const release = Promise.withResolvers<BatchStep>();
+    const running: BatchJobContext[] = [];
+    const h = handler((job) => {
+      running.push(job);
+      return release.promise;
+    });
+    queue.start(h.value);
+    await queue.schedule(E101);
+    await waitFor(() => running.length === 1, 3_000);
+    expect(running.map((job) => job.isShuttingDown())).toEqual([false]);
+    const closing = queue.close();
+    expect(running.map((job) => job.isShuttingDown())).toEqual([true]);
+    release.resolve({ kind: "done" });
+    await closing;
+  });
+
   it("close stops waiting for an active job after 5 s instead of hanging shutdown", async () => {
     const release = Promise.withResolvers<BatchStep>();
     const h = handler(() => release.promise);

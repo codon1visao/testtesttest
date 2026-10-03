@@ -23,6 +23,8 @@ export interface BatchJobContext {
   reportPhase(phase: "waiting" | "generating"): Promise<void>;
   /** A newer job for the same event is ready to run, so this one is redundant (F7 rule 5). */
   hasNewerReadyJob(): Promise<boolean>;
+  /** The queue is closing (process shutdown): no new Gateway call may start (T3 §10). */
+  isShuttingDown(): boolean;
 }
 
 export type BatchStep = { kind: "done" } | { kind: "retry"; delayMs: number };
@@ -42,6 +44,9 @@ export interface BriefingBatchQueue {
   status(eventId: EventId): Promise<BatchJobStatus | null>;
   /** Starts the single worker (concurrency 1). */
   start(handler: BatchJobHandler): void;
-  /** Closes the worker (waiting for its active job) and the connections. */
+  /**
+   * Signals shutdown to the running job, closes the worker (waiting a bounded time for its active
+   * job) and the connections.
+   */
   close(): Promise<void>;
 }
