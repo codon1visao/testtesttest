@@ -41,8 +41,14 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
 
   function serve(socket: Socket): void {
     const decoder = new FrameDecoder(maxRequestBytes);
-    let answered = false;
+    let linger: NodeJS.Timeout | undefined;
 
+    /** A server-side fault (handler, reject or encoding): the caller sees outcome-unknown, never a guessed reply. */
+    const drop = (): void => {
+      socket.destroy();
+    };
+
+    /** Sends the one reply, then bounds how long the peer may hold the connection open (F8). */
     const reply = (message: RpcMessage, request: RpcMessage | null): void => {
       if (socket.destroyed) return;
       let frame: Buffer;
@@ -56,20 +62,23 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
         );
       }
       socket.end(frame);
+      linger = setTimeout(drop, idleTimeoutMs);
     };
 
     const refuse = (reason: RpcRejectionReason, request: RpcMessage | null): void => {
-      answered = true;
-      clearTimeout(idle);
-      reply(options.reject({ reason, request }), request);
+      stopReading();
+      try {
+        reply(options.reject({ reason, request }), request);
+      } catch {
+        drop();
+      }
     };
 
     const idle = setTimeout(() => {
-      if (!answered) refuse("idle-timeout", null);
+      refuse("idle-timeout", null);
     }, idleTimeoutMs);
 
-    socket.on("data", (chunk: Buffer) => {
-      if (answered) return; // one request per connection: later bytes are ignored
+    const onData = (chunk: Buffer): void => {
       let messages: RpcMessage[];
       try {
         messages = decoder.push(chunk);
@@ -79,32 +88,42 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
       }
       const [first] = messages;
       if (first === undefined) return;
-      answered = true;
-      clearTimeout(idle);
       const { auth, ...request } = first;
       if (!secretsMatch(auth, options.secret)) {
-        reply(options.reject({ reason: "unauthenticated", request }), request);
+        refuse("unauthenticated", request);
         return;
       }
-      options.handle(request).then(
-        (response) => {
+      stopReading();
+      Promise.resolve()
+        .then(() => options.handle(request))
+        .then((response) => {
           reply(response, request);
-        },
-        () => {
-          socket.destroy(); // a handler bug: the caller sees outcome-unknown, never a guessed reply
-        },
-      );
-    });
+        })
+        .catch(drop);
+    };
+
+    /** One request per connection: once answered, later bytes are discarded, never decoded. */
+    function stopReading(): void {
+      clearTimeout(idle);
+      socket.off("data", onData);
+    }
+
+    socket.on("data", onData);
     socket.on("error", () => {
       socket.destroy(); // a broken peer must never crash the server
     });
     socket.on("close", () => {
       clearTimeout(idle);
+      clearTimeout(linger);
     });
   }
 
   const server = createServer(serve);
   server.maxConnections = options.maxConnections ?? 16;
+  server.on("error", () => {
+    // Accept errors after listen (e.g. EMFILE) cost one connection and must not crash the process.
+    // listen() also attaches its own one-shot listener, so its errors still reject.
+  });
 
   return {
     listen(host, port) {

@@ -82,6 +82,65 @@ async function failureOf(promise: Promise<unknown>): Promise<RpcCallError> {
   throw new Error("expected the call to fail");
 }
 
+/** Whether `promise` settles within `ms`; the timer is always cleared so no handle outlives the test. */
+async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(false);
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise.then(() => true), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const GARBAGE = Buffer.concat([Buffer.from([0, 0, 0, 5]), Buffer.from("{oops")]);
+
+/**
+ * A peer without the secret: it sends garbage, reads the malformed reply, then never closes its side
+ * (and, with `keepWriting`, keeps streaming bytes). Resolves once the reply has arrived.
+ */
+async function lingeringPeer(port: number, keepWriting: boolean): Promise<void> {
+  const socket = new Socket({ allowHalfOpen: true });
+  const decoder = new FrameDecoder(128 * 1024);
+  let writer: NodeJS.Timeout | undefined;
+  const stop = () => {
+    clearInterval(writer);
+  };
+  socket.on("error", stop); // the server dropping a writing peer surfaces here as EPIPE/ECONNRESET
+  socket.on("close", stop);
+  cleanups.push(() => {
+    stop();
+    socket.destroy();
+    return Promise.resolve();
+  });
+  await new Promise<void>((resolve) => {
+    socket.on("data", (chunk: Buffer) => {
+      if (decoder.push(chunk).length > 0) resolve();
+    });
+    socket.connect(port, HOST, () => socket.write(GARBAGE));
+  });
+  if (keepWriting) {
+    writer = setInterval(() => {
+      if (socket.writable) socket.write("more bytes");
+    }, 20);
+  }
+}
+
+const echo = (request: RpcMessage): Promise<RpcMessage> =>
+  Promise.resolve({ requestId: request.requestId, echo: request.payload });
+
+async function expectStillServing(port: number): Promise<void> {
+  const client = createRpcClient({ host: HOST, port, secret: SECRET });
+  expect(await client.call({ requestId: "next", payload: "ok" }, soon())).toEqual({
+    requestId: "next",
+    echo: "ok",
+  });
+}
+
 describe("rpc server and client", () => {
   it("round-trips one request; the handler never sees the credential", async () => {
     const { port, handled } = await startServer();
@@ -163,13 +222,18 @@ describe("rpc server and client", () => {
         return { requestId: request.requestId, done: true };
       },
     });
-    const call = createRpcClient({ host: HOST, port, secret: SECRET }).call(
-      { requestId: "r1" },
-      soon(),
-    );
+    const order: string[] = [];
+    const call = createRpcClient({ host: HOST, port, secret: SECRET })
+      .call({ requestId: "r1" }, soon())
+      .then((response) => {
+        order.push("answered");
+        return response;
+      });
     await new Promise((resolve) => setTimeout(resolve, 50));
     await server.close();
+    order.push("closed");
     expect(await call).toEqual({ requestId: "r1", done: true });
+    expect(order).toEqual(["answered", "closed"]);
   });
 });
 
@@ -181,6 +245,20 @@ describe("rpc client failure classification", () => {
       createRpcClient({ host: HOST, port, secret: SECRET }).call({ requestId: "r1" }, soon()),
     );
     expect([error.kind, error.reason]).toEqual(["not-sent", "connect-failed"]);
+  });
+
+  it("T3 §9: is not-sent when the connection is not established within the connect timeout", async () => {
+    // 10.255.255.1 is non-routable: the SYN goes unanswered, so only the connect timer ends the call.
+    const started = Date.now();
+    const client = createRpcClient({
+      host: "10.255.255.1",
+      port: 9,
+      secret: SECRET,
+      connectTimeoutMs: 50,
+    });
+    const error = await failureOf(client.call({ requestId: "r1" }, soon()));
+    expect([error.kind, error.reason]).toEqual(["not-sent", "connect-timeout"]);
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 
   it("is not-sent when the deadline has already passed", async () => {
@@ -234,5 +312,86 @@ describe("rpc client failure classification", () => {
       createRpcClient({ host: HOST, port, secret: SECRET }).call({ requestId: "r1" }, soon()),
     );
     expect(error.kind).toBe("outcome-unknown");
+  });
+});
+
+describe("rpc server connection bounds (F8)", () => {
+  it.each([
+    ["keeps its side open", false],
+    ["keeps writing", true],
+  ])(
+    "a peer that %s after the reply is dropped within the idle timeout, so close() resolves",
+    async (_label, keepWriting) => {
+      const { server, port } = await startServer(); // idleTimeoutMs: 500
+      await lingeringPeer(port, keepWriting);
+      expect(await settlesWithin(server.close(), 1_000)).toBe(true);
+    },
+  );
+
+  it("releases a well-behaved caller's connection at once, not after the linger bound", async () => {
+    const { server, port } = await startServer();
+    await createRpcClient({ host: HOST, port, secret: SECRET }).call({ requestId: "r1" }, soon());
+    expect(await settlesWithin(server.close(), 250)).toBe(true);
+  });
+});
+
+describe("rpc server fault isolation", () => {
+  it("an unserialisable reply drops the connection and the server keeps serving", async () => {
+    const { port } = await startServer({
+      handle: (request) =>
+        request.payload === "bad"
+          ? Promise.resolve({ requestId: request.requestId, n: 1n })
+          : echo(request),
+    });
+    const client = createRpcClient({ host: HOST, port, secret: SECRET });
+    const error = await failureOf(client.call({ requestId: "r1", payload: "bad" }, soon()));
+    expect(error.kind).toBe("outcome-unknown");
+    expect(error.reason).not.toBe("deadline"); // dropped, not left hanging
+    await expectStillServing(port);
+  });
+
+  it("a handler that throws synchronously drops the connection and the server keeps serving", async () => {
+    const { port } = await startServer({
+      handle: (request) => {
+        if (request.payload === "bad") throw new Error("bug");
+        return echo(request);
+      },
+    });
+    const client = createRpcClient({ host: HOST, port, secret: SECRET });
+    const error = await failureOf(client.call({ requestId: "r1", payload: "bad" }, soon()));
+    expect(error.kind).toBe("outcome-unknown");
+    expect(error.reason).not.toBe("deadline");
+    await expectStillServing(port);
+  });
+
+  it("a reject that throws drops refused connections and the server keeps serving", async () => {
+    const { port } = await startServer({
+      reject: () => {
+        throw new Error("bug");
+      },
+    });
+    const wrongSecret = createRpcClient({ host: HOST, port, secret: `${SECRET}-wrong` });
+    const error = await failureOf(wrongSecret.call({ requestId: "r1" }, soon()));
+    expect(error.kind).toBe("outcome-unknown");
+    expect(error.reason).not.toBe("deadline");
+    expect(await rawExchange(port, GARBAGE)).toEqual([]); // malformed
+    expect(await rawExchange(port, Buffer.alloc(0))).toEqual([]); // idle timeout
+    await expectStillServing(port);
+  });
+
+  it("an oversized reply whose rejection is also oversized drops the connection", async () => {
+    const blob = "x".repeat(200 * 1024);
+    const { port } = await startServer({
+      handle: (request) =>
+        request.payload === "bad"
+          ? Promise.resolve({ requestId: request.requestId, blob })
+          : echo(request),
+      reject: (rejection) => ({ requestId: rejection.request?.requestId ?? null, blob }),
+    });
+    const client = createRpcClient({ host: HOST, port, secret: SECRET });
+    const error = await failureOf(client.call({ requestId: "r1", payload: "bad" }, soon()));
+    expect(error.kind).toBe("outcome-unknown");
+    expect(error.reason).not.toBe("deadline");
+    await expectStillServing(port);
   });
 });
