@@ -25,6 +25,25 @@ describe("applyPreviewSelected", () => {
     });
     expect(next.incomingPreview).toEqual(newer);
   });
+
+  it("a late response leaves a different selection the cache already shows (the refetch decides)", () => {
+    const selected = buildBriefingView();
+    const elsewhere = buildBriefingView({
+      provenance: { ...selected.provenance, generationId: OTHER },
+    });
+    const view = buildSeedEventView({ selectedPreview: elsewhere });
+    expect(applyPreviewSelected(view, { selectedPreview: selected })).toBe(view);
+    const empty = buildSeedEventView();
+    expect(applyPreviewSelected(empty, { selectedPreview: selected })).toBe(empty);
+  });
+
+  it("re-applies a response the cache already shows as selected", () => {
+    const selected = buildBriefingView();
+    const next = applyPreviewSelected(buildSeedEventView({ selectedPreview: selected }), {
+      selectedPreview: selected,
+    });
+    expect(next.selectedPreview).toEqual(selected);
+  });
 });
 
 describe("applyBriefingSaved", () => {

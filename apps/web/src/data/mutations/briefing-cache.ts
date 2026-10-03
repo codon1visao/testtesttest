@@ -1,8 +1,18 @@
 import type { EventView, SaveBriefingResponse, SelectPreviewResponse } from "@event-desk/contracts";
 
-/** TX7 moved the incoming preview to selected; a newer incoming preview that arrived meanwhile stays. */
+/**
+ * TX7 moved the incoming preview to selected; a newer incoming preview that arrived meanwhile stays.
+ * A late response the cache has moved past (the generation is neither waiting nor selected there)
+ * changes nothing: the onSettled refetch decides what is selected now.
+ */
 export function applyPreviewSelected(view: EventView, response: SelectPreviewResponse): EventView {
   const selectedId = response.selectedPreview.provenance.generationId;
+  if (
+    view.incomingPreview?.provenance.generationId !== selectedId &&
+    view.selectedPreview?.provenance.generationId !== selectedId
+  ) {
+    return view;
+  }
   return {
     ...view,
     selectedPreview: response.selectedPreview,
