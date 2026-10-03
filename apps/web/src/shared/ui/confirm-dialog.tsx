@@ -7,6 +7,8 @@ interface ConfirmDialogProps {
   actionLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Losing work asks in the destructive style; a confirmation that loses nothing sets this false. */
+  isDestructive?: boolean;
 }
 
 /** Explicit confirmation before losing human work (F2 conflict reload, F5 discard). */
@@ -17,6 +19,7 @@ export function ConfirmDialog({
   actionLabel,
   onConfirm,
   onCancel,
+  isDestructive = true,
 }: ConfirmDialogProps) {
   return (
     <AlertDialog
@@ -28,7 +31,7 @@ export function ConfirmDialog({
       description={description}
       cancelLabel="Cancel"
       actionLabel={actionLabel}
-      actionVariant="destructive"
+      actionVariant={isDestructive ? "destructive" : "primary"}
       onAction={onConfirm}
     />
   );

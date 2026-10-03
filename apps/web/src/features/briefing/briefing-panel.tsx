@@ -2,7 +2,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { VStack } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { Heading } from "@astryxdesign/core/Text";
+import { Heading, Text } from "@astryxdesign/core/Text";
 import type { BriefingView, EventId, EventView, GenerationId } from "@event-desk/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsSavingBriefing } from "../../data/mutations/use-save-briefing";
@@ -105,13 +105,20 @@ export function BriefingPanel({
     pendingFocus.current = null;
     return pending;
   }, []);
-  const onSaved = useCallback(({ reconciled: wasReconciled }: { reconciled: boolean }) => {
-    pendingFocus.current = "remount";
-    setReconciled(wasReconciled);
-  }, []);
+  // The editor stays on the briefing the coordinator just worked on, even when another tab selected
+  // a preview meanwhile; saving a selected preview empties its slot, so the saved briefing shows.
+  const onSaved = useCallback(
+    ({ reconciled: wasReconciled }: { reconciled: boolean }) => {
+      pendingFocus.current = "remount";
+      setReconciled(wasReconciled);
+      if (base !== null) setActiveView(VIEW_OF_SLOT[base.slot]);
+    },
+    [base, setActiveView],
+  );
   const onReset = useCallback(() => {
     pendingFocus.current = "reset";
-  }, []);
+    if (base !== null) setActiveView(VIEW_OF_SLOT[base.slot]);
+  }, [base, setActiveView]);
   // A reset that did not remount the editor leaves its request behind: clear it once the dirty flag
   // settles. A remount on the same commit consumes it first (child effects run before this one).
   useEffect(() => {
@@ -226,6 +233,7 @@ export function BriefingPanel({
         {reconciled ? <Banner status="success" title="Your briefing changes were saved." /> : null}
         {canSwitch ? (
           <div>
+            <Text type="supporting">Briefing to show</Text>
             <SegmentedControl
               label="Briefing to show"
               value={VIEW_OF_SLOT[base.slot]}

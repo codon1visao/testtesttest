@@ -5,6 +5,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { FakeEventApi } from "../../testing/fake-event-api";
+import { FakeEventSource } from "../../testing/fake-event-source";
 import { mswServer } from "../../testing/msw-server";
 import { renderApp } from "../../testing/render-app";
 
@@ -478,6 +479,49 @@ describe("briefing panel", () => {
     expect(
       await region.findByRole("heading", { name: "Generated preview — not saved as briefing" }),
     ).toBeTruthy();
+  });
+
+  it("Plan 4 review: after saving the saved briefing while another tab selected a preview, the editor stays on the saved briefing", async () => {
+    api.view = { ...api.view, savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME } };
+    const { user } = renderApp();
+    const region = await panel();
+    await user.type(region.getByLabelText<HTMLTextAreaElement>("Theme 1"), " Edited.");
+    const other = buildBriefingView({
+      provenance: {
+        ...buildBriefingView().provenance,
+        generationId: GenerationIdSchema.parse("0199a4e8-7c1a-7cc2-9d6e-000000000005"),
+        runId: RunIdSchema.parse("manual:other-tab"),
+      },
+    });
+    api.view = { ...api.view, selectedPreview: other };
+    await waitFor(() => {
+      expect(FakeEventSource.instances.length).toBeGreaterThan(0);
+    });
+    FakeEventSource.instances[0]?.emit("changed", '{"version":2}');
+    await region.findByText(/ready to review/);
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(
+      await region.findByRole("heading", { name: /^Saved briefing · last saved / }),
+    ).toBeTruthy();
+    expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
+      "Requests for more rest-break time. Edited.",
+    );
+  });
+
+  it("shows a visible caption above the preview/saved switch", async () => {
+    api.view = {
+      ...api.view,
+      savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME },
+      selectedPreview: buildBriefingView({
+        provenance: {
+          ...buildBriefingView().provenance,
+          generationId: GenerationIdSchema.parse("0199a4e8-7c1a-7cc2-9d6e-000000000006"),
+          runId: RunIdSchema.parse("manual:sel"),
+        },
+      }),
+    };
+    renderApp();
+    expect(await (await panel()).findByText("Briefing to show")).toBeTruthy();
   });
 });
 

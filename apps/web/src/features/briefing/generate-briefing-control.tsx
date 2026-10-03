@@ -127,6 +127,7 @@ export function GenerateBriefingControl({
         title="Generate again?"
         description="The last attempt may have reached the AI provider and been charged. Check the briefing below first: generating again starts a new paid attempt."
         actionLabel="Generate again"
+        isDestructive={false}
         onCancel={() => {
           setConfirmingRetry(false);
         }}
