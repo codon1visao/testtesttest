@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
+    "dev": "pnpm --filter @event-desk/event-api dev",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
