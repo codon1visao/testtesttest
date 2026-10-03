@@ -251,9 +251,9 @@ CI (GitHub Actions) runs the first three as three jobs on every pull request and
 ## Known limitations
 
 - **One coordinator, one event, local only.** There is no authentication, event creation or deployment, as the brief allows. The feedback form and script are a test channel standing in for the club's real form.
-- **Run one event-API process.** Single-flight Generate, the live-update notifier and the cache-bypass flag live in memory.
+- **Run one event-API process.** The one-Generate-at-a-time guard, the live-update notifier and the cache-bypass flag live in memory.
 - **Many open tabs can slow the page.** Each tab holds one live-update stream, and browsers allow only about six HTTP/1.1 connections per site, so with six or more tabs open new requests may wait. Close spare tabs.
-- **Model wording varies between runs.** The evidence rules are checked by code; the wording rules (no people-language, exact note counts, no suggestions built on off-topic notes) are prompt instructions at version `briefing.v6.2026-10-04`, plus your review. Read the wording before saving.
+- **Model wording varies between runs.** The evidence rules are checked by code; the wording rules (no people-language, exact note counts, no suggestions built on off-topic notes) are prompt instructions at version `briefing.v6.2026-10-04`, plus your review. In the manual live checks of 2026-10-04 with this prompt version, the evidence rules passed, but the model still sometimes wrote "participants" in a suggestion or added a suggestion about a note that asked for nothing. Read the wording before saving.
 - **Rare crash paths end visibly, never with a replayed call.** In both cases the run is recorded as failed, and the coordinator can generate again:
   - A batch job interrupted twice (two crashes or shutdowns while it is being processed) is recorded as failed (`INTERNAL`) when the next instance takes it up.
   - A batch whose dispatch marker could not be cleared after a temporary failure ends as "outcome unknown" instead of retrying.
