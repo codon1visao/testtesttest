@@ -71,7 +71,7 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
           />
         </PanelErrorBoundary>
         <PanelErrorBoundary name="Briefing">
-          <BriefingPanel eventId={eventId} view={view} />
+          <BriefingPanel eventId={eventId} view={view} refetch={query.refetch} />
         </PanelErrorBoundary>
       </VStack>
     </main>
