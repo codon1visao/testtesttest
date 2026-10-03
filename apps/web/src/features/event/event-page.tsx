@@ -9,6 +9,7 @@ import { NotFoundPage } from "../../shared/ui/not-found-page";
 import { LoadErrorState, LoadingState } from "../../shared/ui/page-states";
 import { PanelErrorBoundary } from "../../shared/ui/panel-error-boundary";
 import { BriefingPanel } from "../briefing/briefing-panel";
+import { FeedbackPanel } from "../feedback/feedback-panel";
 import { EventHeader } from "./event-header";
 
 const styles = stylex.create({
@@ -58,7 +59,9 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
           />
         ) : null}
         {/* attendance: Task 7 */}
-        {/* feedback: Task 6 */}
+        <PanelErrorBoundary name="Feedback">
+          <FeedbackPanel notes={view.feedback} />
+        </PanelErrorBoundary>
         <PanelErrorBoundary name="Briefing">
           <BriefingPanel />
         </PanelErrorBoundary>

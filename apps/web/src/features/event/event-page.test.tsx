@@ -27,7 +27,7 @@ describe("event page", () => {
     renderApp();
     await screen.findByRole("heading", { level: 1, name: "Saturday Walk" });
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(["Briefing"]);
+    expect(headings).toEqual(["Feedback", "Briefing"]);
   });
 
   it("F1-08: shows an error with Retry when the API is unreachable, then recovers", async () => {
