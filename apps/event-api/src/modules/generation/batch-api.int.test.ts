@@ -13,6 +13,13 @@ import { composeEventApi, type EventApi } from "../../compose.js";
 import { usageKey } from "../../integrations/redis-keys.js";
 import { uuidV7IdGenerator } from "../../integrations/uuid-v7-id-generator.js";
 import { openTestDataSource, truncateAllTables } from "../../testing/database.js";
+import {
+  DEFAULT_ITEMS,
+  GENERATION_FIXTURE_ID,
+  insertGenerationFixture,
+  insertSavedBriefing,
+  putPreviewSlot,
+} from "../../testing/sql-fixtures.js";
 import { type FakeGateway, startFakeGateway } from "../../testing/fake-gateway.js";
 import { clearApplicationKeys, openTestRedis } from "../../testing/redis.js";
 import { integrationConfig, silentLogger } from "../../testing/test-config.js";
@@ -62,17 +69,21 @@ afterAll(async () => {
   redis.disconnect();
   await dataSource.destroy();
 });
-beforeEach(async () => {
-  await truncateAllTables(dataSource);
-  await clearApplicationKeys(redis);
-  gateway = await startFakeGateway(SECRET);
+const startApi = async (batchWindowMs: number) => {
   api = await composeEventApi(
     integrationConfig({
-      batchWindowMs: WINDOW_MS,
+      batchWindowMs,
       gateway: { host: "127.0.0.1", port: gateway.port, secret: SECRET },
     }),
     { logger: silentLogger },
   );
+};
+
+beforeEach(async () => {
+  await truncateAllTables(dataSource);
+  await clearApplicationKeys(redis);
+  gateway = await startFakeGateway(SECRET);
+  await startApi(WINDOW_MS);
 });
 afterEach(async () => {
   gateway.release();
@@ -82,6 +93,9 @@ afterEach(async () => {
 
 describe("automatic batches end to end (F7, T5)", () => {
   it("F7-01: five quick notes make one background call that reads all thirteen notes", async () => {
+    // A longer window: five sequential requests must fit in it however slow the machine is.
+    await api.close();
+    await startApi(2_000);
     for (const text of ["One.", "Two.", "Three.", "Four.", "Five."])
       expect((await submit(text)).status).toBe(201);
     const collecting = await view();
@@ -93,7 +107,7 @@ describe("automatic batches end to end (F7, T5)", () => {
       async () => {
         expect(await outcomes()).toEqual(["feedback_batch:succeeded"]);
       },
-      { timeout: 5_000 },
+      { timeout: 8_000 },
     );
     expect(gateway.requests).toHaveLength(1);
     expect(gateway.requests[0]).toMatchObject({ lane: "background" });
@@ -133,7 +147,9 @@ describe("automatic batches end to end (F7, T5)", () => {
       { timeout: 8_000 },
     );
     expect(gateway.requests).toHaveLength(2);
-    expect(requestNotes(1)).toEqual(expect.arrayContaining(["F10", "F11"]));
+    // The newest job read every saved note: the 8 supplied ones and F09–F11.
+    expect(requestNotes(1)).toHaveLength(11);
+    expect(requestNotes(1)).toEqual(expect.arrayContaining(["F09", "F10", "F11"]));
   });
 
   it("F7-06: Generate during a batch call runs at once on the interactive lane and is never replaced by it", async () => {
@@ -200,6 +216,16 @@ describe("automatic batches end to end (F7, T5)", () => {
   });
 
   it("F7-12: a temporary provider error retries with backoff and then succeeds", async () => {
+    await insertGenerationFixture(dataSource);
+    await insertSavedBriefing(dataSource, {
+      generationId: GENERATION_FIXTURE_ID,
+      attendanceOverview: "Saved overview.",
+      itemTexts: Object.fromEntries(DEFAULT_ITEMS.map((item) => [item.id, "Saved text."])),
+    });
+    await putPreviewSlot(dataSource, "selected", GENERATION_FIXTURE_ID);
+    const before = await view();
+    expect(before.savedBriefing).not.toBeNull();
+    expect(before.selectedPreview).not.toBeNull();
     gateway.enqueue({ kind: "error", code: "PROVIDER_TEMPORARY", notSent: false });
     await submit("Retry me.");
     await vi.waitFor(
@@ -219,6 +245,15 @@ describe("automatic batches end to end (F7, T5)", () => {
       { timeout: 8_000 },
     );
     expect(gateway.requests.map((r) => r.attemptId)).toEqual(["1", "2"]);
+    // The automatic result went to the incoming slot only: the saved and selected slots are as they were.
+    const after = await view();
+    expect(after.incomingPreview?.trigger).toBe("feedback_batch");
+    // (Their freshness moves on: F09 is new to both.)
+    expect(after.savedBriefing?.provenance).toEqual(before.savedBriefing?.provenance);
+    expect(after.savedBriefing?.content).toEqual(before.savedBriefing?.content);
+    expect(after.savedBriefing?.savedAt).toEqual(before.savedBriefing?.savedAt);
+    expect(after.selectedPreview?.provenance).toEqual(before.selectedPreview?.provenance);
+    expect(after.selectedPreview?.content).toEqual(before.selectedPreview?.content);
   });
 
   it("F7-13: an exhausted batch share fails the batch visibly while manual Generate still works", async () => {
@@ -233,6 +268,14 @@ describe("automatic batches end to end (F7, T5)", () => {
       { timeout: 5_000 },
     );
     expect(gateway.requests).toHaveLength(0);
+    // The failure is visible to the coordinator (the web shows the failed-batch banner from it).
+    const failed = await view();
+    expect(failed.generation.batch).toBeNull();
+    expect(failed.generation.lastOutcome).toMatchObject({
+      trigger: "feedback_batch",
+      status: "failed",
+      code: "DAILY_LIMIT_REACHED",
+    });
     expect((await generate()).status).toBe(201);
   });
 });

@@ -94,6 +94,20 @@ describe("POST /api/events/:eventId/feedback (F3, T4 TX9)", () => {
     expect(await noteCount()).toBe(9);
   });
 
+  it("P5: two concurrent submissions with one submissionId store one note (201 and 200)", async () => {
+    await start({ batchWindowMs: 60_000 });
+    const id = submissionId();
+    const [a, b] = await Promise.all([
+      submit({ submissionId: id, text: "At the same time." }),
+      submit({ submissionId: id, text: "At the same time." }),
+    ]);
+    expect([a.status, b.status].toSorted()).toEqual([200, 201]);
+    expect(SubmitFeedbackResponseSchema.parse(a.body).note).toEqual(
+      SubmitFeedbackResponseSchema.parse(b.body).note,
+    );
+    expect(await noteCount()).toBe(9);
+  });
+
   it.each([
     ["blank", { text: "   " }],
     ["tab and newline only", { text: "\t\n" }],
