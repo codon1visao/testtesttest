@@ -35,6 +35,8 @@ export interface EventWriteRepository extends EventReadRepository {
   lockForUpdate(eventId: EventId): Promise<EventAggregate>;
   /** Updates the changed members only and bumps attendance_revision by one. */
   applyAttendanceChanges(eventId: EventId, changes: readonly AttendanceChange[]): Promise<void>;
+  /** Bumps briefing_revision by one: the saved briefing changed (T4 TX8). */
+  bumpBriefingRevision(eventId: EventId): Promise<void>;
 }
 
 /** A briefing as stored: generated structure and references, with saved wording when it is the saved one. */
@@ -95,6 +97,14 @@ export interface NewGeneration {
   items: readonly NewItem[];
 }
 
+/** A stored generation's fixed structure: what TX8 edits text against (D2). */
+export interface GenerationStructure {
+  attendanceOverview: string;
+  feedbackIds: FeedbackId[];
+  /** Reading order: summary, themes, conflicts, suggestions; by position; sources in citation order. */
+  items: NewItem[];
+}
+
 export interface GenerationWriteRepository {
   /** Inserts the immutable generation with its inputs, items and sources (T4 §2). */
   insert(generation: NewGeneration): Promise<void>;
@@ -102,18 +112,51 @@ export interface GenerationWriteRepository {
   findIdByRunId(runId: RunId): Promise<GenerationId | null>;
   /** Deletes it with its children unless a slot or the saved briefing still references it (T4 §5). */
   deleteIfUnreferenced(eventId: EventId, generationId: GenerationId): Promise<boolean>;
+  /** The generation's fixed structure, or null when the event has no such generation. */
+  structure(eventId: EventId, generationId: GenerationId): Promise<GenerationStructure | null>;
 }
 
-export interface IncomingSlot {
+/** A slot's generation with the facts the incoming-slot rules need. */
+export interface SlotHolder {
   generationId: GenerationId;
   trigger: GenerationTrigger;
   inputCapturedAt: Date;
 }
+/** Kept for the Plan 3B callers. */
+export type IncomingSlot = SlotHolder;
 
 export interface PreviewSlotRepository {
-  incoming(eventId: EventId): Promise<IncomingSlot | null>;
+  incoming(eventId: EventId): Promise<SlotHolder | null>;
+  selected(eventId: EventId): Promise<SlotHolder | null>;
   /** Upserts preview_slots('incoming'). */
   putIncoming(eventId: EventId, generationId: GenerationId, now: Date): Promise<void>;
+  /**
+   * Upserts preview_slots('selected'). A generation may sit in only one slot (uq_slot_generation):
+   * callers move it by clearing its old slot first.
+   */
+  putSelected(eventId: EventId, generationId: GenerationId, now: Date): Promise<void>;
+  clear(eventId: EventId, slot: "selected" | "incoming"): Promise<void>;
+}
+
+export interface StoredSavedBriefing {
+  generationId: GenerationId;
+  attendanceOverview: string;
+  itemTexts: ReadonlyMap<string, string>;
+}
+
+export interface SavedBriefingWrite {
+  eventId: EventId;
+  generationId: GenerationId;
+  attendanceOverview: string;
+  /** Exactly one entry per item of the generation, keyed by briefing_items.id. */
+  itemTexts: ReadonlyMap<string, string>;
+  savedAt: Date;
+}
+
+export interface SavedBriefingWriteRepository {
+  get(eventId: EventId): Promise<StoredSavedBriefing | null>;
+  /** T4 TX8 steps 1–3: delete old texts, upsert saved_briefings, insert new texts. */
+  replace(saved: SavedBriefingWrite): Promise<void>;
 }
 
 export interface ReadScope {
@@ -131,6 +174,7 @@ export interface TransactionScope extends ReadScope {
   events: EventWriteRepository;
   generations: GenerationWriteRepository;
   slots: PreviewSlotRepository;
+  savedBriefings: SavedBriefingWriteRepository;
   /** Narrows ReadScope.outcomes: a transaction may also record outcomes (TX5/TX6). */
   outcomes: OutcomeWriteRepository;
   /** Runs only after COMMIT succeeds (cache flush, change notification). */

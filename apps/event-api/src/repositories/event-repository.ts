@@ -55,6 +55,10 @@ export class TypeOrmEventRepository implements EventWriteRepository {
     await this.manager.increment(EventEntity, { id: eventId }, "attendanceRevision", 1);
   }
 
+  async bumpBriefingRevision(eventId: EventId): Promise<void> {
+    await this.manager.increment(EventEntity, { id: eventId }, "briefingRevision", 1);
+  }
+
   private async withChildren(row: EventRow): Promise<EventAggregate> {
     const event = parseStoredRow(
       EventSummarySchema,

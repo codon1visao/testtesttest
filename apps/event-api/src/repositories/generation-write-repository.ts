@@ -1,6 +1,8 @@
 import type { EventId, GenerationId, RunId } from "@event-desk/contracts";
-import { GenerationIdSchema } from "@event-desk/contracts";
+import { FeedbackIdSchema, GenerationIdSchema } from "@event-desk/contracts";
 import type { EntityManager } from "typeorm";
+import { z } from "zod";
+import { ITEM_SECTIONS, type ItemSection } from "../modules/generation/domain/generation-items.js";
 import {
   AttendanceInputEntity,
   BriefingItemEntity,
@@ -12,8 +14,26 @@ import {
   PreviewSlotEntity,
   SavedBriefingEntity,
 } from "../persistence/entities/briefing-slot.entities.js";
-import type { GenerationWriteRepository, NewGeneration } from "../ports/unit-of-work.js";
+import type {
+  GenerationStructure,
+  GenerationWriteRepository,
+  NewGeneration,
+} from "../ports/unit-of-work.js";
 import { parseStoredRow } from "./row-parsing.js";
+
+const StructureSchema = z.object({
+  attendanceOverview: z.string().min(1),
+  feedbackIds: z.array(FeedbackIdSchema),
+  items: z.array(
+    z.object({
+      id: z.string().length(36),
+      section: z.enum(ITEM_SECTIONS),
+      position: z.int().min(0).max(9),
+      text: z.string().min(1),
+      sourceIds: z.array(FeedbackIdSchema),
+    }),
+  ),
+});
 
 /**
  * Writes inside the unit of work's transaction: plain INSERT/DELETE only, never save, remove or
@@ -91,6 +111,41 @@ export class TypeOrmGenerationWriteRepository implements GenerationWriteReposito
       )
       .execute();
     return (result.affected ?? 0) > 0;
+  }
+
+  async structure(
+    eventId: EventId,
+    generationId: GenerationId,
+  ): Promise<GenerationStructure | null> {
+    const generation = await this.manager.findOne(GenerationEntity, {
+      where: { id: generationId, eventId },
+    });
+    if (generation === null) return null;
+    const where = { generationId };
+    const items = await this.manager.find(BriefingItemEntity, { where });
+    const sources = await this.manager.find(BriefingItemSourceEntity, { where });
+    const inputs = await this.manager.find(FeedbackInputEntity, { where });
+    const order = (section: ItemSection) => ITEM_SECTIONS.indexOf(section);
+    return parseStoredRow(
+      StructureSchema,
+      {
+        attendanceOverview: generation.attendanceOverview,
+        feedbackIds: inputs.map((input) => input.feedbackId).toSorted(),
+        items: items
+          .toSorted((a, b) => order(a.section) - order(b.section) || a.position - b.position)
+          .map((item) => ({
+            id: item.id,
+            section: item.section,
+            position: item.position,
+            text: item.text,
+            sourceIds: sources
+              .filter((source) => source.itemId === item.id)
+              .toSorted((a, b) => a.position - b.position)
+              .map((source) => source.feedbackId),
+          })),
+      },
+      "briefing_items",
+    );
   }
 
   private table(entity: typeof PreviewSlotEntity | typeof SavedBriefingEntity): string {

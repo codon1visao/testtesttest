@@ -9,6 +9,7 @@ import { TypeOrmEventRepository } from "./event-repository.js";
 import { TypeOrmGenerationWriteRepository } from "./generation-write-repository.js";
 import { TypeOrmOutcomeRepository } from "./outcome-repository.js";
 import { TypeOrmPreviewSlotRepository } from "./preview-slot-repository.js";
+import { TypeOrmSavedBriefingWriteRepository } from "./saved-briefing-write-repository.js";
 import { storeBusy, storeUnavailable, toStoreError } from "./store-errors.js";
 
 type Effect = () => Promise<void>;
@@ -98,6 +99,7 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
       briefings: new TypeOrmBriefingReadRepository(manager),
       generations: new TypeOrmGenerationWriteRepository(manager),
       slots: new TypeOrmPreviewSlotRepository(manager),
+      savedBriefings: new TypeOrmSavedBriefingWriteRepository(manager),
       outcomes: new TypeOrmOutcomeRepository(manager),
       afterCommit: (effect) => {
         effects.push(effect);
