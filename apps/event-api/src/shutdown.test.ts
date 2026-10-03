@@ -55,4 +55,16 @@ describe("gracefulShutdown", () => {
       expect(deps.exit).toHaveBeenCalledWith(1);
     });
   });
+
+  it("ends live streams before closing the HTTP server", () => {
+    const order: string[] = [];
+    const { deps } = setup();
+    const shutdown = gracefulShutdown({
+      ...deps,
+      beforeClose: () => order.push("streams"),
+      server: { close: () => order.push("server") },
+    });
+    shutdown("SIGTERM");
+    expect(order).toEqual(["streams", "server"]);
+  });
 });

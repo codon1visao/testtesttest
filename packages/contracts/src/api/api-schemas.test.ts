@@ -8,7 +8,11 @@ import {
 import { buildBriefingView, buildSeedEventView } from "../testing/index.js";
 import { SaveAttendanceRequestSchema } from "./attendance-api.js";
 import { SaveBriefingRequestSchema, SelectPreviewRequestSchema } from "./briefing-api.js";
-import { EventViewSchema, GenerationStatusViewSchema } from "./event-view.js";
+import {
+  EventChangedMessageSchema,
+  EventViewSchema,
+  GenerationStatusViewSchema,
+} from "./event-view.js";
 import { SubmitFeedbackRequestSchema } from "./feedback-api.js";
 import { GenerateBriefingRequestSchema } from "./generation-api.js";
 
@@ -139,5 +143,13 @@ describe("POST /feedback body (F3)", () => {
     expect(SubmitFeedbackRequestSchema.safeParse({ ...body, text: "x".repeat(1001) }).success).toBe(
       false,
     );
+  });
+});
+
+describe("SSE changed message (A16)", () => {
+  it("carries the view version, or null when the cache flush failed", () => {
+    expect(EventChangedMessageSchema.parse({ version: 3 })).toEqual({ version: 3 });
+    expect(EventChangedMessageSchema.parse({ version: null })).toEqual({ version: null });
+    expect(EventChangedMessageSchema.safeParse({ version: -1 }).success).toBe(false);
   });
 });

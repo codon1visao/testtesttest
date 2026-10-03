@@ -30,6 +30,24 @@ const FIRST_CONNECTION_TIMEOUT_MS = 2_000;
 /** `status` is read by every event view, which must answer quickly while Redis is down (T3 §7). */
 const STATUS_FIRST_CONNECTION_TIMEOUT_MS = 250;
 
+/** How long shutdown waits for the worker's active job, and then for the queue connection. */
+const CLOSE_TIMEOUT_MS = 5_000;
+
+/** True when `promise` resolves within `timeoutMs`; false when it is still pending. Rejections pass through. */
+async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(false);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise.then(() => true), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Job payload: a pointer to the event plus execution markers; never candidate data (T5 §3). */
 const JobDataSchema = z.object({
   eventId: EventIdSchema,
@@ -181,13 +199,28 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
     this.worker = worker;
   }
 
+  /**
+   * Waits up to 5 s for the active job, then stops waiting: BullMQ 6.3.11's `close(true)` after a
+   * pending graceful close returns that same promise, so forcing cannot shorten it. An abandoned
+   * job keeps its lock until the process exits, then stalls and re-runs with its dispatch marker
+   * (the crash path, T5 §3).
+   */
   async close(): Promise<void> {
+    const { logger } = this.options;
     try {
-      // A graceful close waits for the active job, but BullMQ also waits forever for worker
-      // connections that never came up; a worker that never connected holds no job: force it.
-      await this.worker?.close(!this.workerReady);
+      // BullMQ also waits forever for worker connections that never came up; a worker that never
+      // connected holds no job: force it.
+      const worker = this.worker?.close(!this.workerReady);
+      if (worker !== undefined && !(await settlesWithin(worker, CLOSE_TIMEOUT_MS))) {
+        logger.warn(
+          { timeoutMs: CLOSE_TIMEOUT_MS },
+          "batch worker still busy at shutdown; its job will re-run after a stall",
+        );
+      }
     } finally {
-      await this.queue.close();
+      if (!(await settlesWithin(this.queue.close(), CLOSE_TIMEOUT_MS))) {
+        logger.warn({ timeoutMs: CLOSE_TIMEOUT_MS }, "batch queue did not close in time");
+      }
     }
   }
 

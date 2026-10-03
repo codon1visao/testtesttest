@@ -266,6 +266,25 @@ describe("BullMqBriefingBatchQueue (T5 §3, spike S-1/S-3/S-4)", () => {
     expect(await queue.status(E101)).toBeNull();
   }, 30_000);
 
+  it("close stops waiting for an active job after 5 s instead of hanging shutdown", async () => {
+    const release = Promise.withResolvers<BatchStep>();
+    const h = handler(() => release.promise);
+    queue.start(h.value);
+    await queue.schedule(E101);
+    await waitFor(() => h.seen.length === 1, 3_000);
+    try {
+      // BullMQ 6.3.11: a graceful close waits for the active job, and a later force close
+      // returns that same pending promise, so the adapter must stop waiting on its own.
+      const closeStarted = Date.now();
+      await queue.close();
+      const elapsed = Date.now() - closeStarted;
+      expect(elapsed).toBeGreaterThanOrEqual(4_900);
+      expect(elapsed).toBeLessThan(6_000);
+    } finally {
+      release.resolve({ kind: "done" });
+    }
+  }, 15_000);
+
   it("schedule rejects quickly when Redis is unreachable", async () => {
     const offline = new BullMqBriefingBatchQueue({
       redisUrl: "redis://127.0.0.1:1/1",

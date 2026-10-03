@@ -6,14 +6,16 @@ export interface ShutdownDeps {
   closeApi: () => Promise<void>;
   exit: (code: number) => void;
   graceMs: number;
+  /** Runs before the HTTP server closes: ends live streams, which would otherwise keep it open. */
+  beforeClose?: () => void;
 }
 
 /**
- * The SIGTERM/SIGINT handler: stop accepting connections, close the stores, exit. A second
+ * The SIGTERM/SIGINT handler: end live streams, stop accepting connections, close the stores, exit. A second
  * signal is logged and ignored, so it neither kills a shutdown in progress nor closes twice.
  */
 export function gracefulShutdown(deps: ShutdownDeps): (signal: NodeJS.Signals) => void {
-  const { logger, server, closeApi, exit, graceMs } = deps;
+  const { logger, server, closeApi, exit, graceMs, beforeClose } = deps;
   let shuttingDown = false;
   return (signal) => {
     if (shuttingDown) {
@@ -25,6 +27,7 @@ export function gracefulShutdown(deps: ShutdownDeps): (signal: NodeJS.Signals) =
     setTimeout(() => {
       exit(1);
     }, graceMs).unref();
+    beforeClose?.();
     server.close(() => {
       void closeApi().then(
         () => {

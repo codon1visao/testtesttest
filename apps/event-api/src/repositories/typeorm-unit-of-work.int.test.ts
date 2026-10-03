@@ -127,6 +127,37 @@ describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
     expect(await chrisStatus()).toBe("not_recorded");
   });
 
+  it("still runs effects when COMMIT itself fails (unknown outcome), rolls back and rethrows", async () => {
+    const store = await openTestDataSource();
+    try {
+      const createQueryRunner = store.createQueryRunner.bind(store);
+      vi.spyOn(store, "createQueryRunner").mockImplementation(() => {
+        const runner = createQueryRunner();
+        vi.spyOn(runner, "commitTransaction").mockRejectedValueOnce(new Error("commit lost"));
+        return runner;
+      });
+      const flaky = new TypeOrmUnitOfWork(store, silentLogger, {
+        queryTimeoutMs: mysqlQueryTimeoutMs,
+      });
+      let effectRan = false;
+      const failure = flaky.run(async (tx) => {
+        await tx.events.applyAttendanceChanges(E101, [
+          { memberId: M03, from: "not_recorded", to: "attended" },
+        ]);
+        tx.afterCommit(() => {
+          effectRan = true;
+          return Promise.resolve();
+        });
+      });
+      await expect(failure).rejects.toBeInstanceOf(Error);
+      expect(effectRan).toBe(true);
+      // The simulated COMMIT never reached the server: the connection went back rolled back.
+      expect(await chrisStatus()).toBe("not_recorded");
+    } finally {
+      await store.destroy();
+    }
+  });
+
   it("serialises writers on the event row lock (T4 §6)", async () => {
     const order: string[] = [];
     const first = uow.run(async (tx) => {

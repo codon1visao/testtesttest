@@ -96,6 +96,9 @@ export const EventViewSchema = z.strictObject({
 });
 export type EventView = z.infer<typeof EventViewSchema>;
 
-/** Payload of the SSE `changed` message (A16). */
-export const EventChangedMessageSchema = z.strictObject({ version: z.int().min(0) });
+/**
+ * Payload of the SSE `changed` message (A16). `version` is null when the change happened but the
+ * cache flush failed, so no view version exists: the client re-fetches either way.
+ */
+export const EventChangedMessageSchema = z.strictObject({ version: z.int().min(0).nullable() });
 export type EventChangedMessage = z.infer<typeof EventChangedMessageSchema>;

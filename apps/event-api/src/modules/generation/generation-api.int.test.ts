@@ -141,6 +141,32 @@ describe("POST /api/events/:eventId/briefing-generations", () => {
     expect(gateway.requests).toHaveLength(1);
   });
 
+  it("T3 §10: shutdown lets an in-flight manual run record its outcome before the stores close", async () => {
+    const stopping = await composeEventApi(
+      integrationConfig({ gateway: { host: "127.0.0.1", port: gateway.port, secret: SECRET } }),
+      { logger: silentLogger },
+    );
+    gateway.enqueue({ kind: "hold" });
+    const pending = request(stopping.app)
+      .post(`/api/events/${E101}/briefing-generations`)
+      .set("Origin", ORIGIN)
+      .send({ baseAttendanceRevision: 0 })
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+    await vi.waitFor(() => {
+      expect(gateway.requests).toHaveLength(1);
+    });
+    const closing = stopping.close();
+    setTimeout(() => {
+      gateway.release();
+    }, 300);
+    await closing;
+    expect(await count("SELECT COUNT(*) AS n FROM briefing_generations")).toBe(1);
+    await pending;
+  });
+
   it("Review Focus 4 / F4-04 / F4-12: an invalid candidate is never stored", async () => {
     gateway.enqueue({
       kind: "result",

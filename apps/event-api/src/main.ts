@@ -38,6 +38,9 @@ const shutdown = gracefulShutdown({
   logger,
   server,
   closeApi: () => api.close(),
+  beforeClose: () => {
+    api.stopStreams();
+  },
   exit: (code) => process.exit(code),
   graceMs: SHUTDOWN_GRACE_MS,
 });

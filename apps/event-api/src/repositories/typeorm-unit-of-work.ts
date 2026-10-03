@@ -15,6 +15,27 @@ import { storeBusy, storeUnavailable, toStoreError } from "./store-errors.js";
 
 type Effect = () => Promise<void>;
 
+/**
+ * Commits, then runs the after-commit effects. If COMMIT itself fails its outcome is unknown (a
+ * timeout may follow a COMMIT the server applied): run them anyway, then rethrow. The effects
+ * flush cached views, which is safe when nothing changed (T3 §7). `commit` must reject only for
+ * a failed COMMIT, never for failed work: work errors leave no effects to run.
+ */
+export async function commitThenEffects<T>(
+  commit: () => Promise<T>,
+  runEffects: () => Promise<void>,
+): Promise<T> {
+  let value: T;
+  try {
+    value = await commit();
+  } catch (error) {
+    await runEffects();
+    throw error;
+  }
+  await runEffects();
+  return value;
+}
+
 type Acquisition =
   { kind: "connected" } | { kind: "failed"; error: unknown } | { kind: "timed-out" };
 
@@ -41,22 +62,35 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
 
   async run<T>(work: (tx: TransactionScope) => Promise<T>): Promise<T> {
     const effects: Effect[] = [];
-    const result = await this.withRunner(async (runner) => {
-      // InnoDB's default lock wait is 50 s. Session scope is safe: the next borrower's run() sets
-      // it again, and plain reads take no row locks.
-      await runner.query(`SET SESSION innodb_lock_wait_timeout = ${this.lockWaitSeconds}`);
-      await runner.startTransaction("REPEATABLE READ");
-      try {
-        const value = await work(this.transactionScope(runner.manager, effects));
-        await runner.commitTransaction();
-        return value;
-      } catch (error) {
-        await this.rollbackQuietly(runner, error);
-        throw error;
-      }
-    });
-    await this.runEffects(effects);
-    return result;
+    // Effects run after the runner is released, on success and after a failed COMMIT alike.
+    return commitThenEffects(
+      () =>
+        this.withRunner(async (runner) => {
+          // InnoDB's default lock wait is 50 s. Session scope is safe: the next borrower's run()
+          // sets it again, and plain reads take no row locks.
+          await runner.query(`SET SESSION innodb_lock_wait_timeout = ${this.lockWaitSeconds}`);
+          await runner.startTransaction("REPEATABLE READ");
+          let value: T;
+          try {
+            value = await work(this.transactionScope(runner.manager, effects));
+          } catch (error) {
+            // Nothing was committed, so nothing may be flushed or announced.
+            effects.length = 0;
+            await this.rollbackQuietly(runner, error);
+            throw error;
+          }
+          try {
+            await runner.commitTransaction();
+          } catch (error) {
+            // TypeORM keeps the transaction flagged after a failed COMMIT: roll back so a
+            // connection that is still usable never returns to the pool mid-transaction.
+            await this.rollbackQuietly(runner, error);
+            throw error;
+          }
+          return value;
+        }),
+      () => this.runEffects(effects),
+    );
   }
 
   async readSnapshot<T>(work: (scope: ReadScope) => Promise<T>): Promise<T> {
