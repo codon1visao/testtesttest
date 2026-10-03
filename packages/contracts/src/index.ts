@@ -5,3 +5,5 @@ export * from "./attendance.js";
 export * from "./event.js";
 export * from "./feedback.js";
 export * from "./supplied-records.js";
+export * from "./briefing-content.js";
+export * from "./briefing-rules.js";
