@@ -18,7 +18,7 @@ Status: **Confirmed by the user on 2026-10-03** (D3, D15). The DDL in §4 is the
 | Time | `DATETIME(3)` stored in UTC; TypeORM `timezone: "Z"` | Millisecond precision for `input_captured_at` comparisons (F7 slot rules) |
 | Counts and freshness | **Never stored**; derived from rows | Brief: "calculate attendance counts in application code from saved records" |
 | Migrations | Hand-written SQL migrations based on §4 (`synchronize: false`); TypeORM `EntitySchema` used for mapping and queries | TypeORM's migration generator cannot express every composite FK and `CHECK`. The DDL stays reviewable as written. |
-| Rules the DB cannot express | Theme/conflict ≥ 2 distinct notes, suggestion ≥ 1, every item having a saved text row | Enforced in the shared `validateEvidenceSections()` and inside the save transaction. Triggers are avoided because they hide logic. |
+| Rules the DB cannot express | Theme/conflict ≥ 2 distinct notes, suggestion/summary ≥ 1, exactly one summary, every item having a saved text row | Enforced in the shared `validateEvidenceSections()` and inside the save transaction. Triggers are avoided because they hide logic. |
 
 ## 2. Relations
 
@@ -29,7 +29,7 @@ Status: **Confirmed by the user on 2026-10-03** (D3, D15). The DDL in §4 is the
 | Notes are anonymous and not linked to the roster (brief, F3) | **No relation** between `feedback_notes` and `members` |
 | A generation captures saved attendance and the complete feedback set when it runs (F4, F7) | `briefing_generations` 1 — N `generation_attendance_inputs` and 1 — N `generation_feedback_inputs` |
 | Freshness compares the snapshot with current data per member (D5) | `generation_attendance_inputs` → `members` |
-| Positioned items in fixed sections (D2) | `briefing_generations` 1 — N `briefing_items` |
+| Positioned items in fixed sections (D2), including exactly one feedback summary (D16) | `briefing_generations` 1 — N `briefing_items` (`section = 'summary'` at position 0) |
 | Items cite only notes from that generation's input (F4 rule 3) | `briefing_items` 1 — N `briefing_item_sources` → `generation_feedback_inputs` |
 | One selected and one incoming preview (F7) | `events` 1 — 0..2 `preview_slots` → `briefing_generations` |
 | At most one saved briefing; text-only edits keep the generation's references (D2, F5) | `events` 1 — 0..1 `saved_briefings` → `briefing_generations`; `saved_briefings` 1 — N `saved_briefing_items` → `briefing_items` |
@@ -71,6 +71,7 @@ erDiagram
 | A run commits at most once | `UNIQUE briefing_generations.run_id`, PK `generation_outcomes.run_id` |
 | A resubmitted form entry does not duplicate a note | `UNIQUE feedback_notes (event_id, submission_id)` |
 | Blank text cannot be stored | `CHECK (CHAR_LENGTH(TRIM(text)) > 0)` on every text column |
+| At most one feedback summary per generation, within 600 characters | `ck_item_summary` (summary only at position 0, ≤ 600 chars) + `UNIQUE (generation_id, section, position)`; "exactly one" is checked in code |
 | Attendance is one of exactly three states | `ENUM('attended','absent','not_recorded')` |
 
 ## 4. DDL (first migration)
@@ -160,7 +161,7 @@ CREATE TABLE generation_feedback_inputs (
 CREATE TABLE briefing_items (
   id            CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   generation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  section       ENUM('theme','conflict','suggestion') NOT NULL,
+  section       ENUM('summary','theme','conflict','suggestion') NOT NULL,
   position      TINYINT UNSIGNED NOT NULL,
   text          VARCHAR(1000) NOT NULL,
   PRIMARY KEY (id),
@@ -168,6 +169,7 @@ CREATE TABLE briefing_items (
   UNIQUE KEY uq_item_generation (generation_id, id),      -- target for composite FKs
   CONSTRAINT fk_item_generation FOREIGN KEY (generation_id) REFERENCES briefing_generations (id) ON DELETE CASCADE,
   CONSTRAINT ck_item_position CHECK (position < 10),
+  CONSTRAINT ck_item_summary CHECK (section <> 'summary' OR (position = 0 AND CHAR_LENGTH(text) <= 600)),
   CONSTRAINT ck_item_text CHECK (CHAR_LENGTH(TRIM(text)) > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -245,7 +247,7 @@ The InnoDB cascade paths form a tree (generation → inputs/items → sources), 
 | Current counts | `members` |
 | Counts used for a generation | `generation_attendance_inputs` |
 | Freshness | per-member diff of `generation_attendance_inputs` vs `members` (a swap is a change; a revert matches again) + note-ID set diff of `generation_feedback_inputs` vs `feedback_notes` (lists new notes); `feedback_digest` as an integrity check |
-| Generated `BriefingContent` | `briefing_items` + `briefing_item_sources`, ordered by `section`, `position` |
+| Generated `BriefingContent` | `briefing_items` + `briefing_item_sources`, ordered by `section` (summary, theme, conflict, suggestion), `position`; `attendanceOverview` from `briefing_generations` |
 | Saved `BriefingContent` | the same items and sources, with text from `saved_briefing_items` and the overview from `saved_briefings` |
 
 A generation is **referenced** if a `preview_slots` row or the `saved_briefings` row points at it. Any transaction that removes a reference runs `DELETE FROM briefing_generations WHERE id = ? AND NOT EXISTS (…references…)`. The RESTRICT FKs make deleting a referenced generation impossible even if that check had a bug. At most 3 generations exist per event.

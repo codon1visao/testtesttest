@@ -1,6 +1,6 @@
 # AI Community Club Event Desk — specification index
 
-Status: **Confirmed by the user on 2026-10-03 — approved for implementation planning.** All decisions D1–D15 are confirmed. Exact package versions and the OpenAI model are pinned during implementation as configuration, not open design questions. Architecture, data model and generation implementation are in [T3](12-architecture-and-repository.md), [T4](13-data-model-and-transactions.md) and [T5](14-generation-queue-implementation.md).
+Status: **Confirmed by the user on 2026-10-03 — approved for implementation planning.** All decisions D1–D16 are confirmed. Exact package versions and the OpenAI model are pinned during implementation as configuration, not open design questions. Architecture, data model and generation implementation are in [T3](12-architecture-and-repository.md), [T4](13-data-model-and-transactions.md) and [T5](14-generation-queue-implementation.md).
 
 Source: [project brief](../project-brief.md). The brief is authoritative. This breakdown makes its requirements testable and records the confirmed design decisions that go beyond it.
 
@@ -54,7 +54,7 @@ The [What the coordinator should be able to do](../project-brief.md#what-the-coo
 | --- | --- | --- |
 | Record attendance | Open the seeded event, change member attendance, see recalculated counts labelled unsaved, then save through the backend. Refresh/restart restores the saved records. | F1, F2 |
 | Review feedback | Read each supplied note and its stable ID. Notes remain read-only and separate from the roster. | F3 |
-| Generate an AI briefing | Press Generate: the event API calls the AI Gateway over TCP synchronously (no queue) and returns the candidate, which opens for review when the editor is clean. New feedback (form/script) is batched: one automatic generation per fixed 3-second window, reading all notes at run time, with its progress shown in the briefing panel. The coordinator's generation always takes priority. Show overview, themes, conflicts and suggestions with inspectable sources. | F3, F4, F7, F8 |
+| Generate an AI briefing | Press Generate: the event API calls the AI Gateway over TCP synchronously (no queue) and returns the candidate, which opens for review when the editor is clean. New feedback (form/script) is batched: one automatic generation per fixed 3-second window, reading all notes at run time, with its progress shown in the briefing panel. The coordinator's generation always takes priority. Show what happened (attendance overview + feedback summary), themes, conflicts and suggestions with inspectable sources. | F3, F4, F7, F8 |
 | Inspect and edit | Open referenced notes, edit only the generated wording, then Save. Keep the generated section/item structure and reference associations unchanged; persist wording and references together. The saved briefing can subsequently be reopened for text edits. | F3, F5 |
 | Keep work trustworthy | After a saved attendance change, mark the existing saved briefing, preview and open editor out of date without changing their text or references. Regeneration is explicit and produces a separate preview; only Save and replace briefing replaces saved human work. Display loading and failures without losing edits. | F2, F4, F5, F6 |
 
@@ -65,7 +65,7 @@ Text editing begins with a generated briefing, not a blank document. An attendan
 - React/TypeScript frontend and Node.js/TypeScript backend with a simple persistent store.
 - One ended event, its four registered members and eight supplied feedback notes.
 - Three distinct attendance states; counts calculated in application code from saved records.
-- A real backend model call producing an attendance overview, themes, conflicts and follow-ups.
+- A real backend model call producing themes, conflicts, follow-ups and a cited feedback summary, combined with a code-built attendance overview to answer what happened.
 - Feedback references for every generated theme, conflict and suggestion; inspectable notes and validation of their IDs.
 - Human editing of the generated briefing, with durable saving of wording and references. D2 limits editing to text; references remain unchanged.
 - An out-of-date indication after attendance changes, and protection against regeneration overwriting human edits.
@@ -79,7 +79,7 @@ Confirmed decisions are listed below, including the AI Gateway boundary. Design 
 
 Use one event page with the event title and ended status, an attendance panel, a feedback panel and a briefing panel. Keep attendance Save separate from briefing Save. Recalculate displayed attendance counts as selections change and label them as unsaved; retain saved counts as the factual baseline used for generation.
 
-The briefing panel shows saved content or a selected generated preview/editor, alongside generation status and a New briefing ready notice when an incoming candidate exists. Automatic completion never changes the active editor. The coordinator selects a candidate for text editing and later saves it explicitly; source references remain inspectable and read-only. Display a source note inline beside its reference when opened, avoiding a separate navigation flow.
+The briefing panel presents content under the brief's four questions (What happened · Which themes recur · Where people disagree · What might be worth following up) and shows saved content or a selected generated preview/editor, alongside generation status and a New briefing ready notice when an incoming candidate exists. Automatic completion never changes the active editor. The coordinator selects a candidate for text editing and later saves it explicitly; source references remain inspectable and read-only. Display a source note inline beside its reference when opened, avoiding a separate navigation flow.
 
 Every mutation action shows a success/error toast under [T1](10-frontend-technologies.md#mutation-feedback). Generate's success toast means the briefing was generated; automatic batch results are announced once when ready.
 
@@ -102,7 +102,7 @@ At narrow widths, stack panels in reading order: event, attendance, feedback, br
 | Batch jobs | BullMQ jobs for feedback batches (fixed window, one running at a time) plus durable outcome rows in MySQL; manual generation is synchronous and has no job; no queue dashboard or audit history |
 | `briefingRevision` | Internal save-conflict counter |
 | Generation provenance | Server-owned generation/job ID, time, model, prompt version and input snapshot (per-member attendance, counts, feedback IDs and digest); freshness compares this snapshot with current saved data |
-| Briefing content | `attendanceOverview`, `themes[]`, `conflicts[]`, `suggestions[]` using the shape below |
+| Briefing content | `attendanceOverview` (code-built fact), `feedbackSummary` (reported, cited), `themes[]`, `conflicts[]`, `suggestions[]` using the shape below |
 
 There is one saved briefing, one selected generated preview and at most one incoming candidate. This bounded set protects the edit base during background work without full version history. Persisted inputs/results bind editing to backend-owned provenance. Unsaved human edits live only in the browser; saved work has the durability guarantee.
 
@@ -114,22 +114,24 @@ The model receives counts and feedback IDs/text. Member names are unnecessary fo
 type FeedbackId = string; // Runtime-validated against the job's saved feedback IDs; initially F01–F08.
 type EvidenceItem = { text: string; sourceIds: FeedbackId[] };
 type BriefingContent = {
-  attendanceOverview: string;
-  themes: EvidenceItem[];
-  conflicts: EvidenceItem[];
-  suggestions: EvidenceItem[];
+  attendanceOverview: string;      // What happened: roster fact, built by code from saved records
+  feedbackSummary: EvidenceItem;   // What happened: what the notes report overall (reported opinion, cited)
+  themes: EvidenceItem[];          // Which themes recur
+  conflicts: EvidenceItem[];       // Where people disagree
+  suggestions: EvidenceItem[];     // What might be worth following up
 };
 type BriefingTextEdits = {
   attendanceOverview: string;
+  feedbackSummary: string;
   themes: string[];
   conflicts: string[];
   suggestions: string[];
 };
 ```
 
-This is a specification of the shared shape, not code to copy into multiple DTOs or hooks. Reuse one contract during implementation. Facts, reported opinions and proposed actions are separated by section labels. For this compact build, a conflict item describes both positions and cites their supporting notes; a separate nested argument model is unnecessary.
+This is a specification of the shared shape, not code to copy into multiple DTOs or hooks. Reuse one contract during implementation. The shape answers the brief's four questions directly. **What happened** has two parts: the attendance overview (fact, from saved records) and the feedback summary (reported opinion, citing notes). **Which themes recur**, **where people disagree** and **what might be worth following up** map to `themes`, `conflicts` and `suggestions`. The UI uses those four questions as section headings, so facts, reported opinions and proposed actions stay distinguishable (D16). For this compact build, a conflict item describes both positions and cites their supporting notes; a separate nested argument model is unnecessary.
 
-Although the sections share `EvidenceItem`, their evidence requirements differ: a theme needs a meaningful grouping supported by at least two distinct feedback IDs; a conflict must cite at least two different notes, the note(s) for each opposing view, and describe the difference as between notes, never between identified or counted people (D12); an individual suggestion may have one supporting note. Runtime validation applies the [section-specific rules](04-ai-briefing-generation.md#backend-validation). There is no target number of themes, and satisfying a reference count does not establish semantic support.
+Although the sections share `EvidenceItem`, their evidence requirements differ: the feedback summary cites at least one note and never restates attendance counts; a theme needs a meaningful grouping supported by at least two distinct feedback IDs; a conflict must cite at least two different notes, the note(s) for each opposing view, and describe the difference as between notes, never between identified or counted people (D12); an individual suggestion may have one supporting note. Runtime validation applies the [section-specific rules](04-ai-briefing-generation.md#backend-validation). There is no target number of themes, and satisfying a reference count does not establish semantic support.
 
 `BriefingContent` is the read/stored shape; `BriefingTextEdits` is the text-only save payload. Each text array has exactly the same length and item positions as the server-owned content for the specified generation. Apply text by section and position; copy references, item structure and provenance from that server record. The coordinator cannot add, remove or reorder items or change their source IDs. Text-only editing does not prove that revised wording is still supported by the fixed sources.
 
@@ -183,6 +185,7 @@ The frontend stack is selected in [T1](10-frontend-technologies.md). The backend
 | D13: Coordinator retry | No retry endpoint: the Retry button sends a normal synchronous Generate request; confirm first after `AI_OUTCOME_UNKNOWN` | Automatic bounded retries apply only to batch jobs (F7) | Confirmed by user, 2026-10-03 |
 | D14: Live updates | Server-Sent Events `GET /api/events/:id/changes`; the server emits `changed` on every cache flush, and the client re-fetches the cached event read | Polling only (simpler, slower); WebSockets (bidirectional, unnecessary here) | Confirmed by user, 2026-10-03 |
 | D15: Relational schema | Normalised MySQL schema with composite FKs enforcing citation and text-only-save rules, `preview_slots` table, binary-collated IDs, CHECK constraints, hand-written migrations ([T4](13-data-model-and-transactions.md)) | JSON document columns (fewer tables, no DB-level evidence integrity) | Confirmed by user, 2026-10-03 |
+| D16: Briefing answers the four questions | "What happened" = code-built attendance overview (fact, states when attendance is incomplete) + one model-written feedback summary (reported, ≥ 1 cited note, ≤ 600 chars); UI headings follow the brief's four questions; internal keys unchanged | Attendance-only overview left the feedback side of "what happened" unanswered | Confirmed by user, 2026-10-03 |
 
 All decisions are confirmed. Implementation starts with the workspace scaffold and the BullMQ spike in [T5 §6](14-generation-queue-implementation.md#6-spike-first-build-step). Specify an upstream producer separately before implementing a live automatic note-arrival path. No implementation plan or application code is part of this documentation pass. CodeGraph initialisation is deferred by user choice and is not required for this documentation review.
 

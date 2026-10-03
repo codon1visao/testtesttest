@@ -109,11 +109,12 @@ packages/contracts/src/
 
 | Section | Minimum distinct notes cited | Reason |
 | --- | --- | --- |
+| Feedback summary (one item) | 1 | Answers the feedback side of *what happened*; reported experience, never counts (D16) |
 | Theme | 2 | A recurring pattern must appear in more than one note (F4 theme definition) |
 | Conflict | 2 | A disagreement exists *between* notes, so the note for each opposing view must be inspectable |
 | Suggestion | 1 | One note can justify a tentative follow-up |
 
-All sections allow at most 8 distinct notes per item and 10 items per section. Item text is 1–1,000 characters after trimming; the overview is 1–500.
+All sections allow at most 8 distinct notes per item and 10 items per section. Item text is 1–1,000 characters after trimming; the feedback summary is 1–600; the overview is 1–500.
 
 **Why a conflict needs two notes.** The supplied conflicts are F03 *"Could we start earlier next time?"* against F04 *"An earlier start would be difficult for me."*, and F01 (meeting point hard to find) against F02 (no trouble finding the group). Each side of the disagreement is written in a **different** note. If one cited note were enough, the model could return "Views differ on the start time" citing only F03. That passes validation, but the coordinator can open only the request and never sees the objection, which is the "erase the opposing view" failure the brief forbids. A single note cannot conflict with itself: F01 ("enjoyable, but the meeting point was difficult to find") is a mixed view within one note, not a disagreement.
 

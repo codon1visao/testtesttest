@@ -14,7 +14,7 @@ Contribution to the [client goal](README.md#product-goal-solve-the-client-situat
 
 1. Open the selected generated preview or saved briefing in the editor. When a new incoming candidate is ready, use **Review new preview** to select it after resolving local edits; selection does not save/replace the saved briefing.
 2. Show the attendance snapshot used for generation and the current saved counts beside the editable attendance overview.
-3. Edit the overview and the text of themes, conflicts and suggestions.
+3. Edit the attendance overview, the feedback summary and the text of themes, conflicts and suggestions.
 4. Inspect the fixed references through [F3](03-feedback-and-sources.md). Reference IDs and original source notes are read-only; there are no controls to add, remove or reorder items.
 5. Select **Save briefing**. When editing a preview while a saved briefing exists, label the action **Save and replace briefing** so its effect is explicit.
 6. On success, display the persisted response as the new saved baseline. On failure, retain the complete local text draft and show retryable feedback.
@@ -27,7 +27,7 @@ Background generation may continue while this editor is open. A ready result onl
 
 - The attendance overview remains editable, as the brief asks for an editable briefing. A saved human edit does not alter roster data or authoritative counts.
 - Show a note that manually edited overview wording must be checked against the displayed counts. Automated factual consistency of arbitrary human text is not promised.
-- Every generated theme, conflict and suggestion keeps its original position and reference IDs and requires nonblank edited text. Reuse the text bounds and section-specific reference validation from [F4](04-ai-briefing-generation.md#backend-validation), including at least two distinct valid IDs for a theme.
+- The feedback summary, like every generated theme, conflict and suggestion, keeps its original position and reference IDs and requires nonblank edited text. Reuse the text bounds and section-specific reference validation from [F4](04-ai-briefing-generation.md#backend-validation), including at least two distinct valid IDs for a theme.
 - Neither source associations nor the underlying notes can be changed by the coordinator. The backend retains them from the selected saved briefing or generated preview.
 - Adding, deleting or moving section items is not allowed. Clearing text to whitespace fails validation rather than deleting the item. If a section was generated empty, it remains empty during text editing.
 - Human editing does not make a stale briefing current. Generation provenance is read-only.
