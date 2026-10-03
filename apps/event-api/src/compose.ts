@@ -11,6 +11,7 @@ import { attendanceRoutes } from "./modules/attendance/attendance-controller.js"
 import { AttendanceService } from "./modules/attendance/attendance-service.js";
 import { CacheBypass } from "./modules/changes/cache-bypass.js";
 import { briefingRoutes } from "./modules/briefing/briefing-controller.js";
+import { BriefingSaveService } from "./modules/briefing/briefing-save-service.js";
 import { PreviewSelectionService } from "./modules/briefing/preview-selection-service.js";
 import { EventChangePublisher } from "./modules/changes/event-change-publisher.js";
 import { InProcessChangeNotifier } from "./modules/changes/in-process-change-notifier.js";
@@ -92,6 +93,7 @@ export async function composeEventApi(
   });
   const attendance = new AttendanceService(uow, changes);
   const selection = new PreviewSelectionService({ uow, clock, changes });
+  const briefingSave = new BriefingSaveService({ uow, clock, changes });
 
   const app = createApp({
     logger,
@@ -104,7 +106,7 @@ export async function composeEventApi(
       eventRoutes(eventViews),
       attendanceRoutes(attendance),
       generationRoutes(manualGeneration),
-      briefingRoutes({ selection }),
+      briefingRoutes({ selection, save: briefingSave }),
     ],
   });
 
