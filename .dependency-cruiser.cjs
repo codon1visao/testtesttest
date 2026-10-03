@@ -53,7 +53,7 @@ module.exports = {
       from: { path: "^apps/web/" },
       to: {
         path: [
-          npm("typeorm|mysql2|bullmq|ioredis|express|openai|@openai/agents"),
+          npm("typeorm|mysql2|bullmq|ioredis|express|openai|@openai/agents[^/]*"),
           "^packages/tcp-rpc/",
         ],
       },
@@ -87,10 +87,12 @@ module.exports = {
       to: { path: "^apps/web/src/data/" },
     },
     {
-      name: "openai-only-in-gateway",
+      name: "openai-only-in-gateway-ai",
+      comment:
+        "Only the Gateway's ai/ adapters (and its test fakes) import the OpenAI SDKs (F8-02, S1-12).",
       severity: "error",
-      from: { pathNot: "^apps/ai-gateway/" },
-      to: { path: npm("openai|@openai/agents") },
+      from: { pathNot: "^apps/ai-gateway/src/(ai|testing)/" },
+      to: { path: npm("openai|@openai/agents[^/]*") },
     },
     {
       name: "typeorm-only-in-persistence",
@@ -225,6 +227,54 @@ module.exports = {
         pathNot: ["^apps/event-api/src/main\\.ts$", "^apps/event-api/src/testing/", TESTS],
       },
       to: { path: "^apps/event-api/src/(main|compose)\\.ts$" },
+    },
+    {
+      name: "raw-tcp-only-in-tcp-rpc",
+      comment: "Service-to-service TCP goes through packages/tcp-rpc (framing, auth, limits).",
+      severity: "error",
+      from: {
+        path: "^(apps|packages)/",
+        pathNot: ["^packages/tcp-rpc/src/", "^apps/[^/]+/src/testing/", TESTS],
+      },
+      to: { dependencyTypes: ["core"], path: "^(node:)?(net|tls|dgram)$" },
+    },
+    {
+      name: "tcp-rpc-is-generic",
+      comment: "tcp-rpc knows framing and auth only: no contracts, apps or npm packages.",
+      severity: "error",
+      from: { path: "^packages/tcp-rpc/src/", pathNot: TESTS },
+      to: { pathNot: "^packages/tcp-rpc/src/", dependencyTypesNot: ["core"] },
+    },
+    {
+      name: "gateway-operations-use-ports",
+      comment: "Operations depend on the BriefingModel port, never on the OpenAI adapter.",
+      severity: "error",
+      from: { path: "^apps/ai-gateway/src/(operations|limits)/", pathNot: TESTS },
+      to: { path: "^apps/ai-gateway/src/ai/" },
+    },
+    {
+      name: "gateway-inner-not-to-outer",
+      comment:
+        "ai/, limits/, operations/, config/ and shared/ never import transport, scripts or the composition root.",
+      severity: "error",
+      from: { path: "^apps/ai-gateway/src/(ai|limits|operations|config|shared)/", pathNot: TESTS },
+      to: { path: "^apps/ai-gateway/src/(transport/|scripts/|compose\\.ts$|main\\.ts$)" },
+    },
+    {
+      name: "gateway-shared-is-leaf",
+      severity: "error",
+      from: { path: "^apps/ai-gateway/src/shared/", pathNot: TESTS },
+      to: { path: "^apps/ai-gateway/src/", pathNot: "^apps/ai-gateway/src/shared/" },
+    },
+    {
+      name: "gateway-composition-root",
+      comment: "Only main.ts and test helpers import compose.ts.",
+      severity: "error",
+      from: {
+        path: "^apps/ai-gateway/src/",
+        pathNot: ["^apps/ai-gateway/src/main\\.ts$", "^apps/ai-gateway/src/testing/", TESTS],
+      },
+      to: { path: "^apps/ai-gateway/src/(main|compose)\\.ts$" },
     },
   ],
   options: {

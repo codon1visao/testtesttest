@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/contracts" },
     { "path": "packages/tcp-rpc" },
-    { "path": "apps/event-api" }
+    { "path": "apps/event-api" },
+    { "path": "apps/ai-gateway" }
   ]
 }
