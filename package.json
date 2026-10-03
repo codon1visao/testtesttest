@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:integration": "pnpm --filter @event-desk/event-api test:integration",
+    "db:reset": "pnpm --filter @event-desk/event-api db:reset",
     "arch": "depcruise apps packages --config .dependency-cruiser.cjs",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm arch && pnpm test",
     "infra:up": "docker compose up -d --wait",

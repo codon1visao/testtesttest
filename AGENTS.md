@@ -10,13 +10,17 @@ These rules apply to every change in this repository, by people and by agents.
 
 ## Commands
 
-| Command                             | What it does                                                                              |
-| ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| `pnpm install`                      | Install the workspace                                                                     |
-| `pnpm infra:up` / `pnpm infra:down` | Start/stop MySQL 8.4 and Redis 8 (Docker Compose)                                         |
-| `pnpm verify`                       | Prettier check, ESLint, `tsc -b`, dependency-cruiser, unit tests: run before every commit |
-| `pnpm test`                         | Unit tests (Vitest)                                                                       |
-| `pnpm arch`                         | Architecture rules only                                                                   |
+| Command                             | What it does                                                                                                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm install`                      | Install the workspace                                                                                                                                   |
+| `cp .env.example .env`              | First-time local configuration (local-only defaults for Docker Compose)                                                                                 |
+| `pnpm infra:up` / `pnpm infra:down` | Start/stop MySQL 8.4 and Redis 8 (Docker Compose)                                                                                                       |
+| `pnpm dev`                          | Event API on http://127.0.0.1:4000 with reload (`/api/health`, `/api/events/E101`)                                                                      |
+| `pnpm verify`                       | Prettier check, ESLint, `tsc -b`, dependency-cruiser, unit tests: run before every commit                                                               |
+| `pnpm test`                         | Unit tests (Vitest)                                                                                                                                     |
+| `pnpm test:integration`             | Integration tests against `event_desk_test` and Redis DB 1 (needs `pnpm infra:up`)                                                                      |
+| `pnpm arch`                         | Architecture rules only                                                                                                                                 |
+| `pnpm db:reset`                     | Explicit reset with the event API stopped: recreates `event_desk`, deletes `event-desk:*` and `bull:briefing-batch:*` keys; the next start reseeds E101 |
 
 Only document a command once it exists.
 
