@@ -10,23 +10,21 @@ export function useEventChanges(eventId: EventId): { live: boolean } {
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
     const source = new EventSource(`/api/events/${encodeURIComponent(eventId)}/changes`);
-    let dropped = false;
     const refresh = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.event(eventId) });
     };
     source.addEventListener("changed", refresh);
     source.onopen = () => {
       setLive(true);
-      if (dropped) refresh(); // changes may have happened while disconnected
-      dropped = false;
+      refresh(); // changes may have happened before the first open or while disconnected
     };
     source.onerror = () => {
-      dropped = true;
       setLive(false); // the browser reconnects by itself (retry: 3000); polling covers the gap
     };
     return () => {
       source.removeEventListener("changed", refresh);
       source.close();
+      setLive(false); // a new event's stream is not open yet
     };
   }, [eventId, queryClient]);
   return { live };
