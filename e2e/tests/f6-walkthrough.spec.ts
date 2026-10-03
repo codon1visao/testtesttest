@@ -52,14 +52,23 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
     themeItem(page, briefing).getByRole("button", { name: "Read source F06" }),
   ).toBeVisible();
 
-  // 3. An unsaved attendance change shows unsaved counts and does not touch the briefing.
+  // 3. An unsaved attendance change shows unsaved counts and a warning, and does not touch the
+  // briefing.
+  const overview = briefing.getByLabel("Attendance overview");
+  const originalOverview = await overview.inputValue();
   await attendance.getByLabel("Chris").selectOption("attended");
   await expect(
     attendance.getByText("Unsaved counts: 4 registered · 2 attended · 2 absent · 0 not recorded"),
   ).toBeVisible();
   await expect(
+    attendance.getByText(
+      "Unsaved attendance changes. Save or discard them before generating a briefing.",
+    ),
+  ).toBeVisible();
+  await expect(
     briefing.getByText("Up to date with the saved attendance and feedback."),
   ).toBeVisible();
+  await expect(overview).toHaveValue(originalOverview);
 
   // 4. Saving attendance marks the saved briefing out of date; wording and references stay.
   await attendance.getByRole("button", { name: "Save attendance" }).click();
@@ -71,11 +80,19 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   ).toBeVisible();
   await expect(briefing.getByText("Chris: Not recorded → Attended")).toBeVisible();
   await expect(briefing.getByLabel("Theme 1")).toHaveValue("People asked for longer rest breaks.");
+  // The original overview stays intact: saving attendance never rewrites briefing wording.
+  await expect(overview).toHaveValue(originalOverview);
 
-  // 5. F6-12: saving edited wording keeps the stale flag.
+  // 5. F6-12: saving edited wording keeps the stale flag, also after a reload.
   await briefing.getByLabel("Theme 1").fill("Several people asked for longer rest breaks.");
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PUT" && response.url().endsWith("/api/events/E101/briefing"),
+  );
   await briefing.getByRole("button", { name: "Save briefing" }).click();
+  expect((await saved).status()).toBe(200);
   await expect(briefing.getByText("Unsaved changes to the briefing text.")).toHaveCount(0);
+  await page.reload();
   await expect(briefing.getByLabel("Theme 1")).toHaveValue(
     "Several people asked for longer rest breaks.",
   );
@@ -95,6 +112,26 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await expect(
     briefing.getByRole("heading", { name: "Generated preview — not saved as briefing" }),
   ).toBeVisible();
+  // "(run 2)": the scripted Gateway numbers its calls, and each Generate makes exactly one call.
+  await expect(briefing.getByLabel("Theme 1")).toHaveValue(
+    "Requests for more rest-break time (run 2).",
+  );
+  // Spec 05: the saved briefing stays available beside the preview, through the switch; switching
+  // away from unsaved preview text asks first (F5-10).
+  const briefingToShow = briefing.getByRole("radiogroup", { name: "Briefing to show" });
+  await briefing.getByLabel("Theme 1").fill("Preview wording to discard.");
+  await briefingToShow.getByRole("radio", { name: "Saved briefing" }).click();
+  await page.getByRole("button", { name: "Discard and switch" }).click();
+  await expect(
+    briefing.getByRole("heading", { name: /^Saved briefing · last saved / }),
+  ).toBeFocused();
+  await expect(briefing.getByLabel("Theme 1")).toHaveValue(
+    "Several people asked for longer rest breaks.",
+  );
+  await briefingToShow.getByRole("radio", { name: "Generated preview" }).click();
+  await expect(
+    briefing.getByRole("heading", { name: "Generated preview — not saved as briefing" }),
+  ).toBeFocused();
   await expect(briefing.getByLabel("Theme 1")).toHaveValue(
     "Requests for more rest-break time (run 2).",
   );
