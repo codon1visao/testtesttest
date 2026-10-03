@@ -1,5 +1,6 @@
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterAll, afterEach, beforeAll } from "vitest";
+import { mswServer } from "./msw-server";
 
 // jsdom has no window.matchMedia; Astryx's useMediaQuery (Theme, Toast) calls it on render.
 Object.defineProperty(window, "matchMedia", {
@@ -17,6 +18,13 @@ Object.defineProperty(window, "matchMedia", {
 });
 
 // Vitest runs without globals, so Testing Library cannot register its own cleanup.
+beforeAll(() => {
+  mswServer.listen({ onUnhandledFrame: "error" });
+});
 afterEach(() => {
   cleanup();
+  mswServer.resetHandlers();
+});
+afterAll(() => {
+  mswServer.close();
 });
