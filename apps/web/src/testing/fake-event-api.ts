@@ -6,12 +6,15 @@ import {
   GenerateBriefingRequestSchema,
   type HttpErrorCode,
   type EventView,
+  type FeedbackNote,
+  FeedbackIdSchema,
   type EvidenceItem,
   type MemberId,
   SaveAttendanceRequestSchema,
   type SaveAttendanceResponse,
   SaveBriefingRequestSchema,
   SelectPreviewRequestSchema,
+  SubmitFeedbackRequestSchema,
 } from "@event-desk/contracts";
 import { buildBriefingView, buildSeedEventView } from "@event-desk/contracts/testing";
 import { delay, http, HttpResponse } from "msw";
@@ -49,6 +52,11 @@ export class FakeEventApi {
   readonly generationRequests: unknown[] = [];
   readonly selectRequests: unknown[] = [];
   readonly saveRequests: unknown[] = [];
+  readonly feedbackRequests: unknown[] = [];
+  /** Replies for upcoming feedback submissions, consumed in order; "lost" drops the response. */
+  readonly feedbackReplies: ("lost" | { status: number; code: HttpErrorCode; message: string })[] =
+    [];
+  private readonly submissions = new Map<string, FeedbackNote>();
   /** Holds each briefing save this long before replying, to observe the saving state. */
   saveDelayMs = 0;
   /** Holds each preview select this long before replying, to act while it is in flight. */
@@ -256,6 +264,31 @@ export class FakeEventApi {
           briefingRevision: this.view.briefingRevision,
           selectedPreview: this.view.selectedPreview,
         });
+      }),
+      http.post("/api/events/:eventId/feedback", async ({ request }) => {
+        const body: unknown = await request.json();
+        this.feedbackRequests.push(body);
+        const reply = this.feedbackReplies.shift();
+        if (reply === "lost") return HttpResponse.error();
+        if (reply !== undefined) return apiErrorResponse(reply.status, reply.code, reply.message);
+        const parsed = SubmitFeedbackRequestSchema.safeParse(body);
+        if (!parsed.success)
+          return apiErrorResponse(400, "VALIDATION_FAILED", "Invalid feedback body.");
+        const existing = this.submissions.get(parsed.data.submissionId);
+        if (existing !== undefined) {
+          return HttpResponse.json(
+            { note: existing, automaticBriefing: "scheduled" },
+            { status: 200 },
+          );
+        }
+        const note = {
+          id: FeedbackIdSchema.parse(`F${String(this.view.feedback.length + 1).padStart(2, "0")}`),
+          text: parsed.data.text,
+          receivedAt: new Date().toISOString(),
+        };
+        this.submissions.set(parsed.data.submissionId, note);
+        this.view = { ...this.view, feedback: [...this.view.feedback, note] };
+        return HttpResponse.json({ note, automaticBriefing: "scheduled" }, { status: 201 });
       }),
     ];
   }

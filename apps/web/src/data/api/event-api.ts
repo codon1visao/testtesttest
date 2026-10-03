@@ -14,6 +14,9 @@ import {
   type SelectPreviewRequest,
   type SelectPreviewResponse,
   SelectPreviewResponseSchema,
+  type SubmitFeedbackRequest,
+  type SubmitFeedbackResponse,
+  SubmitFeedbackResponseSchema,
 } from "@event-desk/contracts";
 import type { z } from "zod";
 import { apiClient } from "../http/api-client";
@@ -80,4 +83,12 @@ export async function saveBriefing(
 ): Promise<SaveBriefingResponse> {
   const response = await apiClient.put<unknown>(`${eventPath(eventId)}/briefing`, body);
   return parseResponse(SaveBriefingResponseSchema, response.data);
+}
+
+export async function submitFeedback(
+  eventId: EventId,
+  body: SubmitFeedbackRequest,
+): Promise<SubmitFeedbackResponse> {
+  const response = await apiClient.post<unknown>(`${eventPath(eventId)}/feedback`, body);
+  return parseResponse(SubmitFeedbackResponseSchema, response.data);
 }

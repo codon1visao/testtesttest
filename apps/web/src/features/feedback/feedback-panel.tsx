@@ -1,8 +1,10 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { FeedbackId, FeedbackNote } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
+import { EVENT_ID } from "../../config";
 
 const styles = stylex.create({
   // Astryx Badge may shrink with an ellipsis; the note ID must always be readable in full.
@@ -33,6 +35,9 @@ export function FeedbackPanel({
           {notes.length} anonymous notes from the event feedback form. Read-only and not linked to
           members.
         </Text>
+        <Link href={`/events/${EVENT_ID}/feedback`} isExternalLink>
+          Open feedback form (test)
+        </Link>
         {notes.length === 0 ? (
           <Text>No feedback notes yet.</Text>
         ) : (

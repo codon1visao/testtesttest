@@ -66,4 +66,11 @@ describe("feedback panel", () => {
     expect(within(items[7] ?? document.body).getByText("New since this briefing")).toBeTruthy();
     expect(within(items[0] ?? document.body).queryByText("New since this briefing")).toBeNull();
   });
+
+  it("links to the test feedback form in a new tab", async () => {
+    renderApp();
+    const link = (await panel()).getByRole("link", { name: /Open feedback form \(test\)/ });
+    expect(link.getAttribute("href")).toBe("/events/E101/feedback");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
 });
