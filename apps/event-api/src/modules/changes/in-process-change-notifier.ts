@@ -7,10 +7,10 @@ export class InProcessChangeNotifier implements ChangeNotifier {
 
   constructor(private readonly logger: Logger) {}
 
-  notify(eventId: EventId): void {
+  notify(eventId: EventId, version: number | null): void {
     for (const listener of this.#listeners) {
       try {
-        listener(eventId);
+        listener(eventId, version);
       } catch (error) {
         this.logger.warn({ err: error, eventId }, "change listener failed");
       }

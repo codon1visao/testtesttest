@@ -31,8 +31,8 @@ function setup() {
   const cache = new FakeCache();
   const bypass = new CacheBypass();
   const notifier = new InProcessChangeNotifier(logger);
-  const notified: EventId[] = [];
-  notifier.subscribe((eventId) => notified.push(eventId));
+  const notified: [EventId, number | null][] = [];
+  notifier.subscribe((eventId, version) => notified.push([eventId, version]));
   return {
     cache,
     bypass,
@@ -43,12 +43,16 @@ function setup() {
 }
 
 describe("EventChangePublisher", () => {
-  it("flushes the cache and notifies", async () => {
+  it("flushes the cache and notifies with the new view version", async () => {
     const { cache, bypass, notified, publisher } = setup();
     await publisher.publish(E101);
-    expect(cache.invalidations).toBe(1);
+    await publisher.publish(E101);
+    expect(cache.invalidations).toBe(2);
     expect(bypass.active).toBe(false);
-    expect(notified).toEqual([E101]);
+    expect(notified).toEqual([
+      [E101, 1],
+      [E101, 2],
+    ]);
   });
 
   it("switches reads to MySQL when the flush fails, still notifies, never throws", async () => {
@@ -56,7 +60,7 @@ describe("EventChangePublisher", () => {
     cache.failing = true;
     await expect(publisher.publish(E101)).resolves.toBeUndefined();
     expect(bypass.active).toBe(true);
-    expect(notified).toEqual([E101]);
+    expect(notified).toEqual([[E101, null]]);
     expect(lines.join("")).toContain("cache flush failed");
   });
 

@@ -15,16 +15,22 @@ export class EventChangePublisher {
 
   /** Never throws: MySQL already holds the truth; a failed flush only switches reads to MySQL. */
   async publish(eventId: EventId): Promise<void> {
+    this.notifier.notify(eventId, await this.flush(eventId));
+  }
+
+  /** The new view version, or null when the flush failed. */
+  private async flush(eventId: EventId): Promise<number | null> {
     try {
-      await this.cache.invalidate(eventId);
+      const version = await this.cache.invalidate(eventId);
       this.bypass.clear();
+      return version;
     } catch (error) {
       this.bypass.activate();
       this.logger.warn(
         { err: error, eventId },
         "event view cache flush failed; reading from MySQL until a flush succeeds",
       );
+      return null;
     }
-    this.notifier.notify(eventId);
   }
 }
