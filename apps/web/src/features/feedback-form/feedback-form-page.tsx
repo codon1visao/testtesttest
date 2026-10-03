@@ -5,7 +5,7 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { type EventId, EventIdSchema } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useParams } from "react-router";
 import { ApiError, describeApiError } from "../../data/http/api-error";
 import { useSubmitFeedback } from "../../data/mutations/use-submit-feedback";
@@ -27,12 +27,20 @@ export function FeedbackFormPage() {
   return <FeedbackForm eventId={parsed.data} />;
 }
 
+/** A send that was not confirmed as stored: resending the same text must reuse its ID (F3-11). */
+interface UnsettledAttempt {
+  submissionId: string;
+  text: string;
+}
+
 function FeedbackForm({ eventId }: { eventId: EventId }) {
   const submit = useSubmitFeedback(eventId);
   const [text, setText] = useState("");
-  const [submissionId, setSubmissionId] = useState(() => crypto.randomUUID());
+  const [lastAttempt, setLastAttempt] = useState<UnsettledAttempt | null>(null);
   const [problem, setProblem] = useState<FeedbackDraftProblem>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [eventMissing, setEventMissing] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
 
   const send = () => {
     if (submit.isPending) return;
@@ -40,24 +48,41 @@ function FeedbackForm({ eventId }: { eventId: EventId }) {
     setProblem(found);
     if (found !== null) return;
     setNotice(null);
+    // The ID is reused only for the very text it was sent with: an edited note is a new
+    // submission, which the server would otherwise answer with the earlier note and drop.
+    const submissionId =
+      lastAttempt !== null && lastAttempt.text === text
+        ? lastAttempt.submissionId
+        : crypto.randomUUID();
     submit.mutate(
       { submissionId, text },
       {
         onSuccess: () => {
           setText("");
-          setSubmissionId(crypto.randomUUID());
+          setLastAttempt(null);
           setNotice({ kind: "sent" });
         },
         onError: (error) => {
+          setLastAttempt({ submissionId, text });
+          if (error instanceof ApiError && error.code === "EVENT_NOT_FOUND") {
+            setEventMissing(true);
+            return;
+          }
           setNotice(
             error instanceof ApiError && error.outcomeUnknown
               ? { kind: "unconfirmed" }
               : { kind: "failed", message: describeApiError(error) },
           );
         },
+        // The submit button was disabled while sending: keep keyboard focus off <body> (P20).
+        onSettled: () => {
+          field.current?.focus();
+        },
       },
     );
   };
+
+  if (eventMissing) return <NotFoundPage title="Event not found" />;
 
   return (
     <main {...stylex.props(styles.page)}>
@@ -73,11 +98,13 @@ function FeedbackForm({ eventId }: { eventId: EventId }) {
         >
           <VStack gap={3}>
             <TextArea
+              ref={field}
               label="Your feedback"
               description="Up to 1,000 characters."
               value={text}
               rows={6}
-              isDisabled={submit.isPending}
+              // Read-only, not disabled, while sending: it stays focusable for the return of focus.
+              isReadOnly={submit.isPending}
               onChange={(value) => {
                 setText(value);
                 if (problem !== null) setProblem(null);

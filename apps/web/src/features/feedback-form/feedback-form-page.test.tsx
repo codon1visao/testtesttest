@@ -63,6 +63,80 @@ describe("feedback form page (F3 test channel)", () => {
     expect(sent()[1]?.submissionId).toBe(sent()[0]?.submissionId);
   });
 
+  it("F3 (P19): an edit after an unconfirmed send is a new submission, never dropped", async () => {
+    api.feedbackReplies.push("lost");
+    const { user } = renderApp("/events/E101/feedback");
+    await screen.findByRole("heading", { name: "Event feedback" });
+    await user.type(field(), "Was this received?");
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    await screen.findByText(
+      "We could not confirm your feedback was received. Submit again — it will not be duplicated.",
+    );
+    await user.type(field(), " Also: more shade.");
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    await waitFor(() => {
+      expect(sent()).toHaveLength(2);
+    });
+    expect(sent()[1]?.text).toBe("Was this received? Also: more shade.");
+    expect(sent()[1]?.submissionId).not.toBe(sent()[0]?.submissionId);
+  });
+
+  it("F3 (P19): an edit after a failed send is a new submission; unchanged text keeps its ID", async () => {
+    api.feedbackReplies.push(
+      { status: 503, code: "STORE_UNAVAILABLE", message: "Try again." },
+      { status: 503, code: "STORE_UNAVAILABLE", message: "Try again." },
+    );
+    const { user } = renderApp("/events/E101/feedback");
+    await screen.findByRole("heading", { name: "Event feedback" });
+    await user.type(field(), "First.");
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    await screen.findByText("Feedback was not submitted");
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    await waitFor(() => {
+      expect(sent()).toHaveLength(2);
+    });
+    await user.type(field(), " Edited.");
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    await waitFor(() => {
+      expect(sent()).toHaveLength(3);
+    });
+    expect(sent()[1]?.submissionId).toBe(sent()[0]?.submissionId);
+    expect(sent()[2]?.submissionId).not.toBe(sent()[1]?.submissionId);
+    expect(sent()[2]?.text).toBe("First. Edited.");
+  });
+
+  it("P20: keyboard focus returns to the text area once a send settles", async () => {
+    api.feedbackReplies.push("lost");
+    const { user } = renderApp("/events/E101/feedback");
+    await screen.findByRole("heading", { name: "Event feedback" });
+    await user.type(field(), "Focus check.");
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    await screen.findByText(
+      "We could not confirm your feedback was received. Submit again — it will not be duplicated.",
+    );
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    await screen.findByText("Thank you — your feedback was received.");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
+  });
+
+  it("P21: an unknown event answers with the not-found page", async () => {
+    api.feedbackReplies.push({
+      status: 404,
+      code: "EVENT_NOT_FOUND",
+      message: "Event E999 was not found.",
+    });
+    const { user } = renderApp("/events/E999/feedback");
+    await screen.findByRole("heading", { name: "Event feedback" });
+    await user.type(field(), "Hello?");
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
+    expect(await screen.findByRole("heading", { name: "Event not found" })).toBeTruthy();
+  });
+
   it("F3-13: the limit error is shown and the text kept", async () => {
     api.feedbackReplies.push({
       status: 422,
