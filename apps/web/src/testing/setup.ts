@@ -2,6 +2,7 @@ import { focusManager } from "@tanstack/react-query";
 import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { useUiStore } from "../state/ui-store";
+import { FakeEventSource } from "./fake-event-source";
 import { mswServer } from "./msw-server";
 
 // jsdom has no window.matchMedia; Astryx's useMediaQuery (Theme, Toast) calls it on render.
@@ -38,9 +39,16 @@ if (
 // Vitest runs without globals, so Testing Library cannot register its own cleanup.
 beforeAll(() => {
   mswServer.listen({ onUnhandledFrame: "error" });
+  // jsdom has no EventSource; the change stream (F7) is driven by hand through the fake.
+  Object.defineProperty(globalThis, "EventSource", {
+    writable: true,
+    configurable: true,
+    value: FakeEventSource,
+  });
 });
 afterEach(() => {
   cleanup();
+  FakeEventSource.reset();
   // Tests simulate window focus to trigger refetches; hand focus tracking back to the browser default.
   focusManager.setFocused(undefined);
   useUiStore.setState({

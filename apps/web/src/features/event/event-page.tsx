@@ -4,7 +4,9 @@ import { type EventId, EventIdSchema } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
 import { useParams } from "react-router";
 import { describeApiError } from "../../data/http/api-error";
+import { useEventChanges } from "../../data/queries/use-event-changes";
 import { useEventQuery } from "../../data/queries/use-event-query";
+import { useRefetchAt } from "../../data/queries/use-refetch-at";
 import { NotFoundPage } from "../../shared/ui/not-found-page";
 import { LoadErrorState, LoadingState } from "../../shared/ui/page-states";
 import { PanelErrorBoundary } from "../../shared/ui/panel-error-boundary";
@@ -27,7 +29,16 @@ export function EventPage() {
 }
 
 export function EventScreen({ eventId }: { eventId: EventId }) {
-  const query = useEventQuery(eventId);
+  const { live } = useEventChanges(eventId);
+  const query = useEventQuery(eventId, { live });
+  const generation = query.data?.generation;
+  // Cooldown end and batch cutoff/next attempt are moments no server push announces.
+  useRefetchAt(
+    eventId,
+    generation === undefined
+      ? []
+      : [generation.cooldownUntil, generation.batch?.closesAt, generation.batch?.nextAttemptAt],
+  );
   const activeView = useUiStore((state) => state.activeView);
 
   if (query.isPending) {
