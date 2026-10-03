@@ -153,6 +153,42 @@ module.exports = {
       },
     },
     {
+      name: "event-api-adapters-only-from-composition-root",
+      comment:
+        "Only compose.ts wires adapters. Adapters may use each other (repositories use persistence); scripts and test helpers build their own.",
+      severity: "error",
+      from: {
+        path: "^apps/event-api/src/",
+        pathNot: [
+          "^apps/event-api/src/compose\\.ts$",
+          "^apps/event-api/src/(repositories|integrations|persistence|scripts|testing)/",
+          TESTS,
+        ],
+      },
+      to: { path: "^apps/event-api/src/(repositories|integrations|persistence)/" },
+    },
+    {
+      name: "event-api-persistence-is-lowest",
+      comment:
+        "persistence/ (entities, migrations, data source) sits below every other adapter; it may import ports, shared and contracts.",
+      severity: "error",
+      from: { path: "^apps/event-api/src/persistence/", pathNot: TESTS },
+      to: {
+        path: "^apps/event-api/src/(repositories|integrations|modules|http|app\\.ts|compose\\.ts|config)",
+      },
+    },
+    {
+      name: "event-api-config-is-leaf",
+      comment:
+        "config/ parses the environment; it may import only shared/ (log level type) and itself.",
+      severity: "error",
+      from: { path: "^apps/event-api/src/config/", pathNot: TESTS },
+      to: {
+        path: "^apps/event-api/src/",
+        pathNot: "^apps/event-api/src/(shared|config)/",
+      },
+    },
+    {
       name: "event-api-composition-root",
       comment: "Only main.ts and test helpers import the composition root.",
       severity: "error",
