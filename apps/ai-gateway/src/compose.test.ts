@@ -4,7 +4,7 @@ import {
   type BriefingGenerateV1Response,
 } from "@event-desk/contracts/gateway-rpc";
 import { createRpcClient } from "@event-desk/tcp-rpc";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAIBriefingModel } from "./ai/openai-briefing-model.js";
 import { composeGateway, type Gateway } from "./compose.js";
 import type { GatewayConfig } from "./config/env.js";
@@ -150,13 +150,38 @@ describe("AI Gateway over TCP", () => {
   });
 
   it("Review Focus 4 / F8-11: one call per lane; background runs beside a busy interactive lane", async () => {
-    const { port } = await start([{ kind: "hang" }, { kind: "output", output: validSections() }]);
+    const { port, requests } = await start([
+      { kind: "hang" },
+      { kind: "output", output: validSections() },
+    ]);
     const slow = call(port, request({ deadlineAt: new Date(Date.now() + 1_500).toISOString() }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The hanging call holds the interactive lane once its provider request is in flight.
+    await vi.waitFor(() => {
+      expect(requests).toHaveLength(1);
+    });
     const second = errorOf(await call(port, request()));
     expect([second.code, second.notSent]).toEqual(["GATEWAY_UNAVAILABLE", true]);
     const background = await call(port, request({ lane: "background" }));
     expect(background.ok).toBe(true);
+    expect(errorOf(await slow).code).toBe("DEADLINE_EXCEEDED");
+  });
+
+  it("F8-11: an interactive call runs beside a busy background lane", async () => {
+    const { port, requests } = await start([
+      { kind: "hang" },
+      { kind: "output", output: validSections() },
+    ]);
+    const slow = call(
+      port,
+      request({ lane: "background", deadlineAt: new Date(Date.now() + 1_500).toISOString() }),
+    );
+    await vi.waitFor(() => {
+      expect(requests).toHaveLength(1);
+    });
+    const busy = errorOf(await call(port, request({ lane: "background" })));
+    expect([busy.code, busy.notSent]).toEqual(["GATEWAY_UNAVAILABLE", true]);
+    const interactive = await call(port, request({ lane: "interactive" }));
+    expect(interactive.ok && interactive.result.sections).toEqual(validSections());
     expect(errorOf(await slow).code).toBe("DEADLINE_EXCEEDED");
   });
 
