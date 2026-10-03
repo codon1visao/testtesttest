@@ -10,18 +10,19 @@ These rules apply to every change in this repository, by people and by agents.
 
 ## Commands
 
-| Command                             | What it does                                                                                                                                            |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm install`                      | Install the workspace                                                                                                                                   |
-| `cp .env.example .env`              | First-time local configuration (local-only defaults for Docker Compose)                                                                                 |
-| `pnpm infra:up` / `pnpm infra:down` | Start/stop MySQL 8.4 and Redis 8 (Docker Compose)                                                                                                       |
-| `pnpm dev`                          | Event API on http://127.0.0.1:4000 and the coordinator web app on http://localhost:5173 (Vite proxies `/api` to the API — same origin, no CORS)         |
-| `pnpm verify`                       | Prettier check, ESLint, type-check (`tsc -b` + `apps/web`), dependency-cruiser, unit tests: run before every commit                                     |
-| `pnpm test`                         | Unit tests (Vitest)                                                                                                                                     |
-| `pnpm build`                        | `tsc -b` for the Node packages, then the production web bundle (`apps/web/dist`)                                                                        |
-| `pnpm test:integration`             | Integration tests against `event_desk_test` and Redis DB 1 (needs `pnpm infra:up`)                                                                      |
-| `pnpm arch`                         | Architecture rules only                                                                                                                                 |
-| `pnpm db:reset`                     | Explicit reset with the event API stopped: recreates `event_desk`, deletes `event-desk:*` and `bull:briefing-batch:*` keys; the next start reseeds E101 |
+| Command                             | What it does                                                                                                                                                           |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm install`                      | Install the workspace                                                                                                                                                  |
+| `cp .env.example .env`              | First-time local configuration (local-only defaults for Docker Compose; re-copy, or add the AI Gateway block, after pulling Plan 3)                                    |
+| `pnpm infra:up` / `pnpm infra:down` | Start/stop MySQL 8.4 and Redis 8 (Docker Compose)                                                                                                                      |
+| `pnpm dev`                          | AI Gateway on 127.0.0.1:4100 (TCP, loopback), event API on http://127.0.0.1:4000 and the coordinator web app on http://localhost:5173 (Vite proxies `/api` to the API) |
+| `pnpm verify`                       | Prettier check, ESLint, type-check (`tsc -b` + `apps/web`), dependency-cruiser, unit tests: run before every commit                                                    |
+| `pnpm test`                         | Unit tests (Vitest)                                                                                                                                                    |
+| `pnpm build`                        | `tsc -b` for the Node packages, then the production web bundle (`apps/web/dist`)                                                                                       |
+| `pnpm test:integration`             | Integration tests against `event_desk_test` and Redis DB 1 (needs `pnpm infra:up`)                                                                                     |
+| `pnpm smoke:live`                   | Manual real-model check through the running Gateway (needs `OPENAI_API_KEY` in `.env`); `--hostile` adds an injection note. Never in CI                                |
+| `pnpm arch`                         | Architecture rules only                                                                                                                                                |
+| `pnpm db:reset`                     | Explicit reset with the event API stopped: recreates `event_desk`, deletes `event-desk:*` and `bull:briefing-batch:*` keys; the next start reseeds E101                |
 
 Only document a command once it exists.
 
