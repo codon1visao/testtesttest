@@ -96,3 +96,105 @@ pnpm dev
 - reads its targets from `.env` and prints what it removed, without printing connection secrets.
 
 Reload the browser after a reset.
+
+## How it works
+
+```mermaid
+flowchart LR
+  B["Browser<br/>React app"] -- "/api via Vite proxy<br/>same origin" --> API["Event API<br/>Express"]
+  API -. "SSE: changed" .-> B
+  API -- "transactions,<br/>per-event row lock" --> DB[("MySQL 8.4<br/>durable records")]
+  API -- "cache, batch queue,<br/>cooldown, budget" --> R[("Redis 8")]
+  API -- "authenticated TCP,<br/>interactive / background lane" --> GW["AI Gateway"]
+  GW -- "Agents SDK,<br/>strict Structured Outputs" --> OAI["OpenAI"]
+```
+
+- **The event API owns the facts.** Attendance counts are calculated in code from saved records, never by the model and never stored as separate fields. Every write runs in one MySQL transaction that locks the event row first. Side effects (cache flush, live-update message) run only after commit.
+- **Generation has two triggers and one pipeline.**
+  - **Generate** is synchronous. The API captures the saved attendance and notes, calls the Gateway on the _interactive_ lane, validates the result against that captured input, and stores it as a new preview.
+  - **New notes** (test form or script) are batched by a BullMQ job: one job per fixed window, with the window's cutoff never moving. The job reads all notes when it runs, skips when nothing changed, uses the _background_ lane, and retries only known temporary failures (at most 3 attempts in 5 minutes).
+  - Both use the same capture → call → validate → commit code, so the rules exist once.
+- **The coordinator always wins.** Manual calls have their own Gateway lane and a reserved share of the daily budget. A batch waits for a running Generate and then usually skips. An automatic result never replaces an unreviewed manual one.
+- **The AI Gateway is the only process with the OpenAI key.**
+  - It holds fixed instructions; the notes travel in a separate data message.
+  - It uses strict Structured Outputs, no tools, retries off and tracing off.
+  - It enforces deadlines, one call per lane and a daily backstop.
+  - The event API reaches it over loopback TCP with a shared secret, and never calls OpenAI itself.
+- **Three briefing slots keep human work safe:**
+  - the **saved briefing**, changed only by your explicit save;
+  - the **selected preview**, the one you are editing;
+  - the **incoming preview**, the newest candidate waiting for review.
+
+  Generation only ever writes the incoming slot.
+
+- **Freshness is a comparison, not a flag.** Each generation stores the attendance and note set it read. A briefing is out of date when the saved records differ from that snapshot, and current again if an attendance change is reverted. Saving edited text never clears it.
+- **Live updates.** Every committed change flushes the versioned Redis cache of the event read and sends an SSE `changed` message. The page re-reads the event, and polls when the stream is down.
+- **One event-API process.** Single-flight Generate, the live-update notifier and the cache-bypass flag are in-process by design (T3 §3); run one instance.
+
+## Repository layout
+
+```text
+apps/
+  web/           React 19 + Vite: features/ (event, attendance, feedback, briefing, feedback-form), data/ (API, HTTP client, queries, mutations), state/ (Zustand UI state)
+  event-api/     Express: modules/ (services + pure domain rules), ports/, repositories/ (TypeORM), integrations/ (Redis, BullMQ, Gateway client), persistence/ (entities, migrations, seed)
+  ai-gateway/    TCP server: operations/, ai/ (prompt, OpenAI adapter), limits/
+packages/
+  contracts/     Zod schemas shared by every boundary (HTTP, TCP, stored rows, model output)
+  tcp-rpc/       Length-prefixed JSON over TCP with authentication and loopback-only binding
+e2e/             Playwright specs and a scripted fake Gateway
+docs/            Brief, specs (F1–F8, S1, T1–T5), ADRs, build plans, reviews, spikes
+```
+
+Architecture rules are enforced in CI by dependency-cruiser:
+
+- services depend on ports, never adapters;
+- domain folders are pure;
+- `typeorm` stays in persistence and repositories, and `bullmq`/`ioredis` in integrations;
+- `openai` stays in the Gateway's `ai/` folder;
+- the web app's UI never calls HTTP directly.
+
+## Data and API
+
+**Data** (MySQL, normalised; [T4](docs/specs/13-data-model-and-transactions.md)):
+
+- events, members and anonymous feedback notes, with no link between notes and members;
+- immutable generations with their captured attendance and note inputs, items and cited sources;
+- the two preview slots;
+- the saved briefing, which stores only human wording per item.
+
+Composite foreign keys make the database itself reject a citation of a note outside a generation's input, and a saved text that points at another generation's items.
+
+**API** (JSON; same-origin; [T3 §5](docs/specs/12-architecture-and-repository.md)):
+
+| Method and path                                 | Purpose                                                                                                  |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                               | MySQL and Redis status                                                                                   |
+| `GET /api/events/E101`                          | The whole event view: members, counts, notes, the three briefing slots with freshness, generation status |
+| `PUT /api/events/E101/attendance`               | Save attendance (`baseAttendanceRevision` detects a save from another tab)                               |
+| `POST /api/events/E101/briefing-generations`    | Generate (synchronous)                                                                                   |
+| `POST /api/events/E101/briefing-preview/select` | Open the incoming preview for editing                                                                    |
+| `PUT /api/events/E101/briefing`                 | Save the briefing's wording (text only; references come from the server)                                 |
+| `POST /api/events/E101/feedback`                | Test channel: add a note (idempotent per `submissionId`)                                                 |
+| `GET /api/events/E101/changes`                  | Server-Sent Events: `changed` after every committed change                                               |
+
+Errors are one JSON shape, `{ error: { code, message, field?, retryAfterMs? } }`, with one status per code.
+
+## Decisions and trade-offs
+
+Each decision has a short record in [`docs/adr`](docs/adr/README.md) (context, options, consequences) and its full design in [`docs/specs`](docs/specs/README.md).
+
+| Decision                                                                                                                         | Choice                                                                                                       | Trade-off                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Safe regeneration ([ADR 0002](docs/adr/0002-separate-preview-for-regeneration.md))                                               | A new generation is a separate preview; only an explicit save replaces the saved briefing                    | More slots and states than a confirm-before-overwrite dialog, but human work cannot be lost by a click elsewhere   |
+| Text-only edits ([0003](docs/adr/0003-text-only-briefing-edits.md))                                                              | You edit wording; items, order and references stay as generated                                              | You cannot add, remove or re-cite items; in exchange, every saved item keeps verifiable sources                    |
+| Store ([0004](docs/adr/0004-mysql-and-typeorm.md), [0016](docs/adr/0016-normalised-schema-with-composite-keys.md))               | MySQL with a normalised schema and composite keys                                                            | More tables than JSON documents, but the database enforces the evidence rules                                      |
+| AI boundary ([0005](docs/adr/0005-openai-agents-sdk-in-gateway.md), [0009](docs/adr/0009-internal-ai-gateway-over-tcp.md))       | A separate Gateway process, the only holder of the key, reached over authenticated local TCP                 | One more process and its failure modes (handled as "AI service not reachable")                                     |
+| Freshness ([0006](docs/adr/0006-freshness-by-snapshot-comparison.md))                                                            | Compare the stored snapshot with saved records                                                               | Stores per-generation inputs; gives exact "what changed" messages and clears itself after a revert                 |
+| Triggers and priority ([0007](docs/adr/0007-generation-triggers.md), [0010](docs/adr/0010-manual-priority-and-fixed-windows.md)) | Generate is synchronous; new notes batch in a fixed 3 s window                                               | A fixed window is simpler and bounded, but a note just after a cutoff waits for the next window                    |
+| Batch queue ([0008](docs/adr/0008-bullmq-batch-queue.md))                                                                        | BullMQ with throttle de-duplication and delay                                                                | Redis must run with AOF and `noeviction`; verified first in a spike, and behind a port, so it could be swapped     |
+| Conflicts ([0013](docs/adr/0013-conflicts-cite-two-notes.md))                                                                    | A conflict cites at least two distinct notes, one per opposing view                                          | Both sides stay inspectable; a single note with an internal contradiction cannot be a conflict                     |
+| Retry ([0014](docs/adr/0014-retry-is-generate-again.md))                                                                         | Retry is Generate again, confirmed first when the last attempt may have been charged                         | No hidden retries on the coordinator's path; the coordinator decides on every paid attempt                         |
+| Live updates ([0015](docs/adr/0015-server-sent-events.md))                                                                       | Server-Sent Events with polling fallback                                                                     | One-way and dependency-free; the in-process notifier assumes one event-API instance                                |
+| Four questions ([0017](docs/adr/0017-briefing-answers-four-questions.md))                                                        | "What happened" = code-built attendance overview + a cited model summary                                     | The model never writes the counts                                                                                  |
+| Cache ([0018](docs/adr/0018-versioned-event-view-cache.md))                                                                      | Versioned Redis cache of the event read                                                                      | A version counter instead of a plain delete closes a stale-write race; reads fall back to MySQL when Redis is down |
+| Frontend and backend stacks ([0011](docs/adr/0011-frontend-stack.md), [0012](docs/adr/0012-backend-stack-and-workspace.md))      | React + Vite + React Query + React Hook Form + Zustand + Astryx; Express + TypeORM + Zod; one pnpm workspace | Familiar, well-supported libraries over novelty; shared Zod contracts remove hand-written duplicate types          |
