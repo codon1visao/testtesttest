@@ -31,6 +31,8 @@ Only document a command once it exists.
 - Every new production dependency needs the user's confirmation before it is installed.
   New dev tooling also needs confirmation unless an approved plan already lists it.
 - Pin exact versions (no `^` or `~`) and commit `pnpm-lock.yaml`.
+- pnpm refuses versions published less than 8 hours ago (`minimumReleaseAge: 480`). Wait it out, or add a
+  temporary exact-version `minimumReleaseAgeExclude` entry and remove it once the version has aged.
 
 ## Code
 

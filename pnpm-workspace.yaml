@@ -6,15 +6,7 @@ allowBuilds:
   "@astryxdesign/core": false # postinstall only prints an `astryx init` hint; the spike works without it
   esbuild: true
   msgpackr-extract: false # optional accelerator pulled in by bullmq; false only skips its install/build script (the prebuilt @msgpackr-extract/msgpackr-extract-<platform> binary still loads where available, pure JS otherwise)
-# Exact versions pinned by the approved plan that were newer than pnpm's minimum release age when
-# they were installed. pnpm 11 fails the install without these entries (verified by removing all
-# four: ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION). Remove each entry once its version has aged past
-# the window.
-minimumReleaseAgeExclude:
-  - eslint@10.12.0
-  - "@astryxdesign/build@0.6.5"
-  - "@astryxdesign/core@0.6.5"
-  - "@astryxdesign/theme-neutral@0.6.5"
-  - pino@10.4.0
-  - supertest@7.3.1
-  - msw@3.0.2
+# Supply-chain guard: pnpm refuses package versions published less than 8 hours ago (in minutes).
+# If an approved plan pins a newer version, wait or add a temporary exact-version entry under
+# minimumReleaseAgeExclude, and remove it once the version has aged past the window.
+minimumReleaseAge: 480
