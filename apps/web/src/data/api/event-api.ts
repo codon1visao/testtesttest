@@ -2,6 +2,9 @@ import {
   type EventId,
   type EventView,
   EventViewSchema,
+  type GenerateBriefingRequest,
+  type GenerateBriefingResponse,
+  GenerateBriefingResponseSchema,
   type SaveAttendanceRequest,
   type SaveAttendanceResponse,
   SaveAttendanceResponseSchema,
@@ -34,4 +37,19 @@ export async function saveAttendance(
 ): Promise<SaveAttendanceResponse> {
   const response = await apiClient.put<unknown>(`${eventPath(eventId)}/attendance`, body);
   return parseResponse(SaveAttendanceResponseSchema, response.data);
+}
+
+/** Longer than the server's 60 s run deadline (MANUAL_GENERATION_TIMEOUT_MS), so the server answers first. */
+export const GENERATION_REQUEST_TIMEOUT_MS = 75_000;
+
+export async function generateBriefing(
+  eventId: EventId,
+  body: GenerateBriefingRequest,
+): Promise<GenerateBriefingResponse> {
+  const response = await apiClient.post<unknown>(
+    `${eventPath(eventId)}/briefing-generations`,
+    body,
+    { timeout: GENERATION_REQUEST_TIMEOUT_MS },
+  );
+  return parseResponse(GenerateBriefingResponseSchema, response.data);
 }

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
 import { mswServer } from "../../testing/msw-server";
 import { ApiError } from "../http/api-error";
-import { fetchEvent, saveAttendance } from "./event-api";
+import { fetchEvent, generateBriefing, saveAttendance } from "./event-api";
 
 const E101 = EventIdSchema.parse("E101");
 const signal = () => new AbortController().signal;
@@ -151,6 +151,28 @@ describe("saveAttendance", () => {
       kind: "http",
       status: 409,
       code: "ATTENDANCE_CONFLICT",
+    });
+  });
+});
+
+describe("generateBriefing", () => {
+  it("posts only the attendance baseline and returns the validated incoming preview", async () => {
+    const { incomingPreview } = await generateBriefing(E101, { baseAttendanceRevision: 0 });
+    expect(incomingPreview.trigger).toBe("manual");
+    expect(api.generationRequests).toEqual([{ baseAttendanceRevision: 0 }]);
+  });
+
+  it("surfaces 504 AI_OUTCOME_UNKNOWN as an http ApiError with its code", async () => {
+    api.generationReplies.push({
+      kind: "error",
+      status: 504,
+      code: "AI_OUTCOME_UNKNOWN",
+      message: "Lost after sending.",
+    });
+    expect(await failureOf(generateBriefing(E101, { baseAttendanceRevision: 0 }))).toMatchObject({
+      kind: "http",
+      status: 504,
+      code: "AI_OUTCOME_UNKNOWN",
     });
   });
 });
