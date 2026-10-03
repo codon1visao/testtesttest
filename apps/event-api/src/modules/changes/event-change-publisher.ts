@@ -15,7 +15,13 @@ export class EventChangePublisher {
 
   /** Never throws: MySQL already holds the truth; a failed flush only switches reads to MySQL. */
   async publish(eventId: EventId): Promise<void> {
-    this.notifier.notify(eventId, await this.flush(eventId));
+    const version = await this.flush(eventId);
+    try {
+      this.notifier.notify(eventId, version);
+    } catch (error) {
+      // Readers re-read on their next request; a listener's failure must not fail the change.
+      this.logger.warn({ err: error, eventId }, "change notification failed");
+    }
   }
 
   /** The new view version, or null when the flush failed. */

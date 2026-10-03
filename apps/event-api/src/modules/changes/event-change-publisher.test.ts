@@ -1,5 +1,6 @@
 import { type EventId, EventIdSchema } from "@event-desk/contracts";
 import { describe, expect, it } from "vitest";
+import type { ChangeNotifier } from "../../ports/change-notifier.js";
 import type { CachedEventView, EventViewCache } from "../../ports/event-view-cache.js";
 import { createLogger } from "../../shared/logger.js";
 import { CacheBypass } from "./cache-bypass.js";
@@ -71,5 +72,21 @@ describe("EventChangePublisher", () => {
     cache.failing = false;
     await publisher.publish(E101);
     expect(bypass.active).toBe(false);
+  });
+
+  it("never throws when a change listener fails, and logs only the event ID", async () => {
+    const { cache, bypass, lines } = setup();
+    const logger = createLogger("info", { write: (chunk: string) => void lines.push(chunk) });
+    const throwingNotifier: ChangeNotifier = {
+      notify: () => {
+        throw new Error("listener blew up");
+      },
+      subscribe: () => () => undefined,
+    };
+    const publisher = new EventChangePublisher(cache, bypass, throwingNotifier, logger);
+    await expect(publisher.publish(E101)).resolves.toBeUndefined();
+    const log = lines.join("");
+    expect(log).toContain("change notification failed");
+    expect(log).toContain('"eventId":"E101"');
   });
 });

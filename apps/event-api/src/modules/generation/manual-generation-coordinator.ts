@@ -5,6 +5,7 @@ import type {
   GenerationActivitySnapshot,
 } from "../../ports/generation-activity.js";
 import type { IdGenerator } from "../../ports/id-generator.js";
+import type { Logger } from "../../shared/logger.js";
 import type { EventChangePublisher } from "../changes/event-change-publisher.js";
 import type { BriefingGenerationService } from "./briefing-generation-service.js";
 
@@ -15,6 +16,7 @@ export interface ManualGenerationDeps {
   changes: Pick<EventChangePublisher, "publish">;
   /** MANUAL_GENERATION_TIMEOUT_MS: the whole run's deadline, passed to the Gateway (F8). */
   timeoutMs: number;
+  logger: Logger;
 }
 
 interface InFlightRun {
@@ -65,7 +67,7 @@ export class ManualGenerationCoordinator implements GenerationActivity {
     baseAttendanceRevision: number,
   ): Promise<BriefingView> {
     try {
-      await this.deps.changes.publish(eventId); // other tabs see "Generating briefing…"
+      await this.flush(eventId, runId); // other tabs see "Generating briefing…"
       return await this.deps.generation.generateManual({
         eventId,
         runId,
@@ -74,7 +76,16 @@ export class ManualGenerationCoordinator implements GenerationActivity {
       });
     } finally {
       this.inFlight.delete(eventId);
-      await this.deps.changes.publish(eventId); // and see it finish
+      await this.flush(eventId, runId); // and see it finish
+    }
+  }
+
+  /** A failed flush never replaces the run's real outcome (its preview or its AppError). */
+  private async flush(eventId: EventId, runId: RunId): Promise<void> {
+    try {
+      await this.deps.changes.publish(eventId);
+    } catch (error) {
+      this.deps.logger.warn({ err: error, eventId, runId }, "manual generation flush failed");
     }
   }
 }

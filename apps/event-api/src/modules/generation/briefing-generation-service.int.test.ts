@@ -13,6 +13,7 @@ import type {
   BriefingCallResult,
 } from "../../ports/ai-gateway-client.js";
 import type { IdGenerator } from "../../ports/id-generator.js";
+import type { UnitOfWork } from "../../ports/unit-of-work.js";
 import { TypeOrmUnitOfWork } from "../../repositories/typeorm-unit-of-work.js";
 import { AppError } from "../../shared/app-error.js";
 import { openTestDataSource, truncateAllTables } from "../../testing/database.js";
@@ -53,7 +54,12 @@ const result = (sections: unknown = okSections): BriefingCallResult => ({
 
 function setup(
   answer: (request: BriefingCallRequest) => Promise<BriefingCallResult>,
-  overrides: { ids?: IdGenerator; now?: () => Date } = {},
+  overrides: {
+    ids?: IdGenerator;
+    now?: () => Date;
+    uow?: UnitOfWork;
+    publish?: () => Promise<void>;
+  } = {},
 ) {
   const calls: BriefingCallRequest[] = [];
   const gateway: AiGatewayClient = {
@@ -62,9 +68,9 @@ function setup(
       return answer(request);
     },
   };
-  const publish = vi.fn(() => Promise.resolve());
+  const publish = vi.fn(overrides.publish ?? (() => Promise.resolve()));
   const service = new BriefingGenerationService({
-    uow,
+    uow: overrides.uow ?? uow,
     gateway,
     ids: overrides.ids ?? uuidV7IdGenerator,
     clock: { now: overrides.now ?? (() => NOW) },
@@ -92,6 +98,13 @@ async function appErrorOf(promise: Promise<unknown>): Promise<AppError> {
 const rows = async (sql: string) => dataSource.query<Record<string, unknown>[]>(sql);
 const outcomes = () =>
   rows("SELECT status, error_code, generation_id FROM generation_outcomes ORDER BY finished_at");
+/** The seeded incoming preview is still the only slot, and its generation row still exists. */
+async function expectIncomingSurvives(generationId: string): Promise<void> {
+  expect(await rows("SELECT slot, generation_id FROM preview_slots")).toEqual([
+    { slot: "incoming", generation_id: generationId },
+  ]);
+  expect(await rows("SELECT id FROM briefing_generations")).toEqual([{ id: generationId }]);
+}
 
 beforeAll(async () => {
   dataSource = await openTestDataSource();
@@ -147,6 +160,8 @@ describe("BriefingGenerationService.generateManual", () => {
   });
 
   it("F4-06: maps a Gateway failure, records the outcome and keeps every slot as it was", async () => {
+    const previous = await insertGenerationFixture(dataSource);
+    await putPreviewSlot(dataSource, "incoming", previous);
     const { service, publish, command } = setup(() =>
       Promise.resolve({ ok: false, code: "PROVIDER_REFUSED", notSent: false }),
     );
@@ -155,7 +170,7 @@ describe("BriefingGenerationService.generateManual", () => {
     expect(await outcomes()).toEqual([
       { status: "failed", error_code: "PROVIDER_REFUSED", generation_id: null },
     ]);
-    expect(await rows("SELECT * FROM preview_slots")).toEqual([]);
+    await expectIncomingSurvives(previous);
     expect(publish).toHaveBeenCalledWith(E101);
   });
 
@@ -196,6 +211,9 @@ describe("BriefingGenerationService.generateManual", () => {
     );
     expect((await appErrorOf(service.generateManual(command()))).code).toBe("DEADLINE_EXCEEDED");
     expect(await rows("SELECT id FROM briefing_generations")).toEqual([]);
+    expect(await outcomes()).toEqual([
+      { status: "failed", error_code: "DEADLINE_EXCEEDED", generation_id: null },
+    ]);
   });
 
   it("replaces the previous incoming preview and removes it, but never a referenced one", async () => {
@@ -241,13 +259,28 @@ describe("BriefingGenerationService.generateManual", () => {
       ...uuidV7IdGenerator,
       itemId: () => "0199a4e8-7c1a-7cc2-9d6e-000000000001",
     };
+    const previous = await insertGenerationFixture(dataSource);
+    await putPreviewSlot(dataSource, "incoming", previous);
     const { service, command } = setup(() => Promise.resolve(result()), { ids: sameItemId });
     expect((await appErrorOf(service.generateManual(command()))).code).toBe(
       "RESULT_PERSIST_FAILED",
     );
-    expect(await rows("SELECT * FROM preview_slots")).toEqual([]);
+    await expectIncomingSurvives(previous);
     expect(await outcomes()).toEqual([
       { status: "failed", error_code: "RESULT_PERSIST_FAILED", generation_id: null },
     ]);
+  });
+
+  it("TX6: a failed outcome write and a failed fallback flush never hide the original error", async () => {
+    const brokenWrites: UnitOfWork = {
+      readSnapshot: (work) => uow.readSnapshot(work),
+      run: () => Promise.reject(new Error("MySQL write failed")),
+    };
+    const { service, publish, command } = setup(
+      () => Promise.resolve({ ok: false, code: "PROVIDER_REFUSED", notSent: false }),
+      { uow: brokenWrites, publish: () => Promise.reject(new Error("publish failed")) },
+    );
+    expect((await appErrorOf(service.generateManual(command()))).code).toBe("PROVIDER_REFUSED");
+    expect(publish).toHaveBeenCalledWith(E101);
   });
 });

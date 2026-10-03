@@ -255,7 +255,14 @@ export class BriefingGenerationService {
         { err: recordError, runId: command.runId },
         "could not record the failed run",
       );
-      await this.deps.changes.publish(command.eventId);
+      try {
+        await this.deps.changes.publish(command.eventId);
+      } catch (publishError) {
+        this.deps.logger.warn(
+          { err: publishError, runId: command.runId },
+          "could not flush after the failed run",
+        );
+      }
     }
     return error;
   }

@@ -8,6 +8,7 @@ import { buildBriefingView } from "@event-desk/contracts/testing";
 import { describe, expect, it, vi } from "vitest";
 import type { IdGenerator } from "../../ports/id-generator.js";
 import { AppError } from "../../shared/app-error.js";
+import { createLogger } from "../../shared/logger.js";
 import type { ManualGenerateCommand } from "./briefing-generation-service.js";
 import { ManualGenerationCoordinator } from "./manual-generation-coordinator.js";
 
@@ -20,7 +21,10 @@ const ids: IdGenerator = {
   manualRunId: () => RunIdSchema.parse(`manual:run-${(runs += 1)}`),
 };
 
-function setup() {
+/** `failPublishAt` lists the publish calls (1 = start flush, 2 = finish flush) that reject. */
+function setup({ failPublishAt = [] as number[] } = {}) {
+  const lines: string[] = [];
+  let publishes = 0;
   const pending: { command: ManualGenerateCommand; result: PromiseWithResolvers<BriefingView> }[] =
     [];
   const events: string[] = [];
@@ -38,14 +42,17 @@ function setup() {
     clock: { now: () => START },
     changes: {
       publish: vi.fn(async () => {
+        publishes += 1;
         events.push(
           `publish:${(await coordinator.current(E101)).manual === null ? "idle" : "running"}`,
         );
+        if (failPublishAt.includes(publishes)) throw new Error("publish failed");
       }),
     },
     timeoutMs: 60_000,
+    logger: createLogger("info", { write: (chunk: string) => void lines.push(chunk) }),
   });
-  return { coordinator, generation, pending, events };
+  return { coordinator, generation, pending, events, lines };
 }
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -100,5 +107,40 @@ describe("ManualGenerationCoordinator", () => {
     await settled();
     expect(generation.generateManual).toHaveBeenCalledTimes(2);
     expect(pending[1]?.command.runId).not.toBe(pending[0]?.command.runId);
+  });
+
+  it("flushes after a failed run too and surfaces the original error", async () => {
+    const { coordinator, pending, events } = setup();
+    const failed = coordinator.generate(E101, 0);
+    await settled();
+    const original = new AppError("GATEWAY_UNAVAILABLE", "down");
+    pending[0]?.result.reject(original);
+    await expect(failed).rejects.toBe(original);
+    expect(events).toEqual(["publish:running", "generate", "publish:idle"]);
+  });
+
+  it.each([
+    ["the start flush fails", [1]],
+    ["the finish flush fails", [2]],
+    ["both flushes fail", [1, 2]],
+  ])("still returns the preview when %s", async (_name, failPublishAt) => {
+    const { coordinator, generation, pending, lines } = setup({ failPublishAt });
+    const run = coordinator.generate(E101, 0);
+    await settled();
+    expect(generation.generateManual).toHaveBeenCalledTimes(1);
+    const preview = buildBriefingView();
+    pending[0]?.result.resolve(preview);
+    expect(await run).toBe(preview);
+    expect(lines.join("")).toContain("manual generation flush failed");
+    expect((await coordinator.current(E101)).manual).toBeNull();
+  });
+
+  it("keeps the original error when the finish flush fails", async () => {
+    const { coordinator, pending } = setup({ failPublishAt: [2] });
+    const failed = coordinator.generate(E101, 0);
+    await settled();
+    const original = new AppError("DEADLINE_EXCEEDED", "late");
+    pending[0]?.result.reject(original);
+    await expect(failed).rejects.toBe(original);
   });
 });

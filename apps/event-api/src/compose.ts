@@ -77,6 +77,7 @@ export async function composeEventApi(
     clock,
     changes,
     timeoutMs: config.manualGenerationTimeoutMs,
+    logger,
   });
   const eventViews = new EventViewService({
     uow,
