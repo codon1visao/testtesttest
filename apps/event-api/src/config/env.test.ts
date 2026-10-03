@@ -14,6 +14,7 @@ const DOT_ENV = [
   "GATEWAY_HOST=127.0.0.1",
   "GATEWAY_PORT=4101",
   "GATEWAY_SERVICE_SECRET=file-secret-0123456789-0123456789-0123456789",
+  "MANUAL_GENERATION_TIMEOUT_MS=45000",
   "GATEWAY_DAILY_CALL_LIMIT=5",
   "OPENAI_API_KEY=sk-test-not-a-real-key",
   "OPENAI_MODEL=gpt-test",
@@ -48,10 +49,11 @@ function withProcessEnv(keys: readonly string[], body: () => void): void {
 }
 
 const MYSQL_URL = "mysql://event_desk:secret-pw@127.0.0.1:3306/event_desk";
+const GATEWAY_SERVICE_SECRET = "gateway-secret-0123456789-0123456789-0123456789";
 
 describe("loadConfig", () => {
   it("applies the documented defaults (T3 §13)", () => {
-    expect(loadConfig({ MYSQL_URL })).toEqual({
+    expect(loadConfig({ MYSQL_URL, GATEWAY_SERVICE_SECRET })).toEqual({
       host: "127.0.0.1",
       port: 4000,
       mysqlUrl: MYSQL_URL,
@@ -61,12 +63,15 @@ describe("loadConfig", () => {
       eventViewCacheTtlMs: 30_000,
       mysqlQueryTimeoutMs: 5_000,
       logLevel: "info",
+      gateway: { host: "127.0.0.1", port: 4100, secret: GATEWAY_SERVICE_SECRET },
+      manualGenerationTimeoutMs: 60_000,
     });
   });
 
   it("parses comma-separated lists and numbers", () => {
     const config = loadConfig({
       MYSQL_URL,
+      GATEWAY_SERVICE_SECRET,
       PORT: "4100",
       ALLOWED_ORIGINS: "http://localhost:5173, http://127.0.0.1:5173",
       EVENT_VIEW_CACHE_TTL_MS: "0",
@@ -76,6 +81,48 @@ describe("loadConfig", () => {
     expect(config.allowedOrigins).toEqual(["http://localhost:5173", "http://127.0.0.1:5173"]);
     expect(config.eventViewCacheTtlMs).toBe(0);
     expect(config.mysqlQueryTimeoutMs).toBe(1_500);
+  });
+
+  it("reads the Gateway client settings and the manual generation timeout", () => {
+    const config = loadConfig({
+      MYSQL_URL,
+      GATEWAY_SERVICE_SECRET,
+      GATEWAY_HOST: "::1",
+      GATEWAY_PORT: "4200",
+      MANUAL_GENERATION_TIMEOUT_MS: "90000",
+    });
+    expect(config.gateway).toEqual({ host: "::1", port: 4200, secret: GATEWAY_SERVICE_SECRET });
+    expect(config.manualGenerationTimeoutMs).toBe(90_000);
+  });
+
+  it.each(["4999", "300001", "2.5"])("rejects MANUAL_GENERATION_TIMEOUT_MS=%s", (value) => {
+    expect(() =>
+      loadConfig({ MYSQL_URL, GATEWAY_SERVICE_SECRET, MANUAL_GENERATION_TIMEOUT_MS: value }),
+    ).toThrow(/MANUAL_GENERATION_TIMEOUT_MS/);
+  });
+
+  it.each([undefined, "too-short-to-be-a-secret"])(
+    "requires a GATEWAY_SERVICE_SECRET of at least 32 bytes (%s)",
+    (secret) => {
+      try {
+        loadConfig({
+          MYSQL_URL,
+          ...(secret === undefined ? {} : { GATEWAY_SERVICE_SECRET: secret }),
+        });
+        expect.unreachable();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        const message = (error as ConfigError).message;
+        expect(message).toContain("GATEWAY_SERVICE_SECRET");
+        if (secret !== undefined) expect(message).not.toContain(secret);
+      }
+    },
+  );
+
+  it("refuses a non-loopback GATEWAY_HOST (S1)", () => {
+    expect(() =>
+      loadConfig({ MYSQL_URL, GATEWAY_SERVICE_SECRET, GATEWAY_HOST: "10.0.0.5" }),
+    ).toThrow(/GATEWAY_HOST/);
   });
 
   it.each(["499", "60001", "2.5"])("rejects MYSQL_QUERY_TIMEOUT_MS=%s", (value) => {
@@ -102,7 +149,7 @@ describe("loadConfig", () => {
   });
 
   it("requires MYSQL_URL", () => {
-    expect(() => loadConfig({})).toThrow(/MYSQL_URL/);
+    expect(() => loadConfig({ GATEWAY_SERVICE_SECRET })).toThrow(/MYSQL_URL/);
   });
 });
 
@@ -119,6 +166,7 @@ describe("loadDotEnv (S1-12)", () => {
       GATEWAY_HOST: "127.0.0.1",
       GATEWAY_PORT: "4101",
       GATEWAY_SERVICE_SECRET: "file-secret-0123456789-0123456789-0123456789",
+      MANUAL_GENERATION_TIMEOUT_MS: "45000",
     });
   });
 
@@ -133,6 +181,10 @@ describe("loadDotEnv (S1-12)", () => {
       "EVENT_VIEW_CACHE_TTL_MS",
       "MYSQL_QUERY_TIMEOUT_MS",
       "LOG_LEVEL",
+      "GATEWAY_HOST",
+      "GATEWAY_PORT",
+      "GATEWAY_SERVICE_SECRET",
+      "MANUAL_GENERATION_TIMEOUT_MS",
     ];
     const target: NodeJS.ProcessEnv = {};
     loadDotEnv(await dotEnvFile(keys.map((key) => `${key}=x`).join("\n")), target);

@@ -19,6 +19,8 @@ export function integrationConfig(overrides: Partial<AppConfig> = {}): AppConfig
     eventViewCacheTtlMs: 30_000,
     mysqlQueryTimeoutMs: 5_000,
     logLevel: "silent",
+    gateway: { host: "127.0.0.1", port: 1, secret: "event-api-test-secret-".padEnd(40, "s") },
+    manualGenerationTimeoutMs: 10_000,
     ...overrides,
   };
 }

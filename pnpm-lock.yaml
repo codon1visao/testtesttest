@@ -68,6 +68,9 @@ importers:
       '@event-desk/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@event-desk/tcp-rpc':
+        specifier: workspace:*
+        version: link:../../packages/tcp-rpc
       express:
         specifier: 5.2.1
         version: 5.2.1(supports-color@7.2.0)

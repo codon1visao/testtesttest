@@ -38,13 +38,20 @@ const EnvSchema = z.object({
   EVENT_VIEW_CACHE_TTL_MS: z.coerce.number().int().min(0).max(300_000).default(30_000),
   MYSQL_QUERY_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
   LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
+  GATEWAY_HOST: z
+    .enum(["127.0.0.1", "::1", "localhost"], { error: "GATEWAY_HOST must be a loopback address" })
+    .default("127.0.0.1"),
+  GATEWAY_PORT: z.coerce.number().int().min(1).max(65_535).default(4100),
+  GATEWAY_SERVICE_SECRET: z
+    .string({ error: "is required" })
+    .refine((value) => Buffer.byteLength(value, "utf8") >= 32, {
+      message: "must be at least 32 bytes",
+    }),
+  MANUAL_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(300_000).default(60_000),
 });
 
-/** The Gateway client settings the event API reads from Plan 3B on. */
-const GATEWAY_CLIENT_KEYS = ["GATEWAY_HOST", "GATEWAY_PORT", "GATEWAY_SERVICE_SECRET"] as const;
-
 /** Derived from the schema so the `.env` allowlist cannot drift from what the config reads. */
-const DOT_ENV_KEYS: readonly string[] = [...Object.keys(EnvSchema.shape), ...GATEWAY_CLIENT_KEYS];
+const DOT_ENV_KEYS: readonly string[] = Object.keys(EnvSchema.shape);
 
 export interface AppConfig {
   host: string;
@@ -57,6 +64,10 @@ export interface AppConfig {
   /** Per-query deadline; also bounds lock waits and waiting for a pooled connection. */
   mysqlQueryTimeoutMs: number;
   logLevel: LogLevel;
+  /** The AI Gateway's loopback TCP endpoint and the shared service secret (F8). */
+  gateway: { host: string; port: number; secret: string };
+  /** Deadline of one manual generation call (F4); the Gateway answers a margin before it. */
+  manualGenerationTimeoutMs: number;
 }
 
 /** Invalid configuration. The message names variables and problems, never their values. */
@@ -87,6 +98,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     eventViewCacheTtlMs: e.EVENT_VIEW_CACHE_TTL_MS,
     mysqlQueryTimeoutMs: e.MYSQL_QUERY_TIMEOUT_MS,
     logLevel: e.LOG_LEVEL,
+    gateway: { host: e.GATEWAY_HOST, port: e.GATEWAY_PORT, secret: e.GATEWAY_SERVICE_SECRET },
+    manualGenerationTimeoutMs: e.MANUAL_GENERATION_TIMEOUT_MS,
   };
 }
 
