@@ -18,7 +18,8 @@ import { EventViewService } from "./event-view-service.js";
 const E101 = SUPPLIED_EVENT.id;
 const NOW = new Date("2026-10-03T09:00:00.000Z");
 const idleActivity: GenerationActivity = {
-  current: () => Promise.resolve({ manual: null, batch: null, cooldownUntil: null }),
+  current: () =>
+    Promise.resolve({ manual: null, batch: null, batchKnown: true, cooldownUntil: null }),
 };
 
 class FakeUnitOfWork implements UnitOfWork {
@@ -130,6 +131,7 @@ describe("EventViewService", () => {
             closesAt: new Date("2026-10-03T09:00:03.000Z"),
             maxAttempts: 3,
           },
+          batchKnown: true,
           cooldownUntil,
         }),
     });
@@ -152,6 +154,16 @@ describe("EventViewService", () => {
     };
     await expect(service.get(E101)).resolves.toMatchObject({ event: SUPPLIED_EVENT });
     expect(uow.snapshots).toBe(1);
+    expect(cache.stored).toEqual([]);
+  });
+
+  it("P8: does not store a view built while the batch status could not be read", async () => {
+    const { cache, service } = setup(30_000, {
+      current: () =>
+        Promise.resolve({ manual: null, batch: null, batchKnown: false, cooldownUntil: null }),
+    });
+    const view = await service.get(E101);
+    expect(view.generation.batch).toBeNull();
     expect(cache.stored).toEqual([]);
   });
 

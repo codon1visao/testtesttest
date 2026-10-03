@@ -27,8 +27,9 @@ export class EventViewService {
   async get(eventId: EventId): Promise<EventView> {
     const cached = await this.lookup(eventId);
     if (cached?.view) return cached.view;
-    const view = await this.build(eventId);
-    if (cached !== null) await this.store(eventId, cached.version, view);
+    const { view, complete } = await this.build(eventId);
+    // A view built without the batch status would hide a live job until it expired (P8).
+    if (cached !== null && complete) await this.store(eventId, cached.version, view);
     return view;
   }
 
@@ -56,7 +57,7 @@ export class EventViewService {
     }
   }
 
-  private async build(eventId: EventId): Promise<EventView> {
+  private async build(eventId: EventId): Promise<{ view: EventView; complete: boolean }> {
     const snapshot = await this.deps.uow.readSnapshot(async (scope) => {
       const aggregate = await scope.events.findAggregate(eventId);
       if (aggregate === null)
@@ -73,7 +74,7 @@ export class EventViewService {
     });
     const activity = await this.deps.activity.current(eventId);
     const { aggregate, briefings, lastOutcome, pendingSince } = snapshot;
-    return {
+    const view: EventView = {
       event: aggregate.event,
       members: aggregate.members,
       feedback: aggregate.feedback,
@@ -88,5 +89,6 @@ export class EventViewService {
         lastOutcome,
       },
     };
+    return { view, complete: activity.batchKnown };
   }
 }

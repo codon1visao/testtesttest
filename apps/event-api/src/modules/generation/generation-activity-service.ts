@@ -22,18 +22,28 @@ export class GenerationActivityService implements GenerationActivity {
   constructor(private readonly deps: GenerationActivityDeps) {}
 
   async current(eventId: EventId): Promise<GenerationActivitySnapshot> {
-    let batch: GenerationActivitySnapshot["batch"] = null;
+    const [batch, cooldownUntil] = await Promise.all([
+      this.batchStatus(eventId),
+      // The limits never throw: a store error reads as no cooldown (fail open).
+      this.deps.limits.cooldownUntil(eventId, this.deps.clock.now()),
+    ]);
+    return {
+      manual: this.deps.manual.manualStatus(eventId),
+      batch: batch.status,
+      batchKnown: batch.known,
+      cooldownUntil,
+    };
+  }
+
+  private async batchStatus(
+    eventId: EventId,
+  ): Promise<{ status: GenerationActivitySnapshot["batch"]; known: boolean }> {
     try {
-      batch = await this.deps.queue.status(eventId);
+      return { status: await this.deps.queue.status(eventId), known: true };
     } catch (error) {
       // The view still answers without the queue store: the batch line is simply not shown.
       this.deps.logger.warn({ err: error, eventId }, "batch status unavailable; showing none");
+      return { status: null, known: false };
     }
-    return {
-      manual: this.deps.manual.manualStatus(eventId),
-      batch,
-      // The limits never throw: a store error reads as no cooldown (fail open).
-      cooldownUntil: await this.deps.limits.cooldownUntil(eventId, this.deps.clock.now()),
-    };
   }
 }

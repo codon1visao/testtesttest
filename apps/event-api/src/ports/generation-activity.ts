@@ -5,6 +5,8 @@ import type { BatchJobStatus } from "./briefing-batch-queue.js";
 export interface GenerationActivitySnapshot {
   manual: GenerationStatusView["manual"];
   batch: BatchJobStatus | null;
+  /** False when the queue store could not be read: `batch` is null for want of an answer. */
+  batchKnown: boolean;
   cooldownUntil: Date | null;
 }
 

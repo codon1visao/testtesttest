@@ -16,9 +16,8 @@ const COLLECTING: BatchJobStatus = {
   maxAttempts: 3,
 };
 
-function setup(status: () => Promise<BatchJobStatus | null>) {
+function setup(status: () => Promise<BatchJobStatus | null>, limits = new FakeGenerationLimits()) {
   const lines: string[] = [];
-  const limits = new FakeGenerationLimits();
   const service = new GenerationActivityService({
     manual: { manualStatus: vi.fn(() => MANUAL) },
     queue: { status: vi.fn(status) },
@@ -36,8 +35,28 @@ describe("GenerationActivityService (T3 §5 live generation state)", () => {
     expect(await service.current(E101)).toEqual({
       manual: MANUAL,
       batch: COLLECTING,
+      batchKnown: true,
       cooldownUntil: new Date(NOW.getTime() + 40_000),
     });
+  });
+
+  it("P9: reads the batch status and the cooldown in parallel", async () => {
+    const limits = new FakeGenerationLimits();
+    const cooldownRead = vi.spyOn(limits, "cooldownUntil");
+    let answerStatus: (status: BatchJobStatus | null) => void = () => undefined;
+    const { service } = setup(
+      () =>
+        new Promise((resolve) => {
+          answerStatus = resolve;
+        }),
+      limits,
+    );
+    const current = service.current(E101);
+    await vi.waitFor(() => {
+      expect(cooldownRead).toHaveBeenCalledTimes(1);
+    });
+    answerStatus(null);
+    await expect(current).resolves.toMatchObject({ batch: null, batchKnown: true });
   });
 
   it("shows no batch job when the queue store is unreachable, and logs it", async () => {
@@ -45,6 +64,7 @@ describe("GenerationActivityService (T3 §5 live generation state)", () => {
     expect(await service.current(E101)).toEqual({
       manual: MANUAL,
       batch: null,
+      batchKnown: false,
       cooldownUntil: null,
     });
     expect(lines.join("")).toContain("batch status unavailable");
