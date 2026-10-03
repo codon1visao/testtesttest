@@ -204,3 +204,65 @@ Each decision has a short record in [`docs/adr`](docs/adr/README.md) (context, o
 | Four questions ([0017](docs/adr/0017-briefing-answers-four-questions.md))                                                        | "What happened" = code-built attendance overview + a cited model summary                                                     | The model never writes the counts                                                                                  |
 | Cache ([0018](docs/adr/0018-versioned-event-view-cache.md))                                                                      | Versioned Redis cache of the event read                                                                                      | A version counter instead of a plain delete closes a stale-write race; reads fall back to MySQL when Redis is down |
 | Frontend and backend stacks ([0011](docs/adr/0011-frontend-stack.md), [0012](docs/adr/0012-backend-stack-and-workspace.md))      | React + Vite + React Query + React Hook Form + Zustand + Astryx (UI components); Express + TypeORM + Zod; one pnpm workspace | Familiar, well-supported libraries over novelty; shared Zod contracts remove hand-written duplicate types          |
+
+## What the checks prove — and what they don't
+
+**Proven by code and the database, for every stored briefing:**
+
+- Every cited ID is a real note that was in the input this generation read. The backend validates it, and a composite foreign key rejects anything else. A model that cites F99, or a note added later, has its whole candidate rejected; nothing partial is stored.
+- **Section rules.** A theme cites at least two different notes, and so does a conflict. A suggestion cites at least one note. The feedback summary cites one to eight. Sections have at most 10 items and items at most 8 sources. Text lengths are bounded.
+- Counts and the attendance overview come from saved records in code. The model cannot change attendance or invent reasons for absence: it has no tools and no write path.
+- **Edits stay text-only.** A save cannot add or remove items, change references or alter provenance. The request schema has no field for them, and the database stores no references with the saved text.
+- **Freshness is reported, never guessed.** It comes from comparing the stored snapshot with saved records.
+
+**Not proven, so the coordinator reviews:**
+
+- **That the cited notes support the wording.** Two valid IDs can still sit under an unsupported claim. The app says so beside every briefing: _"References identify the source notes; they do not automatically prove that the wording is supported. Review the notes before saving."_
+- **That a conflict has one note per side.** The code requires two different notes; the prompt asks for one per opposing view, and the coordinator checks it.
+- **That the wording follows the anonymity rules.** These are rules such as "one note asks…", never "some attendees"; "two notes", never "several". They are prompt instructions plus human review. `pnpm smoke:live` adds a wording check as an aid, not a guarantee.
+- **That prompt injection is impossible.** Notes travel as data in a separate message, the model has no tools, and output is schema-checked and rendered as plain text. These reduce the risk; they do not remove it ([S1](docs/specs/08-openai-security.md)).
+
+## Security and cost controls
+
+- **Secrets:**
+  - Only the AI Gateway reads `OPENAI_API_KEY`; the event API copies only its own variables from `.env`.
+  - No secret reaches the browser, the logs or the repository.
+  - Logs carry IDs, codes, timings and token counts, never note text or model output.
+- **Local only.** Every service binds to loopback. The API accepts only configured hosts, rejects changes from other origins, and requires JSON for every change. A web page on another origin cannot submit feedback or change data.
+- **Feedback is untrusted input everywhere.** It is rendered as plain text and never interpolated into instructions. Submitted notes are limited to 1,000 characters each, 100 per event and 32 KiB in total; nothing is ever truncated.
+- **Cost:**
+  - Each paid attempt counts against a daily budget of 20, persisted in Redis per UTC day, of which automatic batches may use at most 15. Only an attempt the provider never received is given back.
+  - A provider rate limit starts a shared cooldown that survives restarts. Generate during it answers "try again in N seconds".
+  - The Gateway has its own daily backstop (40 calls; in memory, so it resets when the Gateway restarts).
+  - SDK and transport retries are off; only the batch queue retries, and only known temporary failures (temporary provider errors, rate limits, and calls the provider never received).
+  - A call that may have reached the provider is never replayed automatically. Retry asks first.
+
+## Testing
+
+| Suite       | Command                             | What it covers                                                                                                                                                                                                            |
+| ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit        | `pnpm test` (part of `pnpm verify`) | Domain rules: counts, freshness, evidence validation, text edits, retry policy, window and status mapping. Services with fakes. Gateway prompt and adapters. Web components and hooks, with MSW standing in for the API.  |
+| Integration | `pnpm test:integration`             | The event API against real MySQL and Redis with a fake Gateway: transactions, conflicts, the cache, feedback submission, batches (fixed windows, superseding, coordinator priority, retries, budget), live updates, reset |
+| End to end  | `pnpm e2e`                          | Chromium against the real web app and API, with a scripted Gateway. It walks the spec's example (edit, save, change attendance, regenerate, replace) and follows feedback-form notes to one automatic briefing.           |
+| Live model  | `pnpm smoke:live [--hostile]`       | Manual, paid: the real model on the supplied notes, with and without an injection note; prints the evidence and wording check                                                                                             |
+
+CI (GitHub Actions) runs the first three as three jobs on every pull request and every push to `main`: `verify` (format, lint, type-check, architecture rules, unit tests), `integration` (with MySQL 8.4 and Redis 8 services) and `e2e` (Chromium). It never calls the real model.
+
+## Known limitations
+
+- **One coordinator, one event, local only.** There is no authentication, event creation or deployment, as the brief allows. The feedback form and script are a test channel standing in for the club's real form.
+- **Run one event-API process.** Single-flight Generate, the live-update notifier and the cache-bypass flag live in memory.
+- **Many open tabs can slow the page.** Each tab holds one live-update stream, and browsers allow only about six HTTP/1.1 connections per site, so with six or more tabs open new requests may wait. Close spare tabs.
+- **Model wording varies between runs.** The evidence rules are checked by code; the wording rules (no people-language, exact note counts, no suggestions built on off-topic notes) are prompt instructions at version `briefing.v6.2026-10-04`, plus your review. Read the wording before saving.
+- **Rare crash paths end visibly, never with a replayed call.** In both cases the run is recorded as failed, and the coordinator can generate again:
+  - A batch job interrupted twice (two crashes or shutdowns while it is being processed) is recorded as failed (`INTERNAL`) when the next instance takes it up.
+  - A batch whose dispatch marker could not be cleared after a temporary failure ends as "outcome unknown" instead of retrying.
+- **The automatic batch window is fixed.** A note that arrives just after a cutoff waits for the next window, by design.
+
+## What was reused
+
+**No starter repository, template or personal boilerplate.** The workspace was built from scratch for this assignment.
+
+**Libraries:** React, Vite, TanStack Query, React Hook Form, Zustand, React Router, Axios, the Astryx design system, Express, TypeORM with mysql2, ioredis, BullMQ, Zod, pino, the OpenAI Agents SDK and Vitest, Testing Library, MSW and Playwright. Exact versions are pinned in each `package.json` and `pnpm-lock.yaml`.
+
+**How it was built:** the specs in `docs/specs` were written and confirmed first, with every decision recorded as an ADR. The work was then implemented plan by plan (`docs/superpowers/plans`), with AI coding assistance (Claude Code). Every change went through tests, an independent review and a final whole-branch review before merging.

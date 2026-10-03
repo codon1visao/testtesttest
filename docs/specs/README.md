@@ -2,6 +2,8 @@
 
 Status: **Confirmed by the user on 2026-10-03 — approved for implementation planning.** All decisions D1–D16 are confirmed. Exact package versions and the OpenAI model are pinned during implementation as configuration, not open design questions. Architecture, data model and generation implementation are in [T3](12-architecture-and-repository.md), [T4](13-data-model-and-transactions.md) and [T5](14-generation-queue-implementation.md).
 
+Implementation: Plans 1–5 (docs/superpowers/plans) are complete and merged (2026-10-04); the hand-in README at the repository root explains how to run, reset and evaluate the build.
+
 Source: [project brief](../project-brief.md). The brief is authoritative. This breakdown makes its requirements testable and records the confirmed design decisions that go beyond it.
 
 Frontend choices are confirmed in [T1](10-frontend-technologies.md); backend choices and shared conventions are in [T2](11-backend-technologies.md). Architecture, repository layout, engineering principles and cache design are in [T3](12-architecture-and-repository.md); entities, relations and transaction boundaries in [T4](13-data-model-and-transactions.md); the queue implementation in [T5](14-generation-queue-implementation.md). Everything lives in one root pnpm workspace: `apps/web`, `apps/event-api`, `apps/ai-gateway`, `packages/contracts` and `packages/tcp-rpc`; Docker Compose runs only MySQL and Redis.
@@ -187,7 +189,7 @@ The frontend stack is selected in [T1](10-frontend-technologies.md). The backend
 | D15: Relational schema | Normalised MySQL schema with composite FKs enforcing citation and text-only-save rules, `preview_slots` table, binary-collated IDs, CHECK constraints, hand-written migrations ([T4](13-data-model-and-transactions.md)) | JSON document columns (fewer tables, no DB-level evidence integrity) | Confirmed by user, 2026-10-03 |
 | D16: Briefing answers the four questions | "What happened" = code-built attendance overview (fact, states when attendance is incomplete) + one model-written feedback summary (reported, ≥ 1 cited note, ≤ 600 chars); UI headings follow the brief's four questions; internal keys unchanged | Attendance-only overview left the feedback side of "what happened" unanswered | Confirmed by user, 2026-10-03 |
 
-All decisions are confirmed. Implementation starts with the workspace scaffold and the BullMQ spike in [T5 §6](14-generation-queue-implementation.md#6-spike-first-build-step). Specify an upstream producer separately before implementing a live automatic note-arrival path. No implementation plan or application code is part of this documentation pass. CodeGraph initialisation is deferred by user choice and is not required for this documentation review.
+All decisions are confirmed. Implementation starts with the workspace scaffold and the BullMQ spike in [T5 §6](14-generation-queue-implementation.md#6-spike-first-build-step). Specify an upstream producer separately before implementing a live automatic note-arrival path. The implementation followed in Plans 1–5.
 
 ## Coverage and final demonstration
 
