@@ -118,6 +118,46 @@ describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
     expect(order).toEqual(["first locked", "first done", "second locked"]);
   });
 
+  it("treats an empty change list as a no-op that leaves the revision alone", async () => {
+    await uow.run(async (tx) => {
+      await tx.events.lockForUpdate(E101);
+      await tx.events.applyAttendanceChanges(E101, []);
+    });
+    const [event] = await dataSource.query<{ attendance_revision: number }[]>(
+      "SELECT attendance_revision FROM events WHERE id = ?",
+      [E101],
+    );
+    expect(event?.attendance_revision).toBe(0);
+  });
+
+  it("lets a queued writer see the committed state of the writer ahead of it (snapshot taken after the lock)", async () => {
+    const firstLock = { held: false };
+    const first = uow.run(async (tx) => {
+      await tx.events.lockForUpdate(E101);
+      firstLock.held = true;
+      await tx.events.applyAttendanceChanges(E101, [
+        { memberId: M03, from: "not_recorded", to: "attended" },
+      ]);
+      await sleep(300);
+    });
+    // Poll until the first writer holds the lock, but fail fast if it rejects instead.
+    await Promise.race([
+      first,
+      (async () => {
+        while (!firstLock.held) await sleep(10);
+      })(),
+    ]);
+    const second = await uow.run(async (tx) => {
+      const aggregate = await tx.events.lockForUpdate(E101);
+      return {
+        revision: aggregate.attendanceRevision,
+        chris: aggregate.members.find((m) => m.id === M03)?.attendance,
+      };
+    });
+    await first;
+    expect(second).toEqual({ revision: 1, chris: "attended" });
+  });
+
   it("answers EVENT_NOT_FOUND when locking an unknown event", async () => {
     await expect(uow.run((tx) => tx.events.lockForUpdate(E999))).rejects.toMatchObject({
       code: "EVENT_NOT_FOUND",

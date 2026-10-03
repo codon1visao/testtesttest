@@ -5,6 +5,8 @@ import { createRedisClient, settleInitialConnection } from "./integrations/redis
 import { RedisEventViewCache } from "./integrations/redis-event-view-cache.js";
 import { RedisHealthProbe } from "./integrations/redis-health-probe.js";
 import { systemClock } from "./integrations/system-clock.js";
+import { attendanceRoutes } from "./modules/attendance/attendance-controller.js";
+import { AttendanceService } from "./modules/attendance/attendance-service.js";
 import { CacheBypass } from "./modules/changes/cache-bypass.js";
 import { EventChangePublisher } from "./modules/changes/event-change-publisher.js";
 import { InProcessChangeNotifier } from "./modules/changes/in-process-change-notifier.js";
@@ -63,6 +65,7 @@ export async function composeEventApi(
     defaultTtlMs: config.eventViewCacheTtlMs,
     logger,
   });
+  const attendance = new AttendanceService(uow, changes);
 
   const app = createApp({
     logger,
@@ -73,6 +76,7 @@ export async function composeEventApi(
         redis: new RedisHealthProbe(redis),
       }),
       eventRoutes(eventViews),
+      attendanceRoutes(attendance),
     ],
   });
 

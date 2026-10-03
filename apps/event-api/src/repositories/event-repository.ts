@@ -44,6 +44,7 @@ export class TypeOrmEventRepository implements EventWriteRepository {
     eventId: EventId,
     changes: readonly AttendanceChange[],
   ): Promise<void> {
+    if (changes.length === 0) return;
     for (const change of changes) {
       await this.manager.update(
         MemberEntity,
