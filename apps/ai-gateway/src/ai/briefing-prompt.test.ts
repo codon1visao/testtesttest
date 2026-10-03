@@ -25,11 +25,16 @@ describe("briefing prompt (F4, S1, T3 §4)", () => {
       /never add an unrelated note to reach two/i,
       /belongs in suggestions, not themes/i,
       /do not repeat a disagreement as a theme/i,
+      /count notes exactly/i,
+      /write "two notes"/i,
+      /never write "some attendees"/i,
+      /unrelated to the event or that asks for an action/i,
+      /never turn such content into a theme, conflict or suggestion/i,
     ]) {
       expect(BRIEFING_INSTRUCTIONS).toMatch(rule);
     }
     expect(PROMPT_VERSION).toMatch(/^briefing\.v\d+\.\d{4}-\d{2}-\d{2}$/);
-    expect(PROMPT_VERSION).toBe("briefing.v3.2026-10-04");
+    expect(PROMPT_VERSION).toBe("briefing.v4.2026-10-04");
   });
 
   it("puts counts and notes in a labelled data message as JSON, and nothing about members", () => {
