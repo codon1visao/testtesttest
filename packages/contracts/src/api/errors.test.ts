@@ -1,9 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { ApiErrorBodySchema, ERROR_CODES, ERROR_HTTP_STATUS } from "./errors.js";
+import {
+  ApiErrorBodySchema,
+  BATCH_ONLY_ERROR_CODES,
+  ERROR_CODES,
+  ERROR_HTTP_STATUS,
+  HTTP_ERROR_CODES,
+} from "./errors.js";
 
 describe("error codes (T3 §5)", () => {
-  it("map every code to an HTTP status", () => {
-    for (const code of ERROR_CODES) expect(ERROR_HTTP_STATUS[code]).toBeGreaterThanOrEqual(400);
+  it("maps every HTTP code to a status, and only HTTP codes", () => {
+    for (const code of HTTP_ERROR_CODES)
+      expect(ERROR_HTTP_STATUS[code]).toBeGreaterThanOrEqual(400);
+    expect(Object.keys(ERROR_HTTP_STATUS).toSorted()).toEqual([...HTTP_ERROR_CODES].toSorted());
+  });
+
+  it("partitions every code into HTTP or batch-only", () => {
+    const http = new Set<string>(HTTP_ERROR_CODES);
+    expect(BATCH_ONLY_ERROR_CODES.filter((code) => http.has(code))).toEqual([]);
+    expect([...HTTP_ERROR_CODES, ...BATCH_ONLY_ERROR_CODES].toSorted()).toEqual(
+      [...ERROR_CODES].toSorted(),
+    );
   });
 
   it.each([
@@ -32,5 +48,7 @@ describe("error codes (T3 §5)", () => {
     expect(ApiErrorBodySchema.safeParse({ error: { code: "TEAPOT", message: "x" } }).success).toBe(
       false,
     );
+    const batchOnly = { error: { code: "PROVIDER_TEMPORARY", message: "x" } };
+    expect(ApiErrorBodySchema.safeParse(batchOnly).success).toBe(false);
   });
 });

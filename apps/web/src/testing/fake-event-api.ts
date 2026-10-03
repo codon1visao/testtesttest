@@ -1,7 +1,7 @@
 import {
   type AttendanceStatus,
   deriveAttendanceCounts,
-  type ErrorCode,
+  type HttpErrorCode,
   type EventView,
   type MemberId,
   SaveAttendanceRequestSchema,
@@ -10,7 +10,12 @@ import {
 import { buildSeedEventView } from "@event-desk/contracts/testing";
 import { http, HttpResponse } from "msw";
 
-export function apiErrorResponse(status: number, code: ErrorCode, message: string, field?: string) {
+export function apiErrorResponse(
+  status: number,
+  code: HttpErrorCode,
+  message: string,
+  field?: string,
+) {
   return HttpResponse.json(
     { error: { code, message, ...(field === undefined ? {} : { field }) } },
     { status },

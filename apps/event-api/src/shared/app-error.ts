@@ -1,4 +1,4 @@
-import type { ErrorCode } from "@event-desk/contracts";
+import type { HttpErrorCode } from "@event-desk/contracts";
 
 export interface AppErrorOptions {
   field?: string;
@@ -8,11 +8,11 @@ export interface AppErrorOptions {
 
 /** The only error type the application throws on purpose; the HTTP layer maps `code` to a status. */
 export class AppError extends Error {
-  readonly code: ErrorCode;
+  readonly code: HttpErrorCode;
   readonly field: string | undefined;
   readonly retryAfterMs: number | undefined;
 
-  constructor(code: ErrorCode, message: string, options: AppErrorOptions = {}) {
+  constructor(code: HttpErrorCode, message: string, options: AppErrorOptions = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "AppError";
     this.code = code;

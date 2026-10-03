@@ -26,8 +26,6 @@ export const ERROR_CODES = [
   "QUEUE_UNAVAILABLE",
   "RESULT_PERSIST_FAILED",
   "INTERNAL",
-  // Batch outcomes. Their statuses in the map below exist only to keep it total; the manual
-  // path must map gateway failures to the HTTP codes above (Plan 3 adds the type split).
   "GATEWAY_AUTH_FAILED",
   "PROVIDER_RATE_LIMITED",
   "PROVIDER_TEMPORARY",
@@ -35,6 +33,22 @@ export const ERROR_CODES = [
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
+
+/** Outcome codes for automatic (batch) runs only; an HTTP response never carries them. */
+export const BATCH_ONLY_ERROR_CODES = [
+  "GATEWAY_AUTH_FAILED",
+  "PROVIDER_RATE_LIMITED",
+  "PROVIDER_TEMPORARY",
+  "ATTEMPTS_EXHAUSTED",
+] as const satisfies readonly ErrorCode[];
+type BatchOnlyErrorCode = (typeof BATCH_ONLY_ERROR_CODES)[number];
+
+const batchOnly: ReadonlySet<string> = new Set(BATCH_ONLY_ERROR_CODES);
+export const HTTP_ERROR_CODES = ERROR_CODES.filter(
+  (code): code is Exclude<ErrorCode, BatchOnlyErrorCode> => !batchOnly.has(code),
+);
+export const HttpErrorCodeSchema = z.enum(HTTP_ERROR_CODES);
+export type HttpErrorCode = Exclude<ErrorCode, BatchOnlyErrorCode>;
 
 /** One total map, so the Express error middleware needs no switch of its own (T3 §10). */
 export const ERROR_HTTP_STATUS = {
@@ -63,15 +77,11 @@ export const ERROR_HTTP_STATUS = {
   QUEUE_UNAVAILABLE: 503,
   RESULT_PERSIST_FAILED: 500,
   INTERNAL: 500,
-  GATEWAY_AUTH_FAILED: 503,
-  PROVIDER_RATE_LIMITED: 429,
-  PROVIDER_TEMPORARY: 503,
-  ATTEMPTS_EXHAUSTED: 503,
-} as const satisfies Record<ErrorCode, number>;
+} as const satisfies Record<HttpErrorCode, number>;
 
 export const ApiErrorBodySchema = z.strictObject({
   error: z.strictObject({
-    code: ErrorCodeSchema,
+    code: HttpErrorCodeSchema,
     message: z.string().min(1),
     field: z.string().optional(),
     retryAfterMs: z.int().min(0).optional(),

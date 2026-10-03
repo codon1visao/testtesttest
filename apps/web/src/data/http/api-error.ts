@@ -1,10 +1,10 @@
-import { assertNever, type ErrorCode } from "@event-desk/contracts";
+import { assertNever, type HttpErrorCode } from "@event-desk/contracts";
 
 export type ApiErrorKind = "http" | "network" | "timeout" | "invalid-response";
 
 export interface ApiErrorDetails {
   status?: number;
-  code?: ErrorCode;
+  code?: HttpErrorCode;
   field?: string;
   retryAfterMs?: number;
   cause?: unknown;
@@ -14,7 +14,7 @@ export interface ApiErrorDetails {
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number | undefined;
-  readonly code: ErrorCode | undefined;
+  readonly code: HttpErrorCode | undefined;
   readonly field: string | undefined;
   readonly retryAfterMs: number | undefined;
 
