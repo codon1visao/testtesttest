@@ -18,7 +18,11 @@ export function useSaveAttendance(eventId: EventId) {
         view === undefined ? view : applyAttendanceSaved(view, saved),
       );
     },
-    // Re-read the saved state after every outcome: a lost response may still have been saved (F2).
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.event(eventId) }),
+    // Re-read the saved state after a known outcome. After an unknown outcome (lost response) the
+    // caller reconciles with its own single re-read, whose result tells a failed read from a mismatch (F2).
+    onSettled: (_saved, error) =>
+      error?.outcomeUnknown === true
+        ? undefined
+        : queryClient.invalidateQueries({ queryKey: queryKeys.event(eventId) }),
   });
 }

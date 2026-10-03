@@ -16,12 +16,22 @@ import {
 } from "./attendance-form-model";
 
 export type AttendanceNotice =
-  | { kind: "conflict"; message: string }
+  /** `staleRevision`: the draft's base revision that conflicted. `reloadError`: a failed reload. */
+  | { kind: "conflict"; message: string; staleRevision: number; reloadError: string | null }
   | { kind: "failed"; message: string }
   | { kind: "unconfirmed" }
+  | { kind: "check-failed"; message: string }
   | { kind: "confirmed" };
 
-export type RefetchEvent = () => Promise<{ data?: EventView | undefined }>;
+/** TanStack's `refetch`: it never rejects; `isError` and `error` say whether the re-read failed. */
+export type RefetchEvent = () => Promise<{
+  data?: EventView | undefined;
+  isError: boolean;
+  error: ApiError | null;
+}>;
+
+/** A re-read of the saved records in progress: after a lost response, or a confirmed reload. */
+type SavedCheck = "reconcile" | "reload";
 
 /**
  * The attendance draft (React Hook Form) and its save flow (F2). The draft remembers the revision it
@@ -39,6 +49,7 @@ export function useAttendanceForm(eventId: EventId, view: EventView, refetch: Re
   // Synchronous double-submit guard: React state (isPending) lags a fast second click.
   const inFlight = useRef(false);
   const [notice, setNotice] = useState<AttendanceNotice | null>(null);
+  const [check, setCheck] = useState<SavedCheck | null>(null);
   const save = useSaveAttendance(eventId);
   const setAttendanceDirty = useUiStore((state) => state.setAttendanceDirty);
 
@@ -55,6 +66,11 @@ export function useAttendanceForm(eventId: EventId, view: EventView, refetch: Re
   useEffect(() => {
     if (!isDirty) resetTo(view.members, view.attendanceRevision);
   }, [isDirty, resetTo, view.members, view.attendanceRevision]);
+  // A clean form has adopted saved records newer than the conflicting draft: the conflict is gone.
+  // Adjusted during render (React's pattern for state derived from props), not in the effect above.
+  if (notice?.kind === "conflict" && !isDirty && view.attendanceRevision > notice.staleRevision) {
+    setNotice(null);
+  }
 
   useEffect(() => {
     setAttendanceDirty(isDirty);
@@ -67,34 +83,51 @@ export function useAttendanceForm(eventId: EventId, view: EventView, refetch: Re
   );
   useBeforeUnloadWarning(isDirty);
 
+  // Lost response: one re-read decides whether the submitted values were saved. The form stays
+  // locked meanwhile, so the verdict is about exactly what was sent.
+  const reconcile = async (submitted: AttendanceFormOutput) => {
+    setCheck("reconcile");
+    try {
+      const result = await refetch();
+      if (result.isError || result.data === undefined) {
+        setNotice({ kind: "check-failed", message: describeApiError(result.error) });
+      } else if (draftMatchesSaved(submitted, result.data.members)) {
+        resetTo(result.data.members, result.data.attendanceRevision);
+        setNotice({ kind: "confirmed" });
+      } else {
+        setNotice({ kind: "unconfirmed" });
+      }
+    } finally {
+      setCheck(null);
+    }
+  };
+
   const saveDraft = async (values: AttendanceFormOutput) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setNotice(null);
+    // Rule: a save (and a retry) carries the draft's base revision, never a refreshed one, so a
+    // change saved elsewhere meanwhile surfaces as a conflict instead of being overwritten (F2).
+    const draftRevision = baseRevision.current;
     try {
-      const saved = await save.mutateAsync(toSaveRequest(values, baseRevision.current));
+      const saved = await save.mutateAsync(toSaveRequest(values, draftRevision));
       resetTo(saved.members, saved.attendanceRevision);
     } catch (error) {
       if (error instanceof ApiError && error.outcomeUnknown) {
-        const latest = (await refetch()).data;
-        if (latest !== undefined && draftMatchesSaved(form.getValues(), latest.members)) {
-          resetTo(latest.members, latest.attendanceRevision);
-          setNotice({ kind: "confirmed" });
-        } else {
-          setNotice({ kind: "unconfirmed" });
-        }
+        await reconcile(values);
         return;
       }
       const message = describeApiError(error);
       setNotice(
         error instanceof ApiError && error.code === "ATTENDANCE_CONFLICT"
-          ? { kind: "conflict", message }
+          ? { kind: "conflict", message, staleRevision: draftRevision, reloadError: null }
           : { kind: "failed", message },
       );
     } finally {
       inFlight.current = false;
     }
   };
+
   // handleSubmit is bound at submit time, not during render, so the refs are touched only in the handler.
   const submit = (event?: BaseSyntheticEvent) => form.handleSubmit(saveDraft)(event);
 
@@ -103,11 +136,39 @@ export function useAttendanceForm(eventId: EventId, view: EventView, refetch: Re
     setNotice(null);
   };
 
-  const reloadSaved = async () => {
-    const latest = (await refetch()).data;
-    if (latest !== undefined) resetTo(latest.members, latest.attendanceRevision);
-    setNotice(null);
+  /** After a conflict: replace the draft with the latest saved records. Resolves true if it did. */
+  const reloadSaved = async (): Promise<boolean> => {
+    setCheck("reload");
+    try {
+      const result = await refetch();
+      if (result.isError || result.data === undefined) {
+        // Keep the draft and the conflict; say why the reload did not happen.
+        const reloadError = describeApiError(result.error);
+        setNotice((current) =>
+          current?.kind === "conflict" ? { ...current, reloadError } : current,
+        );
+        return false;
+      }
+      resetTo(result.data.members, result.data.attendanceRevision);
+      setNotice(null);
+      return true;
+    } finally {
+      setCheck(null);
+    }
   };
 
-  return { form, draft, isDirty, isSaving: save.isPending, notice, submit, discard, reloadSaved };
+  const isSaving = save.isPending || check === "reconcile";
+  return {
+    form,
+    draft,
+    isDirty,
+    /** Save is in flight or its outcome is being checked: Save shows loading. */
+    isSaving,
+    /** Any save or re-read in flight: inputs and actions are locked. */
+    isBusy: isSaving || check !== null,
+    notice,
+    submit,
+    discard,
+    reloadSaved,
+  };
 }

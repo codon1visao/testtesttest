@@ -98,6 +98,18 @@ describe("attendance panel", () => {
     expect(region.queryByText(/unsaved counts/i)).toBeNull();
   });
 
+  it("moves focus to the Attendance heading after a keyboard Discard (the button unmounts)", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    await user.selectOptions(select(region, "Chris"), "attended");
+    act(() => {
+      region.getByRole("button", { name: "Discard attendance changes" }).focus();
+    });
+    await user.keyboard("{Enter}");
+    expect(select(region, "Chris").value).toBe("not_recorded");
+    expect(document.activeElement).toBe(region.getByRole("heading", { name: "Attendance" }));
+  });
+
   it("F2-08: keeps the selections and explains a failed save", async () => {
     mswServer.use(
       http.put("/api/events/:eventId/attendance", () =>
@@ -134,6 +146,47 @@ describe("attendance panel", () => {
       expect(select(region, "Drew").value).toBe("attended");
     });
     expect(select(region, "Chris").value).toBe("not_recorded");
+    expect(region.queryByText(/saved elsewhere/i)).toBeNull();
+    // The Reload button unmounted with the notice; focus lands on a stable target, not <body>.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(region.getByRole("heading", { name: "Attendance" }));
+    });
+  });
+
+  it("keeps the draft and the conflict explanation when the confirmed reload fails", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    await user.selectOptions(select(region, "Chris"), "attended");
+    api.saveElsewhere(M04, "attended");
+    await user.click(region.getByRole("button", { name: "Save attendance" }));
+    expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
+    mswServer.use(http.get("/api/events/:eventId", () => HttpResponse.error()));
+    await user.click(region.getByRole("button", { name: "Reload saved attendance" }));
+    await user.click(await screen.findByRole("button", { name: "Discard and reload" }));
+    expect(
+      await region.findByText(/the latest saved attendance could not be loaded/i),
+    ).toBeTruthy();
+    expect(region.getByText(/saved elsewhere/i)).toBeTruthy();
+    expect(select(region, "Chris").value).toBe("attended");
+    expect(select(region, "Drew").value).toBe("absent");
+    expect(region.getByRole("button", { name: "Reload saved attendance" })).toBeTruthy();
+  });
+
+  it("clears the conflict when the draft is reverted by hand and the form adopts the newer records", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    await user.selectOptions(select(region, "Chris"), "attended");
+    api.saveElsewhere(M04, "attended");
+    await user.click(region.getByRole("button", { name: "Save attendance" }));
+    expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(region.getByText(/Saved counts: 4 registered · 2 attended/)).toBeTruthy();
+    });
+    await user.selectOptions(select(region, "Chris"), "not_recorded");
+    await waitFor(() => {
+      expect(select(region, "Drew").value).toBe("attended");
+    });
+    expect(region.queryByText(/saved elsewhere/i)).toBeNull();
   });
 
   it("a refetch never overwrites a dirty draft, and its save still conflicts", async () => {
@@ -219,6 +272,64 @@ describe("attendance panel", () => {
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText(/could not confirm the save/i)).toBeTruthy();
     expect(select(region, "Chris").value).toBe("attended");
+  });
+
+  it("says the check failed (not a mismatch) when the re-read after a lost response fails", async () => {
+    let failReads = false;
+    mswServer.use(
+      http.get("/api/events/:eventId", () => (failReads ? HttpResponse.error() : undefined)),
+      http.put("/api/events/:eventId/attendance", () => {
+        failReads = true;
+        return HttpResponse.error();
+      }),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.selectOptions(select(region, "Chris"), "attended");
+    await user.click(region.getByRole("button", { name: "Save attendance" }));
+    expect(await region.findByText("Could not check the saved records")).toBeTruthy();
+    expect(region.getByText(/your selections are kept/i)).toBeTruthy();
+    expect(region.queryByText(/do not match your selections/i)).toBeNull();
+    expect(select(region, "Chris").value).toBe("attended");
+    expect(region.getByText(/unsaved attendance changes/i)).toBeTruthy();
+  });
+
+  it("keeps inputs and Save locked during the lost-response check, with one re-read and one PUT", async () => {
+    let checking = false;
+    let reads = 0;
+    let puts = 0;
+    mswServer.use(
+      http.get("/api/events/:eventId", async () => {
+        if (!checking) return undefined;
+        reads += 1;
+        await delay(200);
+        return undefined;
+      }),
+      http.put("/api/events/:eventId/attendance", () => {
+        puts += 1;
+        checking = true;
+        return HttpResponse.error();
+      }),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.selectOptions(select(region, "Chris"), "attended");
+    const save = region.getByRole<HTMLButtonElement>("button", { name: "Save attendance" });
+    await user.click(save);
+    await waitFor(() => {
+      expect(reads).toBe(1);
+    });
+    // The PUT has failed; the re-read is in flight. Nothing may be edited or saved meanwhile.
+    await act(() => delay(50));
+    expect(select(region, "Alex").disabled).toBe(true);
+    expect(select(region, "Chris").disabled).toBe(true);
+    expect(save.disabled).toBe(true);
+    await user.click(save);
+    expect(await region.findByText(/could not confirm the save/i)).toBeTruthy();
+    expect(select(region, "Chris").disabled).toBe(false);
+    expect(select(region, "Chris").value).toBe("attended");
+    expect(puts).toBe(1);
+    expect(reads).toBe(1);
   });
 
   it("locks inputs while saving and sends one request for a double-clicked Save", async () => {
