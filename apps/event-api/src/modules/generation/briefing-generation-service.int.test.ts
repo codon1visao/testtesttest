@@ -559,6 +559,38 @@ describe("generateBatch (T5 §1, F7)", () => {
     expect(await count("generation_outcomes")).toBe(0);
   });
 
+  it("M1: a dispatch marker that cannot be cleared after a paid call never drops the result", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const { service, calls } = setup(() => Promise.resolve(result()));
+    const { command } = batch();
+    expect(
+      await service.generateBatch({
+        ...command,
+        afterDispatch: () => Promise.reject(new Error("redis down")),
+      }),
+    ).toEqual({ kind: "finished", status: "succeeded" });
+    expect(calls).toHaveLength(1);
+    expect(await outcome("batch_run-1")).toMatchObject({ status: "succeeded" });
+    expect(await count("briefing_generations")).toBe(1);
+  });
+
+  it("P1: a zero provider wait still starts a positive, whole-millisecond cooldown", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const limits = new FakeGenerationLimits();
+    const { service } = setup(
+      () =>
+        Promise.resolve({
+          ok: false,
+          code: "PROVIDER_RATE_LIMITED",
+          notSent: true,
+          retryAfterMs: 0,
+        }),
+      { limits },
+    );
+    await service.generateBatch(batch().command);
+    expect(limits.cooldownEnd).toEqual(new Date(NOW.getTime() + 1));
+  });
+
   it("F4-09: a batch commit failure is recorded as RESULT_PERSIST_FAILED and stores nothing", async () => {
     await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
     const sameItemId: IdGenerator = {

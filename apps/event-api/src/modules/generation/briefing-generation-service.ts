@@ -47,6 +47,12 @@ import {
   gatewayFailureError,
 } from "./gateway-failure.js";
 
+/** The provider's wait as a positive whole number of milliseconds (a 0 wait would set no cooldown). */
+function cooldownMs(retryAfterMs: number | undefined): number {
+  if (retryAfterMs === undefined || !Number.isFinite(retryAfterMs)) return DEFAULT_COOLDOWN_MS;
+  return Math.max(1, Math.ceil(retryAfterMs));
+}
+
 export interface BriefingGenerationDeps {
   uow: UnitOfWork;
   gateway: AiGatewayClient;
@@ -227,7 +233,16 @@ export class BriefingGenerationService {
       deadlineAt: command.deadlineAt,
       input: captured.input,
     });
-    await command.afterDispatch();
+    try {
+      await command.afterDispatch();
+    } catch (error) {
+      // The paid call has returned: its result still counts. A marker left at "sending" only
+      // makes a later execution of this run conservative (AI_OUTCOME_UNKNOWN, never a replay).
+      this.deps.logger.warn(
+        { err: error, runId: command.runId },
+        "batch dispatch marker could not be cleared",
+      );
+    }
 
     if (!call.ok) {
       await this.settleFailedCall(command.eventId, "feedback_batch", reservation, call);
@@ -317,7 +332,7 @@ export class BriefingGenerationService {
       const now = this.deps.clock.now();
       await this.deps.limits.startCooldown(
         eventId,
-        new Date(now.getTime() + (failure.retryAfterMs ?? DEFAULT_COOLDOWN_MS)),
+        new Date(now.getTime() + cooldownMs(failure.retryAfterMs)),
         now,
       );
     }

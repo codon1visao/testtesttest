@@ -139,6 +139,9 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
       concurrency: 1,
       lockDuration: this.options.lockDurationMs ?? 30_000,
       stalledInterval: this.options.stalledIntervalMs ?? 30_000,
+      // Known limitation (accepted): a job parked at shutdown stalls once on the next start; if
+      // it had already stalled once before, that second stall fails it as INTERNAL (abandoned)
+      // instead of running it. Rare: it needs a crash and a shutdown on the same job.
       maxStalledCount: 1,
       settings: {
         backoffStrategy: (_attemptsMade: number, _type?: string, error?: Error) =>
