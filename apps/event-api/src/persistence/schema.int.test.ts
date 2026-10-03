@@ -79,7 +79,20 @@ describe("T4 schema", () => {
     );
   });
 
-  it("T4-03: a referenced generation cannot be deleted; an unreferenced one cascades", async () => {
+  it("T4-03: a generation held by a saved briefing cannot be deleted", async () => {
+    await insertGenerationFixture(dataSource);
+    await insertSavedBriefing(dataSource, {
+      generationId: GENERATION_FIXTURE_ID,
+      attendanceOverview: "Edited overview.",
+      itemTexts: Object.fromEntries(DEFAULT_ITEMS.map((item) => [item.id, item.text])),
+    });
+    await rejectsWith(
+      dataSource.query("DELETE FROM briefing_generations WHERE id = ?", [GENERATION_FIXTURE_ID]),
+      ER_ROW_IS_REFERENCED_2,
+    );
+  });
+
+  it("T4-03: a generation held by a slot cannot be deleted; an unreferenced one cascades", async () => {
     await insertGenerationFixture(dataSource);
     await putPreviewSlot(dataSource, "incoming", GENERATION_FIXTURE_ID);
     await rejectsWith(
@@ -98,6 +111,13 @@ describe("T4 schema", () => {
     ]) {
       const [row] = await dataSource.query<{ n: number }[]>(`SELECT COUNT(*) AS n FROM ${table}`);
       expect(Number(row?.n)).toBe(0);
+    }
+    for (const [table, expected] of [
+      ["members", 4],
+      ["feedback_notes", 8],
+    ] as const) {
+      const [row] = await dataSource.query<{ n: number }[]>(`SELECT COUNT(*) AS n FROM ${table}`);
+      expect(Number(row?.n)).toBe(expected);
     }
   });
 
@@ -125,7 +145,44 @@ describe("T4 schema", () => {
     );
   });
 
-  it("allows one feedback summary, at position 0, within 600 characters", async () => {
+  it.each([
+    [
+      "briefing_generations.attendance_overview",
+      () =>
+        dataSource.query(
+          `INSERT INTO briefing_generations (id, event_id, run_id, trigger_type, model, prompt_version,
+             attendance_overview, feedback_digest, input_captured_at, generated_at)
+           VALUES (?, 'E101', 'r-blank', 'manual', 'fixture-model', 'briefing-v1', '   ', ?, NOW(3), NOW(3))`,
+          [GENERATION_FIXTURE_ID, "0".repeat(64)],
+        ),
+    ],
+    [
+      "saved_briefings.attendance_overview",
+      async () => {
+        await insertGenerationFixture(dataSource);
+        await insertSavedBriefing(dataSource, {
+          generationId: GENERATION_FIXTURE_ID,
+          attendanceOverview: "   ",
+          itemTexts: {},
+        });
+      },
+    ],
+    [
+      "saved_briefing_items.text",
+      async () => {
+        await insertGenerationFixture(dataSource);
+        await insertSavedBriefing(dataSource, {
+          generationId: GENERATION_FIXTURE_ID,
+          attendanceOverview: "Edited overview.",
+          itemTexts: { [summaryItem.id]: "   " },
+        });
+      },
+    ],
+  ])("T4-11: space-only %s fails the CHECK constraint", async (_column, insertBlank) => {
+    await rejectsWith(Promise.resolve().then(insertBlank), ER_CHECK_CONSTRAINT_VIOLATED);
+  });
+
+  it("rejects a feedback summary at a non-zero position or over 600 characters", async () => {
     await rejectsWith(
       insertGenerationFixture(dataSource, { items: [{ ...summaryItem, position: 1 }] }),
       ER_CHECK_CONSTRAINT_VIOLATED,

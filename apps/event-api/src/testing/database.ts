@@ -16,8 +16,11 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   const runner = dataSource.createQueryRunner();
   try {
     await runner.query("SET FOREIGN_KEY_CHECKS = 0");
-    for (const table of APPLICATION_TABLES) await runner.query(`TRUNCATE TABLE \`${table}\``);
-    await runner.query("SET FOREIGN_KEY_CHECKS = 1");
+    try {
+      for (const table of APPLICATION_TABLES) await runner.query(`TRUNCATE TABLE \`${table}\``);
+    } finally {
+      await runner.query("SET FOREIGN_KEY_CHECKS = 1");
+    }
   } finally {
     await runner.release();
   }
