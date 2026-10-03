@@ -20,8 +20,9 @@ Across runs 2 and 3 the timings were stable: S-1 first job 1609 / 1600 ms, S-3 g
 - S-1 PASS: `deduplication: { id, ttl }` plus `delay` gives a fixed window as written in T5 §3. Adds inside the window
   return the existing job and do not extend the cutoff; an add after the cutoff opens a new window.
 - S-2 PASS: the delayed job and its de-duplication key survive a Redis restart (AOF, `appendfsync always`), and an add
-  after the restart joins the still-open window. The T5 §6 fallback (reconcile via `feedback_pending_since`) is not
-  needed for restarts.
+  after the restart joins the still-open window. S-2 used a graceful restart, so it shows survival across a restart
+  only. The `feedback_pending_since` reconciler is still required by F7 Durability and F7-10 (crash after the note
+  commit, before scheduling), so Plan 5 must keep it.
 - S-3 PASS: `settings.backoffStrategy` receives the thrown error, so a `RetryAfterError.retryAfterMs` can drive the
   delay; `UnrecoverableError` fails the job after one attempt. The fallback (`job.moveToDelayed` + `DelayedError`) is
   not needed.
@@ -49,8 +50,10 @@ Across runs 2 and 3 the timings were stable: S-1 first job 1609 / 1600 ms, S-3 g
   added around `worker.on("error", ...)` and the `child.on("exit", ...)` callbacks. Behaviour is identical.
 - Installing `bullmq` pulls in the optional native accelerator `msgpackr-extract`, whose build script pnpm 11 refuses
   by default and reports as `ERR_PNPM_IGNORED_BUILDS` with exit code 1 (which would fail `pnpm install
-  --frozen-lockfile` in CI). `pnpm-workspace.yaml` now records `allowBuilds: msgpackr-extract: false`; `msgpackr`
-  falls back to its pure JS implementation. The spike ran without it.
+  --frozen-lockfile` in CI). `pnpm-workspace.yaml` now records `allowBuilds: msgpackr-extract: false`, which only skips the
+  optional package's install/build script. The prebuilt platform binary
+  (`@msgpackr-extract/msgpackr-extract-<platform>`) still loads where available, and `msgpackr` falls back to pure JS
+  otherwise. The spike ran without the build step.
 - No BullMQ 6 option was renamed; the brief's code type-checked unchanged apart from the restatements above.
 
 ## Raw output

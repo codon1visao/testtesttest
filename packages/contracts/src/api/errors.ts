@@ -25,7 +25,8 @@ export const ERROR_CODES = [
   "QUEUE_UNAVAILABLE",
   "RESULT_PERSIST_FAILED",
   "INTERNAL",
-  // Batch outcomes only; they never leave the API as an HTTP error.
+  // Batch outcomes. Their statuses in the map below exist only to keep it total; the manual
+  // path must map gateway failures to the HTTP codes above (Plan 3 adds the type split).
   "GATEWAY_AUTH_FAILED",
   "PROVIDER_RATE_LIMITED",
   "PROVIDER_TEMPORARY",
