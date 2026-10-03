@@ -14,7 +14,9 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "arch": "depcruise packages --config .dependency-cruiser.cjs",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm arch && pnpm test"
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm arch && pnpm test",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
