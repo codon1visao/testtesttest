@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -b && pnpm --filter @event-desk/web build",
     "typecheck": "tsc -b && tsc -p apps/web",
-    "dev": "pnpm --parallel --filter @event-desk/event-api --filter @event-desk/web dev",
+    "dev": "pnpm --parallel --filter @event-desk/ai-gateway --filter @event-desk/event-api --filter @event-desk/web dev",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

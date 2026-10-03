@@ -1,6 +1,6 @@
 import { buildGeneratedSectionsSchema } from "@event-desk/contracts";
 import type { BriefingGenerateV1Input } from "@event-desk/contracts/gateway-rpc";
-import { Agent, Runner } from "@openai/agents-core";
+import { Agent, Runner, setTracingDisabled } from "@openai/agents-core";
 import { OpenAIProvider } from "@openai/agents-openai";
 import type OpenAI from "openai";
 import type { ReasoningEffort } from "../config/env.js";
@@ -27,6 +27,8 @@ export function createOpenAIBriefingModel(
   client: OpenAI,
   settings: OpenAIBriefingModelSettings,
 ): BriefingModel {
+  // S1: no trace export at all, in addition to tracingDisabled on every run.
+  setTracingDisabled(true);
   const runner = new Runner({
     modelProvider: new OpenAIProvider({ openAIClient: client, useResponses: true }),
     tracingDisabled: true,
