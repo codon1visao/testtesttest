@@ -66,7 +66,7 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
           <FeedbackPanel notes={view.feedback} />
         </PanelErrorBoundary>
         <PanelErrorBoundary name="Briefing">
-          <BriefingPanel />
+          <BriefingPanel eventId={eventId} view={view} />
         </PanelErrorBoundary>
       </VStack>
     </main>
