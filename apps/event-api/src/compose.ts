@@ -10,6 +10,8 @@ import { uuidV7IdGenerator } from "./integrations/uuid-v7-id-generator.js";
 import { attendanceRoutes } from "./modules/attendance/attendance-controller.js";
 import { AttendanceService } from "./modules/attendance/attendance-service.js";
 import { CacheBypass } from "./modules/changes/cache-bypass.js";
+import { briefingRoutes } from "./modules/briefing/briefing-controller.js";
+import { PreviewSelectionService } from "./modules/briefing/preview-selection-service.js";
 import { EventChangePublisher } from "./modules/changes/event-change-publisher.js";
 import { InProcessChangeNotifier } from "./modules/changes/in-process-change-notifier.js";
 import { eventRoutes } from "./modules/event/event-controller.js";
@@ -89,6 +91,7 @@ export async function composeEventApi(
     logger,
   });
   const attendance = new AttendanceService(uow, changes);
+  const selection = new PreviewSelectionService({ uow, clock, changes });
 
   const app = createApp({
     logger,
@@ -101,6 +104,7 @@ export async function composeEventApi(
       eventRoutes(eventViews),
       attendanceRoutes(attendance),
       generationRoutes(manualGeneration),
+      briefingRoutes({ selection }),
     ],
   });
 
