@@ -28,6 +28,8 @@ export interface EventAggregate {
 
 export interface EventReadRepository {
   findAggregate(eventId: EventId): Promise<EventAggregate | null>;
+  /** Events whose notes were saved but not yet captured by a batch (F7 Durability). */
+  pendingFeedbackEventIds(): Promise<EventId[]>;
 }
 
 export interface EventWriteRepository extends EventReadRepository {
@@ -37,6 +39,26 @@ export interface EventWriteRepository extends EventReadRepository {
   applyAttendanceChanges(eventId: EventId, changes: readonly AttendanceChange[]): Promise<void>;
   /** Bumps briefing_revision by one: the saved briefing changed (T4 TX8). */
   bumpBriefingRevision(eventId: EventId): Promise<void>;
+  /** Read under the event lock. */
+  feedbackState(
+    eventId: EventId,
+  ): Promise<{ nextFeedbackNumber: number; pendingSince: Date | null }>;
+  /** next_feedback_number + 1; feedback_pending_since = COALESCE(feedback_pending_since, at) (T4 TX9). */
+  recordFeedbackReceived(eventId: EventId, at: Date): Promise<void>;
+}
+
+export interface NewFeedbackNote {
+  eventId: EventId;
+  id: FeedbackId;
+  text: string;
+  submissionId: string;
+  receivedAt: Date;
+  displayOrder: number;
+}
+
+export interface FeedbackWriteRepository {
+  findBySubmissionId(eventId: EventId, submissionId: string): Promise<FeedbackNote | null>;
+  insert(note: NewFeedbackNote): Promise<void>;
 }
 
 /** A briefing as stored: generated structure and references, with saved wording when it is the saved one. */
@@ -175,6 +197,7 @@ export interface TransactionScope extends ReadScope {
   generations: GenerationWriteRepository;
   slots: PreviewSlotRepository;
   savedBriefings: SavedBriefingWriteRepository;
+  feedback: FeedbackWriteRepository;
   /** Narrows ReadScope.outcomes: a transaction may also record outcomes (TX5/TX6). */
   outcomes: OutcomeWriteRepository;
   /** Runs only after COMMIT succeeds (cache flush, change notification). */

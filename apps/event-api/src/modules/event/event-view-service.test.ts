@@ -38,6 +38,7 @@ class FakeUnitOfWork implements UnitOfWork {
               }
             : null,
         ),
+      pendingFeedbackEventIds: () => Promise.resolve([]),
     },
     briefings: {
       loadSlots: () => Promise.resolve({ saved: null, selected: null, incoming: null }),

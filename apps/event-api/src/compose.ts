@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createApp } from "./app.js";
 import type { AppConfig } from "./config/env.js";
 import { createRedisClient, settleInitialConnection } from "./integrations/redis-client.js";
+import { BullMqBriefingBatchQueue } from "./integrations/bullmq-briefing-batch-queue.js";
 import { RedisEventViewCache } from "./integrations/redis-event-view-cache.js";
 import { RedisGenerationLimits } from "./integrations/redis-generation-limits.js";
 import { RedisHealthProbe } from "./integrations/redis-health-probe.js";
@@ -19,6 +20,10 @@ import { InProcessChangeNotifier } from "./modules/changes/in-process-change-not
 import { eventRoutes } from "./modules/event/event-controller.js";
 import { EventViewService } from "./modules/event/event-view-service.js";
 import { BriefingGenerationService } from "./modules/generation/briefing-generation-service.js";
+import { feedbackRoutes } from "./modules/feedback/feedback-controller.js";
+import { FeedbackSubmissionService } from "./modules/feedback/feedback-submission-service.js";
+import { BatchScheduler } from "./modules/generation/batch-scheduler.js";
+import { BATCH_MAX_ATTEMPTS } from "./modules/generation/domain/batch-jobs.js";
 import { generationRoutes } from "./modules/generation/generation-controller.js";
 import { ManualGenerationCoordinator } from "./modules/generation/manual-generation-coordinator.js";
 import { healthRoutes } from "./modules/health/health-controller.js";
@@ -96,6 +101,23 @@ export async function composeEventApi(
   const attendance = new AttendanceService(uow, changes);
   const selection = new PreviewSelectionService({ uow, clock, changes });
   const briefingSave = new BriefingSaveService({ uow, clock, changes });
+  const batchQueue = new BullMqBriefingBatchQueue({
+    redisUrl: config.redisUrl,
+    windowMs: config.batchWindowMs,
+    maxAttempts: BATCH_MAX_ATTEMPTS,
+    ids,
+    clock,
+    logger,
+  });
+  const scheduler = new BatchScheduler({ queue: batchQueue, uow, changes, logger });
+  const feedback = new FeedbackSubmissionService({
+    uow,
+    scheduler,
+    clock,
+    changes,
+    maxNotesPerEvent: config.feedback.maxNotesPerEvent,
+  });
+  await scheduler.reconcile();
 
   const app = createApp({
     logger,
@@ -109,6 +131,7 @@ export async function composeEventApi(
       attendanceRoutes(attendance),
       generationRoutes(manualGeneration),
       briefingRoutes({ selection, save: briefingSave }),
+      feedbackRoutes(feedback, { enabled: config.feedback.submissionEnabled }),
     ],
   });
 
@@ -116,6 +139,7 @@ export async function composeEventApi(
     app,
     changes,
     async close() {
+      await batchQueue.close();
       redis.disconnect();
       await dataSource.destroy();
     },

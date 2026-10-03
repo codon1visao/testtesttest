@@ -6,6 +6,7 @@ import type { ReadScope, TransactionScope, UnitOfWork } from "../ports/unit-of-w
 import type { Logger } from "../shared/logger.js";
 import { TypeOrmBriefingReadRepository } from "./briefing-read-repository.js";
 import { TypeOrmEventRepository } from "./event-repository.js";
+import { TypeOrmFeedbackWriteRepository } from "./feedback-write-repository.js";
 import { TypeOrmGenerationWriteRepository } from "./generation-write-repository.js";
 import { TypeOrmOutcomeRepository } from "./outcome-repository.js";
 import { TypeOrmPreviewSlotRepository } from "./preview-slot-repository.js";
@@ -100,6 +101,7 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
       generations: new TypeOrmGenerationWriteRepository(manager),
       slots: new TypeOrmPreviewSlotRepository(manager),
       savedBriefings: new TypeOrmSavedBriefingWriteRepository(manager),
+      feedback: new TypeOrmFeedbackWriteRepository(manager),
       outcomes: new TypeOrmOutcomeRepository(manager),
       afterCommit: (effect) => {
         effects.push(effect);

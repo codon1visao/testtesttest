@@ -60,6 +60,12 @@ const EnvObject = z.object({
     .positive({ error: "must be a positive integer" })
     .max(600_000)
     .default(3_000),
+  /** F3 limit on notes per event, seed notes included. */
+  FEEDBACK_MAX_NOTES_PER_EVENT: z.coerce.number().int().min(8).max(1_000).default(100),
+  /** The test feedback channel (F3); off, the endpoint answers 404. */
+  FEEDBACK_SUBMISSION_ENABLED: z
+    .enum(["true", "false"], { error: "must be true or false" })
+    .default("true"),
 });
 
 const EnvSchema = EnvObject.superRefine((env, ctx) => {
@@ -94,6 +100,8 @@ export interface AppConfig {
   generationLimits: { dailyAttempts: number; batchDailyAttempts: number };
   /** Fixed batch window for automatic briefings (F7). */
   batchWindowMs: number;
+  /** The test feedback channel (F3): the note limit and whether submissions are accepted. */
+  feedback: { maxNotesPerEvent: number; submissionEnabled: boolean };
 }
 
 /** Invalid configuration. The message names variables and problems, never their values. */
@@ -131,6 +139,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       batchDailyAttempts: e.GENERATION_BATCH_DAILY_LIMIT,
     },
     batchWindowMs: e.BRIEFING_BATCH_WINDOW_MS,
+    feedback: {
+      maxNotesPerEvent: e.FEEDBACK_MAX_NOTES_PER_EVENT,
+      submissionEnabled: e.FEEDBACK_SUBMISSION_ENABLED === "true",
+    },
   };
 }
 

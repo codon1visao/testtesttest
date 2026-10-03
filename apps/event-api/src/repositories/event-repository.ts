@@ -1,11 +1,12 @@
 import {
   type AttendanceChange,
   type EventId,
+  EventIdSchema,
   EventSummarySchema,
   FeedbackNoteSchema,
   MemberSchema,
 } from "@event-desk/contracts";
-import type { EntityManager } from "typeorm";
+import { type EntityManager, IsNull, Not } from "typeorm";
 import { z } from "zod";
 import {
   EventEntity,
@@ -57,6 +58,33 @@ export class TypeOrmEventRepository implements EventWriteRepository {
 
   async bumpBriefingRevision(eventId: EventId): Promise<void> {
     await this.manager.increment(EventEntity, { id: eventId }, "briefingRevision", 1);
+  }
+
+  async pendingFeedbackEventIds(): Promise<EventId[]> {
+    const rows = await this.manager.find(EventEntity, {
+      where: { feedbackPendingSince: Not(IsNull()) },
+      select: { id: true },
+    });
+    return rows.map((row) => parseStoredRow(EventIdSchema, row.id, "events"));
+  }
+
+  async feedbackState(
+    eventId: EventId,
+  ): Promise<{ nextFeedbackNumber: number; pendingSince: Date | null }> {
+    const row = await this.manager.findOne(EventEntity, {
+      where: { id: eventId },
+      select: { id: true, nextFeedbackNumber: true, feedbackPendingSince: true },
+    });
+    if (row === null) throw new AppError("EVENT_NOT_FOUND", `Event ${eventId} was not found.`);
+    return { nextFeedbackNumber: row.nextFeedbackNumber, pendingSince: row.feedbackPendingSince };
+  }
+
+  async recordFeedbackReceived(eventId: EventId, at: Date): Promise<void> {
+    await this.manager.query(
+      `UPDATE events SET next_feedback_number = next_feedback_number + 1,
+              feedback_pending_since = COALESCE(feedback_pending_since, ?) WHERE id = ?`,
+      [at, eventId],
+    );
   }
 
   private async withChildren(row: EventRow): Promise<EventAggregate> {

@@ -67,6 +67,7 @@ describe("loadConfig", () => {
       manualGenerationTimeoutMs: 60_000,
       generationLimits: { dailyAttempts: 20, batchDailyAttempts: 15 },
       batchWindowMs: 3_000,
+      feedback: { maxNotesPerEvent: 100, submissionEnabled: true },
     });
   });
 
@@ -138,6 +139,23 @@ describe("loadConfig", () => {
         GENERATION_BATCH_DAILY_LIMIT: "16",
       }),
     ).toThrow(/GENERATION_BATCH_DAILY_LIMIT: must not exceed GENERATION_DAILY_ATTEMPT_LIMIT/);
+  });
+
+  it("reads the feedback channel settings (F3) and rejects malformed ones", () => {
+    const base = { MYSQL_URL, GATEWAY_SERVICE_SECRET };
+    expect(
+      loadConfig({
+        ...base,
+        FEEDBACK_MAX_NOTES_PER_EVENT: "50",
+        FEEDBACK_SUBMISSION_ENABLED: "false",
+      }).feedback,
+    ).toEqual({ maxNotesPerEvent: 50, submissionEnabled: false });
+    expect(() => loadConfig({ ...base, FEEDBACK_MAX_NOTES_PER_EVENT: "7" })).toThrow(
+      /FEEDBACK_MAX_NOTES_PER_EVENT/,
+    );
+    expect(() => loadConfig({ ...base, FEEDBACK_SUBMISSION_ENABLED: "yes" })).toThrow(
+      /FEEDBACK_SUBMISSION_ENABLED: must be true or false/,
+    );
   });
 
   it("reads the fixed batch window (F7)", () => {

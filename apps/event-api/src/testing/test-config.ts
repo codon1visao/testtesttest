@@ -23,6 +23,7 @@ export function integrationConfig(overrides: Partial<AppConfig> = {}): AppConfig
     manualGenerationTimeoutMs: 10_000,
     generationLimits: { dailyAttempts: 20, batchDailyAttempts: 15 },
     batchWindowMs: 300,
+    feedback: { maxNotesPerEvent: 100, submissionEnabled: true },
     ...overrides,
   };
 }
