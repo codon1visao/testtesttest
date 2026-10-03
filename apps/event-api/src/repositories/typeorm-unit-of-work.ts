@@ -1,7 +1,9 @@
 import type { DataSource, EntityManager, QueryRunner } from "typeorm";
 import type { ReadScope, TransactionScope, UnitOfWork } from "../ports/unit-of-work.js";
 import type { Logger } from "../shared/logger.js";
+import { TypeOrmBriefingReadRepository } from "./briefing-read-repository.js";
 import { TypeOrmEventRepository } from "./event-repository.js";
+import { TypeOrmOutcomeReadRepository } from "./outcome-read-repository.js";
 import { storeUnavailable, toStoreError } from "./store-errors.js";
 
 type Effect = () => Promise<void>;
@@ -32,6 +34,9 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
 
   async readSnapshot<T>(work: (scope: ReadScope) => Promise<T>): Promise<T> {
     return this.withRunner(async (runner) => {
+      // T4 §6 requires REPEATABLE READ; set it explicitly rather than trusting the server default.
+      // It applies to the next transaction only, so it cannot leak into the pooled connection.
+      await runner.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       await runner.query("START TRANSACTION READ ONLY");
       try {
         const value = await work(this.readScope(runner.manager));
@@ -46,13 +51,24 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
     });
   }
 
+  /**
+   * Read-only queries only. The transaction was opened with raw SQL, so TypeORM does not know
+   * one is active: repositories in a ReadScope must never call methods that start their own
+   * transaction (save, remove, manager.transaction), which would implicitly commit this one.
+   */
   protected readScope(manager: EntityManager): ReadScope {
-    return { events: new TypeOrmEventRepository(manager) };
+    return {
+      events: new TypeOrmEventRepository(manager),
+      briefings: new TypeOrmBriefingReadRepository(manager),
+      outcomes: new TypeOrmOutcomeReadRepository(manager),
+    };
   }
 
   protected transactionScope(manager: EntityManager, effects: Effect[]): TransactionScope {
     return {
       events: new TypeOrmEventRepository(manager),
+      briefings: new TypeOrmBriefingReadRepository(manager),
+      outcomes: new TypeOrmOutcomeReadRepository(manager),
       afterCommit: (effect) => {
         effects.push(effect);
       },

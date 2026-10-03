@@ -1,8 +1,12 @@
 import type {
   AttendanceChange,
+  BriefingContent,
   EventId,
   EventSummary,
   FeedbackNote,
+  GenerationProvenance,
+  GenerationStatusView,
+  GenerationTrigger,
   Member,
 } from "@event-desk/contracts";
 
@@ -26,11 +30,42 @@ export interface EventWriteRepository extends EventReadRepository {
   applyAttendanceChanges(eventId: EventId, changes: readonly AttendanceChange[]): Promise<void>;
 }
 
+/** A briefing as stored: generated structure and references, with saved wording when it is the saved one. */
+export interface StoredBriefing {
+  provenance: GenerationProvenance;
+  trigger: GenerationTrigger;
+  content: BriefingContent;
+  savedAt?: string;
+}
+
+export interface BriefingSlots {
+  saved: StoredBriefing | null;
+  selected: StoredBriefing | null;
+  incoming: StoredBriefing | null;
+}
+
+export interface BriefingReadRepository {
+  loadSlots(eventId: EventId): Promise<BriefingSlots>;
+}
+
+export type LastOutcome = NonNullable<GenerationStatusView["lastOutcome"]>;
+
+export interface OutcomeReadRepository {
+  latest(eventId: EventId): Promise<LastOutcome | null>;
+}
+
 export interface ReadScope {
   events: EventReadRepository;
+  briefings: BriefingReadRepository;
+  outcomes: OutcomeReadRepository;
 }
 
 export interface TransactionScope extends ReadScope {
+  /**
+   * `lockForUpdate` must be the first read in a transaction: the REPEATABLE READ snapshot is
+   * fixed by the first consistent read, so a plain read before the lock would see rows from
+   * before the lock was granted.
+   */
   events: EventWriteRepository;
   /** Runs only after COMMIT succeeds (cache flush, change notification). */
   afterCommit(effect: () => Promise<void>): void;

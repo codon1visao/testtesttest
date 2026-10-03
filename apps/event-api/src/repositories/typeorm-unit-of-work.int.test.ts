@@ -6,7 +6,7 @@ import {
   SUPPLIED_MEMBERS,
 } from "@event-desk/contracts";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { DataSource } from "typeorm";
+import type { DataSource, EntityManager } from "typeorm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDataSource } from "../persistence/data-source.js";
 import { AppError } from "../shared/app-error.js";
@@ -40,6 +40,15 @@ beforeEach(async () => {
   await truncateAllTables(dataSource);
   await insertEventFixture(dataSource);
 });
+
+/** Exposes the manager of the read-only transaction so a test can ask the server about it. */
+class ManagerCapturingUnitOfWork extends TypeOrmUnitOfWork {
+  captured: EntityManager | undefined;
+  protected override readScope(manager: EntityManager) {
+    this.captured = manager;
+    return super.readScope(manager);
+  }
+}
 
 describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
   it("reads the aggregate in a read-only snapshot", async () => {
@@ -146,5 +155,44 @@ describe("TypeOrmUnitOfWork + TypeOrmEventRepository", () => {
     ).rejects.toMatchObject({
       code: "STORE_UNAVAILABLE",
     });
+  });
+  it("reads a REPEATABLE READ snapshot even when the connection defaults to READ COMMITTED (T4 §6)", async () => {
+    // A fresh pool holds one connection, so sequential calls reuse it and the session setting sticks.
+    const single = createDataSource(testMysqlUrl());
+    await single.initialize();
+    try {
+      const capturing = new ManagerCapturingUnitOfWork(single, silentLogger);
+      const managerInTransaction = (): EntityManager => {
+        if (capturing.captured === undefined) throw new Error("manager was not captured");
+        return capturing.captured;
+      };
+      await capturing.readSnapshot(async () => {
+        await managerInTransaction().query(
+          "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
+        );
+      });
+      const [session] = await dataSource.query<{ level: string }[]>(
+        "SELECT @@session.transaction_isolation AS level",
+      );
+      expect(session?.level).toBe("REPEATABLE-READ"); // the main pool is untouched
+
+      const names = await capturing.readSnapshot(async () => {
+        const manager = managerInTransaction();
+        const [defaults] = await manager.query<{ level: string }[]>(
+          "SELECT @@session.transaction_isolation AS level",
+        );
+        const read = () =>
+          manager.query<{ name: string }[]>("SELECT name FROM events WHERE id = ?", [E101]);
+        const [before] = await read();
+        await dataSource.query("UPDATE events SET name = 'Renamed mid-read' WHERE id = ?", [E101]);
+        const [after] = await read();
+        return { defaults: defaults?.level, before: before?.name, after: after?.name };
+      });
+      // Precondition: this connection really defaults to READ COMMITTED, which would show the rename.
+      expect(names.defaults).toBe("READ-COMMITTED");
+      expect(names.after).toBe(names.before);
+    } finally {
+      await single.destroy();
+    }
   });
 });
