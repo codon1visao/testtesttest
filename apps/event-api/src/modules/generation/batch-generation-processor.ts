@@ -8,7 +8,10 @@ import type { Clock } from "../../ports/clock.js";
 import type { GenerationLimits } from "../../ports/generation-limits.js";
 import type { Logger } from "../../shared/logger.js";
 import type { EventChangePublisher } from "../changes/event-change-publisher.js";
-import type { BriefingGenerationService } from "./briefing-generation-service.js";
+import type {
+  BatchAttemptResult,
+  BriefingGenerationService,
+} from "./briefing-generation-service.js";
 import { BATCH_EXECUTION_DEADLINE_MS } from "./domain/batch-jobs.js";
 import {
   attemptDeadline,
@@ -33,6 +36,14 @@ export interface BatchProcessorDeps {
 
 const DONE: BatchStep = { kind: "done" };
 
+/** Thrown from beforeDispatch when shutdown started after the processor's own checks (M2). */
+class ShutdownBeforeDispatch extends Error {
+  constructor() {
+    super("shutdown started before the Gateway call");
+    this.name = "ShutdownBeforeDispatch";
+  }
+}
+
 /**
  * The batch side of T5 §3: decides each execution of a batch job. Generation itself is the shared
  * BriefingGenerationService pipeline; the queue only carries the job and its retry delays.
@@ -43,11 +54,12 @@ export class BatchGenerationProcessor implements BatchJobHandler {
   async handle(job: BatchJobContext): Promise<BatchStep> {
     const { eventId, runId } = job;
     const { generation } = this.deps;
+    // A run that already committed (its outcome recorded, then the job stalled or retried before
+    // BullMQ saw it finish) never makes a second paid call.
+    if (await generation.hasOutcome(runId)) return DONE;
     if (job.interruptedWhileSending) {
       // The previous execution may have reached the provider: never replay it (F7-11, F8).
-      if (!(await generation.hasOutcome(runId))) {
-        await generation.recordBatchOutcome(eventId, runId, "failed", "AI_OUTCOME_UNKNOWN");
-      }
+      await generation.recordBatchOutcome(eventId, runId, "failed", "AI_OUTCOME_UNKNOWN");
       return DONE;
     }
     if (await job.hasNewerReadyJob()) {
@@ -68,18 +80,29 @@ export class BatchGenerationProcessor implements BatchJobHandler {
     const executionDeadline = job.firstStartedAt.getTime() + BATCH_EXECUTION_DEADLINE_MS;
     if (now >= executionDeadline) return this.exhausted(eventId, runId);
 
-    const result = await generation.generateBatch({
-      eventId,
-      runId,
-      attempt: job.attempt,
-      deadlineAt: attemptDeadline(
-        now,
-        executionDeadline,
-        this.deps.attemptTimeoutMs ?? BATCH_ATTEMPT_TIMEOUT_MS,
-      ),
-      beforeDispatch: () => job.markSending(),
-      afterDispatch: () => job.markSettled(),
-    });
+    let result: BatchAttemptResult;
+    try {
+      result = await generation.generateBatch({
+        eventId,
+        runId,
+        attempt: job.attempt,
+        deadlineAt: attemptDeadline(
+          now,
+          executionDeadline,
+          this.deps.attemptTimeoutMs ?? BATCH_ATTEMPT_TIMEOUT_MS,
+        ),
+        // The last guard: a signal that arrived during TX10, the cooldown read or the
+        // reservation never dispatches (generateBatch gives the reservation back first).
+        beforeDispatch: async () => {
+          if (job.isShuttingDown()) throw new ShutdownBeforeDispatch();
+          await job.markSending();
+        },
+        afterDispatch: () => job.markSettled(),
+      });
+    } catch (error) {
+      if (error instanceof ShutdownBeforeDispatch) return this.parkUntilExit(job);
+      throw error;
+    }
     if (result.kind === "finished") return DONE;
 
     const after = this.deps.clock.now();

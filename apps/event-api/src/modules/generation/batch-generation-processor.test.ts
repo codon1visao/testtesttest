@@ -4,7 +4,7 @@ import type { BatchJobContext } from "../../ports/briefing-batch-queue.js";
 import { createLogger } from "../../shared/logger.js";
 import { FakeGenerationLimits } from "../../testing/fake-generation-limits.js";
 import { BatchGenerationProcessor } from "./batch-generation-processor.js";
-import type { BatchAttemptResult } from "./briefing-generation-service.js";
+import type { BatchAttemptResult, BatchGenerateCommand } from "./briefing-generation-service.js";
 
 const E101 = EventIdSchema.parse("E101");
 const RUN = RunIdSchema.parse("batch_run-1");
@@ -29,7 +29,7 @@ function setup(
     };
   });
   const generation = {
-    generateBatch: vi.fn((command: { deadlineAt: Date }): Promise<BatchAttemptResult> => {
+    generateBatch: vi.fn((command: BatchGenerateCommand): Promise<BatchAttemptResult> => {
       events.push(`generate:${command.deadlineAt.toISOString()}`);
       return Promise.resolve(results.shift() ?? { kind: "finished", status: "succeeded" });
     }),
@@ -98,6 +98,65 @@ describe("BatchGenerationProcessor (T5 §3, F7)", () => {
     const { processor, job, events } = setup({ hasOutcome: true });
     await processor.handle(job({ interruptedWhileSending: true }));
     expect(events).toEqual([]);
+  });
+
+  it("F2: an execution whose run already has an outcome makes no call and records nothing", async () => {
+    const { processor, job, events, generation } = setup({ hasOutcome: true });
+    expect(await processor.handle(job())).toEqual({ kind: "done" });
+    expect(generation.generateBatch).not.toHaveBeenCalled();
+    expect(generation.recordBatchOutcome).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it("T3 §10 (P13): a shutdown that started before the call parks the job without a call", async () => {
+    const { processor, job, generation } = setup();
+    let settled = false;
+    void processor.handle(job({ isShuttingDown: () => true })).finally(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    expect(generation.generateBatch).not.toHaveBeenCalled();
+    expect(generation.recordBatchOutcome).not.toHaveBeenCalled();
+  });
+
+  it("M2: a shutdown signal during capture or limits stops the dispatch and parks the job", async () => {
+    const { processor, job, generation } = setup();
+    let shuttingDown = false;
+    const marked: string[] = [];
+    let dispatchError: unknown = null;
+    generation.generateBatch.mockImplementationOnce(async (command) => {
+      // The signal arrives while TX10 / cooldown / reservation run, after the processor's checks.
+      shuttingDown = true;
+      try {
+        await command.beforeDispatch();
+      } catch (error) {
+        dispatchError = error;
+        throw error;
+      }
+      return { kind: "finished", status: "succeeded" };
+    });
+    let settled = false;
+    void processor
+      .handle(
+        job({
+          isShuttingDown: () => shuttingDown,
+          markSending: () => {
+            marked.push("sending");
+            return Promise.resolve();
+          },
+        }),
+      )
+      .finally(() => {
+        settled = true;
+      });
+    await vi.waitFor(() => {
+      expect(dispatchError).not.toBeNull();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(marked).toEqual([]);
+    expect(settled).toBe(false);
+    expect(generation.recordBatchOutcome).not.toHaveBeenCalled();
   });
 
   it("F7-05: a newer ready job supersedes this one without a call", async () => {
