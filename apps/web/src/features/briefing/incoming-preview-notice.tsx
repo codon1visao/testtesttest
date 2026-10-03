@@ -31,7 +31,11 @@ export function IncomingPreviewNotice({
     <>
       <Banner
         status="info"
-        title="New briefing ready to review"
+        title={
+          preview.trigger === "feedback_batch"
+            ? "New automatic briefing ready to review."
+            : "New briefing ready to review"
+        }
         description={`${origin} at ${formatTimestamp(preview.provenance.generatedAt)}.${stale}${kept}`}
         endContent={
           <Button

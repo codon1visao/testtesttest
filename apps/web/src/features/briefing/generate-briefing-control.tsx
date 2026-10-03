@@ -3,11 +3,14 @@ import { Button } from "@astryxdesign/core/Button";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import type { BriefingView, EventId, EventView, HttpErrorCode } from "@event-desk/contracts";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError, describeApiError } from "../../data/http/api-error";
 import { useGenerateBriefing } from "../../data/mutations/use-generate-briefing";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { useUiStore } from "../../state/ui-store";
+import { BatchStatus } from "./batch-status";
+import { formatClock } from "./batch-status-text";
+import { useOutcomeAnnouncements } from "./use-outcome-announcements";
 
 /** The earlier attempt may have reached the provider (F8): Retry asks before paying again (T3 §11). */
 const UNCERTAIN_CODES: ReadonlySet<HttpErrorCode> = new Set([
@@ -20,7 +23,10 @@ export function mayHaveBeenCharged(error: unknown): boolean {
   return error.outcomeUnknown || (error.code !== undefined && UNCERTAIN_CODES.has(error.code));
 }
 
-/** Generate and Retry are the same synchronous call (A6); attendance must be saved first (F4). */
+/**
+ * Generate and Retry are the same synchronous call (A6); attendance must be saved first (F4), and a
+ * provider cooldown (F8) holds it until the server says it ends.
+ */
 export function GenerateBriefingControl({
   eventId,
   view,
@@ -34,17 +40,32 @@ export function GenerateBriefingControl({
   const generation = useGenerateBriefing(eventId);
   const attendanceDirty = useUiStore((state) => state.attendanceDirty);
   const [confirmingRetry, setConfirmingRetry] = useState(false);
+  useOutcomeAnnouncements(view.generation.lastOutcome);
+
+  // Plan 3B carry-forward: a Retry banner is stale once a different incoming preview arrives.
+  const incomingId = view.incomingPreview?.provenance.generationId ?? null;
+  const [incomingAtError, setIncomingAtError] = useState<string | null>(null);
+  useEffect(() => {
+    if (generation.isError && incomingId !== incomingAtError) generation.reset();
+  }, [generation, incomingId, incomingAtError]);
 
   const elsewhere = view.generation.manual !== null && !generation.isPending;
   const busy = generation.isPending || view.generation.manual !== null;
+  const { cooldownUntil } = view.generation;
+  const cooling = cooldownUntil !== null;
   const start = () => {
     generation.mutate(
       { baseAttendanceRevision: view.attendanceRevision },
-      { onSuccess: (response) => onGenerated?.(response.incomingPreview) },
+      {
+        onSuccess: (response) => onGenerated?.(response.incomingPreview),
+        onError: () => {
+          setIncomingAtError(incomingId);
+        },
+      },
     );
   };
   const press = () => {
-    if (busy || attendanceDirty) return;
+    if (busy || attendanceDirty || cooling) return;
     if (generation.isError && mayHaveBeenCharged(generation.error)) setConfirmingRetry(true);
     else start();
   };
@@ -59,7 +80,7 @@ export function GenerateBriefingControl({
           variant="primary"
           label={busy ? "Generating briefing…" : generation.isError ? "Retry" : "Generate briefing"}
           isLoading={busy}
-          isDisabled={attendanceDirty}
+          isDisabled={attendanceDirty || cooling}
           {...(busy ? { tooltip: "Wait for the current generation to finish." } : {})}
           onClick={press}
         />
@@ -73,8 +94,17 @@ export function GenerateBriefingControl({
           </Text>
         ) : attendanceDirty ? (
           <Text>Save or discard your attendance changes before generating.</Text>
+        ) : cooling ? (
+          <Text>
+            {`The AI provider is limiting requests. Generate is available again at ${formatClock(cooldownUntil)}.`}
+          </Text>
         ) : null}
       </div>
+      <BatchStatus
+        view={view}
+        canGenerate={!busy && !attendanceDirty && !cooling}
+        onGenerate={press}
+      />
       {generation.isError && !busy ? (
         <Banner
           status="error"

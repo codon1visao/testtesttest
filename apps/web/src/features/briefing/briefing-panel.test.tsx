@@ -455,7 +455,7 @@ describe("briefing panel", () => {
     };
     renderApp();
     const region = await panel();
-    expect(await region.findByText("New briefing ready to review")).toBeTruthy();
+    expect(await region.findByText("New automatic briefing ready to review.")).toBeTruthy();
     expect(region.getByRole("heading", { name: /^Saved briefing · last saved / })).toBeTruthy();
     expect(api.selectRequests).toHaveLength(0);
   });
