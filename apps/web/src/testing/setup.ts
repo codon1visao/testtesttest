@@ -1,3 +1,4 @@
+import { focusManager } from "@tanstack/react-query";
 import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { useUiStore } from "../state/ui-store";
@@ -40,6 +41,8 @@ beforeAll(() => {
 });
 afterEach(() => {
   cleanup();
+  // Tests simulate window focus to trigger refetches; hand focus tracking back to the browser default.
+  focusManager.setFocused(undefined);
   useUiStore.setState({ attendanceDirty: false });
   // Astryx announces toasts through document-level live regions that outlive cleanup(); clear them so
   // one test's announcement never satisfies the next test's query.

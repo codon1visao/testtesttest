@@ -10,13 +10,17 @@ import {
 import { buildSeedEventView } from "@event-desk/contracts/testing";
 import { http, HttpResponse } from "msw";
 
-export function apiErrorResponse(status: number, code: ErrorCode, message: string) {
-  return HttpResponse.json({ error: { code, message } }, { status });
+export function apiErrorResponse(status: number, code: ErrorCode, message: string, field?: string) {
+  return HttpResponse.json(
+    { error: { code, message, ...(field === undefined ? {} : { field }) } },
+    { status },
+  );
 }
 
 /**
- * An in-memory stand-in for the Plan 2 API with the same contract and rules:
- * revision check (409), full-roster check (400), revision bump only on a real change.
+ * An in-memory stand-in for the Plan 2 API with the same contract and rules, in the service's order:
+ * full-roster check (400, field "members"), then revision check (409), revision bump only on a real
+ * change.
  */
 export class FakeEventApi {
   view: EventView = buildSeedEventView();
@@ -50,13 +54,6 @@ export class FakeEventApi {
         const parsed = SaveAttendanceRequestSchema.safeParse(body);
         if (!parsed.success)
           return apiErrorResponse(400, "VALIDATION_FAILED", "Invalid attendance body.");
-        if (parsed.data.baseAttendanceRevision !== this.view.attendanceRevision) {
-          return apiErrorResponse(
-            409,
-            "ATTENDANCE_CONFLICT",
-            "Attendance was saved elsewhere since you loaded it. Reload to see the latest records.",
-          );
-        }
         const requested = new Map(parsed.data.members.map((m) => [m.id, m.attendance]));
         if (
           requested.size !== this.view.members.length ||
@@ -66,6 +63,14 @@ export class FakeEventApi {
             400,
             "VALIDATION_FAILED",
             "members must list each registered member exactly once.",
+            "members",
+          );
+        }
+        if (parsed.data.baseAttendanceRevision !== this.view.attendanceRevision) {
+          return apiErrorResponse(
+            409,
+            "ATTENDANCE_CONFLICT",
+            "Attendance was saved elsewhere since you loaded it. Reload to see the latest records.",
           );
         }
         const members = this.view.members.map((m) => ({

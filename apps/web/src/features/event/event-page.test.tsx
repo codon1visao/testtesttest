@@ -1,6 +1,6 @@
 import { focusManager } from "@tanstack/react-query";
 import { act, screen } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
 import { mswServer } from "../../testing/msw-server";
@@ -68,9 +68,34 @@ describe("event page", () => {
     expect(await screen.findByRole("heading", { name: "Event not found" })).toBeTruthy();
   });
 
-  it("does not call the API for a malformed event ID", () => {
+  it("shows the labelled loading state while a Retry is in flight", async () => {
+    mswServer.use(http.get("/api/events/:eventId", () => HttpResponse.error(), { once: true }));
+    const { user } = renderApp();
+    expect(await screen.findByText("The event could not be loaded")).toBeTruthy();
+    mswServer.use(
+      http.get("/api/events/:eventId", async () => {
+        await delay(150);
+        return undefined;
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByRole("status", { name: "Loading event…" })).toBeTruthy();
+    expect(screen.queryByText("The event could not be loaded")).toBeNull();
+    expect(await screen.findByRole("heading", { level: 1, name: "Saturday Walk" })).toBeTruthy();
+  });
+
+  it("does not call the API for a malformed event ID", async () => {
+    const requested: string[] = [];
+    mswServer.use(
+      http.all("*", ({ request }) => {
+        requested.push(request.url);
+      }),
+    );
     renderApp("/events/e101");
     expect(screen.getByRole("heading", { name: "Event not found" })).toBeTruthy();
+    // Give any query a chance to start before asserting that none did.
+    await act(() => delay(50));
+    expect(requested).toEqual([]);
   });
 
   it("F1: keeps the last snapshot with a warning when a refresh fails", async () => {
@@ -88,8 +113,5 @@ describe("event page", () => {
     expect(await screen.findByText("Showing the last loaded data")).toBeTruthy();
     expect(screen.getByText(/The event store is unavailable\./)).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1, name: "Saturday Walk" })).toBeTruthy();
-    act(() => {
-      focusManager.setFocused(undefined);
-    });
   });
 });

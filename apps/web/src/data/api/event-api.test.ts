@@ -134,6 +134,17 @@ describe("saveAttendance", () => {
     expect(api.attendanceRequests).toEqual([body()]);
   });
 
+  it("checks the full roster before the revision, as the service does", async () => {
+    api.saveElsewhere(MemberIdSchema.parse("M04"), "attended");
+    const partial = { ...body(0), members: body(0).members.slice(0, 3) };
+    expect(await failureOf(saveAttendance(E101, partial))).toMatchObject({
+      kind: "http",
+      status: 400,
+      code: "VALIDATION_FAILED",
+      field: "members",
+    });
+  });
+
   it("surfaces a conflict as http 409 ATTENDANCE_CONFLICT", async () => {
     api.saveElsewhere(MemberIdSchema.parse("M04"), "attended");
     expect(await failureOf(saveAttendance(E101, body(0)))).toMatchObject({
