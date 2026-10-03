@@ -508,6 +508,29 @@ describe("briefing panel", () => {
     );
   });
 
+  it("P22: discarding the saved briefing's edits while another tab selected a preview keeps the saved briefing", async () => {
+    api.view = { ...api.view, savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME } };
+    const { user } = renderApp();
+    const region = await panel();
+    await user.type(region.getByLabelText<HTMLTextAreaElement>("Theme 1"), " Edited.");
+    api.view = { ...api.view, selectedPreview: otherPreview(5, "Selected in another tab.") };
+    await waitFor(() => {
+      expect(FakeEventSource.instances.length).toBeGreaterThan(0);
+    });
+    FakeEventSource.instances[0]?.emit("changed", '{"version":2}');
+    await region.findByText(/ready to review/);
+    await user.click(region.getByRole("button", { name: "Discard edits" }));
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
+    await waitFor(() => {
+      expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
+        "Requests for more rest-break time.",
+      );
+    });
+    expect(region.getByRole("heading", { name: /^Saved briefing · last saved / })).toBeTruthy();
+    // The other tab's preview is still there to switch to; the editor did not jump to it.
+    expect(region.getByRole("radiogroup", { name: "Briefing to show" })).toBeTruthy();
+  });
+
   it("shows a visible caption above the preview/saved switch", async () => {
     api.view = {
       ...api.view,
@@ -521,7 +544,9 @@ describe("briefing panel", () => {
       }),
     };
     renderApp();
-    expect(await (await panel()).findByText("Briefing to show")).toBeTruthy();
+    const caption = await (await panel()).findByText("Briefing to show");
+    // The switch already has this accessible name: the visible caption is not read twice (P22).
+    expect(caption.closest("[aria-hidden='true']")).not.toBeNull();
   });
 });
 

@@ -233,7 +233,10 @@ export function BriefingPanel({
         {reconciled ? <Banner status="success" title="Your briefing changes were saved." /> : null}
         {canSwitch ? (
           <div>
-            <Text type="supporting">Briefing to show</Text>
+            {/* Visible only: the switch below carries the same accessible name. */}
+            <div aria-hidden="true">
+              <Text type="supporting">Briefing to show</Text>
+            </div>
             <SegmentedControl
               label="Briefing to show"
               value={VIEW_OF_SLOT[base.slot]}
