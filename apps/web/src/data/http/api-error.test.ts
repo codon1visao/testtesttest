@@ -4,9 +4,11 @@ import { toApiError } from "./api-client";
 import { ApiError, describeApiError } from "./api-error";
 
 describe("ApiError", () => {
-  it("marks network and timeout failures as an unknown outcome (the request may have landed)", () => {
+  it("marks network, timeout and invalid-response failures as an unknown outcome (the request may have landed)", () => {
     expect(new ApiError("network", "x").outcomeUnknown).toBe(true);
     expect(new ApiError("timeout", "x").outcomeUnknown).toBe(true);
+    // A 2xx whose body breaks the contract: the server answered, so the write may have happened.
+    expect(new ApiError("invalid-response", "x").outcomeUnknown).toBe(true);
     expect(
       new ApiError("http", "x", { status: 409, code: "ATTENDANCE_CONFLICT" }).outcomeUnknown,
     ).toBe(false);

@@ -40,6 +40,20 @@ describe("event page", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Saturday Walk" })).toBeTruthy();
   });
 
+  it("F1-08: explains a bare proxy 502 (API not running) as unreachable, with Retry", async () => {
+    mswServer.use(
+      http.get("/api/events/:eventId", () => new HttpResponse(null, { status: 502 }), {
+        once: true,
+      }),
+    );
+    const { user } = renderApp();
+    expect(await screen.findByText("The event could not be loaded")).toBeTruthy();
+    expect(screen.getByText(/could not reach the event api/i)).toBeTruthy();
+    expect(screen.queryByText(/answered with status 502/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Saturday Walk" })).toBeTruthy();
+  });
+
   it("treats a malformed response as a load error, not data", async () => {
     mswServer.use(
       http.get("/api/events/:eventId", () => HttpResponse.json({ event: { id: "E101" } })),

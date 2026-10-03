@@ -28,9 +28,22 @@ export class ApiError extends Error {
     this.retryAfterMs = details.retryAfterMs;
   }
 
-  /** The request may have reached the server: reconcile with saved state before retrying (F2, F5). */
+  /**
+   * The request may have reached the server: reconcile with saved state before retrying (F2, F5).
+   * An invalid response counts too: the server answered, so a write may have happened even though
+   * its reply could not be read.
+   */
   get outcomeUnknown(): boolean {
-    return this.kind === "network" || this.kind === "timeout";
+    switch (this.kind) {
+      case "network":
+      case "timeout":
+      case "invalid-response":
+        return true;
+      case "http":
+        return false;
+      default:
+        return assertNever(this.kind, "API error kind");
+    }
   }
 }
 

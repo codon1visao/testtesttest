@@ -4,6 +4,9 @@ import { ApiError } from "./api-error";
 
 export const API_TIMEOUT_MS = 15_000;
 
+/** Gateway statuses a proxy sends on its own; only a contract error body proves the API answered. */
+const GATEWAY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
+
 /** Normalises any request failure into ApiError (T1: errors normalised, no toasts, no retries here). */
 export function toApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
@@ -16,6 +19,14 @@ export function toApiError(error: unknown): ApiError {
   if (response === undefined)
     return new ApiError("network", "No response from the event API.", { cause: error });
   const body = ApiErrorBodySchema.safeParse(response.data);
+  if (!body.success && GATEWAY_STATUSES.has(response.status)) {
+    // A bare gateway answer (e.g. the dev proxy when the API is down) is a transport failure; a 504
+    // may still have reached the API, so the outcome is unknown.
+    return new ApiError("network", "The event API could not be reached through the gateway.", {
+      status: response.status,
+      cause: error,
+    });
+  }
   if (!body.success) {
     return new ApiError("http", `The event API answered with status ${response.status}.`, {
       status: response.status,

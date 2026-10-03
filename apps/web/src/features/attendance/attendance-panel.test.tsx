@@ -193,6 +193,24 @@ describe("attendance panel", () => {
     expect(region.queryByText(/unsaved attendance changes/i)).toBeNull();
   });
 
+  it("treats a 2xx save with a malformed body as unconfirmed and reconciles it", async () => {
+    mswServer.use(
+      http.put("/api/events/:eventId/attendance", () => {
+        api.saveElsewhere(M03, "attended");
+        return HttpResponse.json({ saved: true });
+      }),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.selectOptions(select(region, "Chris"), "attended");
+    await user.click(region.getByRole("button", { name: "Save attendance" }));
+    expect(await region.findByText("Your attendance changes were saved.")).toBeTruthy();
+    expect(screen.queryByText(/attendance was not saved/i)).toBeNull();
+    expect(await screen.findAllByText(/could not confirm the attendance save/i)).not.toHaveLength(
+      0,
+    );
+  });
+
   it("keeps the draft when a lost response was not saved", async () => {
     mswServer.use(http.put("/api/events/:eventId/attendance", () => HttpResponse.error()));
     const { user } = renderApp();

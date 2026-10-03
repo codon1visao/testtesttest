@@ -1,7 +1,7 @@
 import { EventIdSchema, MemberIdSchema, type SaveAttendanceRequest } from "@event-desk/contracts";
 import { delay, http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
-import { FakeEventApi } from "../../testing/fake-event-api";
+import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
 import { mswServer } from "../../testing/msw-server";
 import { ApiError } from "../http/api-error";
 import { fetchEvent, saveAttendance } from "./event-api";
@@ -52,7 +52,7 @@ describe("fetchEvent", () => {
     });
   });
 
-  it("reports a non-contract error body (e.g. a proxy 502 page) without a code", async () => {
+  it("reports a gateway error without a contract body (e.g. a proxy 502 page) as a network error", async () => {
     mswServer.use(
       http.get(
         "/api/events/:eventId",
@@ -60,8 +60,49 @@ describe("fetchEvent", () => {
       ),
     );
     const error = await failureOf(fetchEvent(E101, signal()));
-    expect(error).toMatchObject({ kind: "http", status: 502, code: undefined });
-    expect(error.message).toBe("The event API answered with status 502.");
+    expect(error).toMatchObject({
+      kind: "network",
+      status: 502,
+      code: undefined,
+      outcomeUnknown: true,
+    });
+  });
+
+  it.each([503, 504])("reports a bare %i gateway answer as a network error", async (status) => {
+    mswServer.use(http.get("/api/events/:eventId", () => new HttpResponse(null, { status })));
+    expect(await failureOf(fetchEvent(E101, signal()))).toMatchObject({
+      kind: "network",
+      status,
+      outcomeUnknown: true,
+    });
+  });
+
+  it("keeps a contract-body 503 as an http error with its code and message", async () => {
+    mswServer.use(
+      http.get("/api/events/:eventId", () =>
+        apiErrorResponse(503, "STORE_UNAVAILABLE", "The event store is unavailable."),
+      ),
+    );
+    const error = await failureOf(fetchEvent(E101, signal()));
+    expect(error).toMatchObject({
+      kind: "http",
+      status: 503,
+      code: "STORE_UNAVAILABLE",
+      outcomeUnknown: false,
+    });
+    expect(error.message).toBe("The event store is unavailable.");
+  });
+
+  it("reports any other non-contract error body without a code", async () => {
+    mswServer.use(
+      http.get(
+        "/api/events/:eventId",
+        () => new HttpResponse("<html>Oops</html>", { status: 500 }),
+      ),
+    );
+    const error = await failureOf(fetchEvent(E101, signal()));
+    expect(error).toMatchObject({ kind: "http", status: 500, code: undefined });
+    expect(error.message).toBe("The event API answered with status 500.");
   });
 
   it("reports an aborted request as a network error", async () => {
