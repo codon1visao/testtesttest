@@ -12,6 +12,7 @@
   "dependencies": {
     "@event-desk/contracts": "workspace:*",
     "@event-desk/tcp-rpc": "workspace:*",
+    "bullmq": "6.3.11",
     "express": "5.2.1",
     "ioredis": "5.11.1",
     "mysql2": "3.24.5",

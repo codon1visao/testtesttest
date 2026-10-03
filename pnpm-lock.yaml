@@ -71,6 +71,9 @@ importers:
       '@event-desk/tcp-rpc':
         specifier: workspace:*
         version: link:../../packages/tcp-rpc
+      bullmq:
+        specifier: 6.3.11
+        version: 6.3.11(ioredis@5.11.1(supports-color@7.2.0))
       express:
         specifier: 5.2.1
         version: 5.2.1(supports-color@7.2.0)
@@ -202,67 +205,6 @@ importers:
         version: 4.6.5
 
   packages/tcp-rpc: {}
-
-  spikes/astryx-vite:
-    dependencies:
-      '@astryxdesign/core':
-        specifier: 0.6.5
-        version: 0.6.5(@stylexjs/stylex@0.19.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@astryxdesign/theme-neutral':
-        specifier: 0.6.5
-        version: 0.6.5(@astryxdesign/core@0.6.5(@stylexjs/stylex@0.19.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@types/react@19.3.0)(react@19.3.0)
-      '@event-desk/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@stylexjs/stylex':
-        specifier: 0.19.1
-        version: 0.19.1
-      react:
-        specifier: 19.3.0
-        version: 19.3.0
-      react-dom:
-        specifier: 19.3.0
-        version: 19.3.0(react@19.3.0)
-    devDependencies:
-      '@astryxdesign/build':
-        specifier: 0.6.5
-        version: 0.6.5(@babel/core@8.0.6)(@stylexjs/babel-plugin@0.19.1(supports-color@7.2.0))(@stylexjs/unplugin@0.19.1(supports-color@7.2.0)(unplugin@2.3.11))(postcss@8.5.28)(vite@8.3.2(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15))
-      '@babel/core':
-        specifier: 8.0.6
-        version: 8.0.6
-      '@stylexjs/babel-plugin':
-        specifier: 0.19.1
-        version: 0.19.1(supports-color@7.2.0)
-      '@stylexjs/unplugin':
-        specifier: 0.19.1
-        version: 0.19.1(supports-color@7.2.0)(unplugin@2.3.11)
-      '@testing-library/react':
-        specifier: 16.3.3
-        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@types/react':
-        specifier: 19.3.0
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: 19.3.0
-        version: 19.3.0(@types/react@19.3.0)
-      '@vitejs/plugin-react':
-        specifier: 6.1.1
-        version: 6.1.1(vite@8.3.2(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15))
-      jsdom:
-        specifier: 30.1.1
-        version: 30.1.1(@noble/hashes@1.8.0)
-      vite:
-        specifier: 8.3.2
-        version: 8.3.2(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15)
-
-  spikes/bullmq-window:
-    dependencies:
-      bullmq:
-        specifier: 6.3.11
-        version: 6.3.11(ioredis@5.11.1(supports-color@7.2.0))
-      ioredis:
-        specifier: 5.11.1
-        version: 5.11.1(supports-color@7.2.0)
 
 packages:
 

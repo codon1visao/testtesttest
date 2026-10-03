@@ -19,6 +19,7 @@ const ids: IdGenerator = {
   generationId: () => GenerationIdSchema.parse("0199a4e8-7c1a-7cc2-9d6e-2f3b4c5d6e7f"),
   itemId: () => "item",
   manualRunId: () => RunIdSchema.parse(`manual:run-${(runs += 1)}`),
+  batchRunId: () => RunIdSchema.parse(`batch_run-${(runs += 1)}`),
 };
 
 /** `failPublishAt` lists the publish calls (1 = start flush, 2 = finish flush) that reject. */

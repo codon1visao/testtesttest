@@ -53,6 +53,13 @@ const EnvObject = z.object({
   GENERATION_DAILY_ATTEMPT_LIMIT: z.coerce.number().int().min(1).max(1_000).default(20),
   /** The part of the daily total that automatic batches may use. */
   GENERATION_BATCH_DAILY_LIMIT: z.coerce.number().int().min(0).max(1_000).default(15),
+  /** Fixed batch window for automatic briefings (F7): the cutoff is this long after the first note. */
+  BRIEFING_BATCH_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .positive({ error: "must be a positive integer" })
+    .max(600_000)
+    .default(3_000),
 });
 
 const EnvSchema = EnvObject.superRefine((env, ctx) => {
@@ -85,6 +92,8 @@ export interface AppConfig {
   manualGenerationTimeoutMs: number;
   /** Daily paid attempts per event: the total, and the share automatic batches may use (F7). */
   generationLimits: { dailyAttempts: number; batchDailyAttempts: number };
+  /** Fixed batch window for automatic briefings (F7). */
+  batchWindowMs: number;
 }
 
 /** Invalid configuration. The message names variables and problems, never their values. */
@@ -121,6 +130,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       dailyAttempts: e.GENERATION_DAILY_ATTEMPT_LIMIT,
       batchDailyAttempts: e.GENERATION_BATCH_DAILY_LIMIT,
     },
+    batchWindowMs: e.BRIEFING_BATCH_WINDOW_MS,
   };
 }
 

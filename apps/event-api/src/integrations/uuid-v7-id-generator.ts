@@ -20,4 +20,5 @@ export const uuidV7IdGenerator: IdGenerator = {
   generationId: () => GenerationIdSchema.parse(uuidV7()),
   itemId: () => uuidV7(),
   manualRunId: () => RunIdSchema.parse(`manual:${uuidV7()}`),
+  batchRunId: () => RunIdSchema.parse(`batch_${uuidV7()}`),
 };

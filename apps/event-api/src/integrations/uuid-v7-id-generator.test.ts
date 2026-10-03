@@ -20,4 +20,9 @@ describe("uuidV7", () => {
     expect(RunIdSchema.safeParse(uuidV7IdGenerator.manualRunId()).success).toBe(true);
     expect(uuidV7IdGenerator.itemId()).not.toBe(uuidV7IdGenerator.itemId());
   });
+
+  it("produces batch run IDs that are valid BullMQ custom job IDs (no ':')", () => {
+    expect(uuidV7IdGenerator.batchRunId()).toMatch(/^batch_[0-9a-f-]{36}$/);
+    expect(RunIdSchema.safeParse(uuidV7IdGenerator.batchRunId()).success).toBe(true);
+  });
 });

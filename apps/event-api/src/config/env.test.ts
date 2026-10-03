@@ -66,6 +66,7 @@ describe("loadConfig", () => {
       gateway: { host: "127.0.0.1", port: 4100, secret: GATEWAY_SERVICE_SECRET },
       manualGenerationTimeoutMs: 60_000,
       generationLimits: { dailyAttempts: 20, batchDailyAttempts: 15 },
+      batchWindowMs: 3_000,
     });
   });
 
@@ -139,6 +140,20 @@ describe("loadConfig", () => {
     ).toThrow(/GENERATION_BATCH_DAILY_LIMIT: must not exceed GENERATION_DAILY_ATTEMPT_LIMIT/);
   });
 
+  it("reads the fixed batch window (F7)", () => {
+    expect(
+      loadConfig({ MYSQL_URL, GATEWAY_SERVICE_SECRET, BRIEFING_BATCH_WINDOW_MS: "1500" })
+        .batchWindowMs,
+    ).toBe(1_500);
+  });
+
+  // F7-16: an invalid window stops startup and names the variable.
+  it.each(["0", "abc"])("rejects BRIEFING_BATCH_WINDOW_MS=%s (F7-16)", (value) => {
+    expect(() =>
+      loadConfig({ MYSQL_URL, GATEWAY_SERVICE_SECRET, BRIEFING_BATCH_WINDOW_MS: value }),
+    ).toThrow(/BRIEFING_BATCH_WINDOW_MS/);
+  });
+
   it("refuses a non-loopback GATEWAY_HOST (S1)", () => {
     expect(() =>
       loadConfig({ MYSQL_URL, GATEWAY_SERVICE_SECRET, GATEWAY_HOST: "10.0.0.5" }),
@@ -205,6 +220,7 @@ describe("loadDotEnv (S1-12)", () => {
       "GATEWAY_PORT",
       "GATEWAY_SERVICE_SECRET",
       "MANUAL_GENERATION_TIMEOUT_MS",
+      "BRIEFING_BATCH_WINDOW_MS",
     ];
     const target: NodeJS.ProcessEnv = {};
     loadDotEnv(await dotEnvFile(keys.map((key) => `${key}=x`).join("\n")), target);
