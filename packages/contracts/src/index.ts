@@ -8,3 +8,4 @@ export * from "./supplied-records.js";
 export * from "./briefing-content.js";
 export * from "./briefing-rules.js";
 export * from "./generated-sections.js";
+export * from "./freshness.js";
