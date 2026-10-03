@@ -20,6 +20,22 @@ beforeEach(() => {
 const panel = async () => within(await screen.findByRole("region", { name: "Attendance" }));
 const select = (region: Awaited<ReturnType<typeof panel>>, name: string) =>
   region.getByRole<HTMLSelectElement>("combobox", { name });
+/**
+ * The "Attendance saved" toast. Astryx also announces its text in a document-level live region, so
+ * a plain findByText finds two elements whenever both are present at its first check (under load)
+ * and fails; the toast itself is the element outside the live region (P18).
+ */
+const toastShown = async (text: string) => {
+  await waitFor(
+    () => {
+      const toasts = screen
+        .queryAllByText(text)
+        .filter((element) => element.closest("[data-astryx-live-region]") === null);
+      expect(toasts).not.toHaveLength(0);
+    },
+    { timeout: 3_000 },
+  );
+};
 const refocus = () => {
   act(() => {
     focusManager.setFocused(false);
@@ -68,7 +84,7 @@ describe("attendance panel", () => {
     const region = await panel();
     await user.selectOptions(select(region, "Chris"), "attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await screen.findByText("Attendance saved")).toBeTruthy();
+    await toastShown("Attendance saved");
     expect(api.attendanceRequests).toEqual([
       {
         baseAttendanceRevision: 0,
@@ -365,7 +381,7 @@ describe("attendance panel", () => {
     await user.tab();
     expect(document.activeElement).toBe(region.getByRole("button", { name: "Save attendance" }));
     await user.keyboard("{Enter}");
-    expect(await screen.findByText("Attendance saved")).toBeTruthy();
+    await toastShown("Attendance saved");
   });
 
   it("warns before leaving while attendance is unsaved", async () => {
