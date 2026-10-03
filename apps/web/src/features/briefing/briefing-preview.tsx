@@ -10,11 +10,23 @@ import { SourceReferences } from "../feedback/source-reference";
 import { EVIDENCE_LIMIT_NOTICE, formatTimestamp, SECTION_COPY } from "./briefing-copy";
 import { FreshnessNotice } from "./freshness-notice";
 
-function EvidenceText({ item, view }: { item: EvidenceItem; view: EventView }) {
+function EvidenceText({
+  item,
+  view,
+  disclosureScope,
+}: {
+  item: EvidenceItem;
+  view: EventView;
+  disclosureScope: string;
+}) {
   return (
     <VStack gap={1}>
       <Text>{item.text}</Text>
-      <SourceReferences sourceIds={item.sourceIds} notes={view.feedback} />
+      <SourceReferences
+        sourceIds={item.sourceIds}
+        notes={view.feedback}
+        disclosureScope={disclosureScope}
+      />
     </VStack>
   );
 }
@@ -33,6 +45,8 @@ export function BriefingPreview({
   view: EventView;
 }) {
   const { content, provenance } = briefing;
+  // Its own disclosure state: a read-only copy never opens or closes the editor's sources.
+  const scope = `${provenance.generationId}:readonly`;
   return (
     <article aria-label={title}>
       <VStack gap={3}>
@@ -46,7 +60,11 @@ export function BriefingPreview({
         <VStack gap={1}>
           <Heading level={4}>What happened</Heading>
           <Text>{content.attendanceOverview}</Text>
-          <EvidenceText item={content.feedbackSummary} view={view} />
+          <EvidenceText
+            item={content.feedbackSummary}
+            view={view}
+            disclosureScope={`${scope}:feedbackSummary`}
+          />
         </VStack>
         {LIST_SECTIONS.map((section) => (
           <VStack key={section} gap={1}>
@@ -57,7 +75,11 @@ export function BriefingPreview({
               <ul>
                 {content[section].map((item, index) => (
                   <li key={`${section}-${String(index)}`}>
-                    <EvidenceText item={item} view={view} />
+                    <EvidenceText
+                      item={item}
+                      view={view}
+                      disclosureScope={`${scope}:${section}.${String(index)}`}
+                    />
                   </li>
                 ))}
               </ul>

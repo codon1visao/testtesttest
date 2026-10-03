@@ -10,6 +10,7 @@ import {
   TEXT_LIMITS,
 } from "@event-desk/contracts";
 import { z } from "zod";
+import type { ActiveView } from "../../state/ui-store";
 import { activeBriefing, type EditableSlot } from "./active-briefing";
 
 const itemText = z.object({ text: boundedText(TEXT_LIMITS.item) });
@@ -95,8 +96,8 @@ export interface EditorBase {
   briefingRevision: number;
 }
 
-export function toEditorBase(view: EventView): EditorBase | null {
-  const active = activeBriefing(view);
+export function toEditorBase(view: EventView, activeView: ActiveView): EditorBase | null {
+  const active = activeBriefing(view, activeView);
   return active === null ? null : { ...active, briefingRevision: view.briefingRevision };
 }
 

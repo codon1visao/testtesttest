@@ -147,11 +147,14 @@ export function BriefingEditor({
   onSaved,
   onReset,
   consumePendingFocus,
+  isLocked = false,
 }: {
   eventId: EventId;
   view: EventView;
   base: EditorBase;
   refetch: RefetchEvent;
+  /** The panel is replacing this base (an automatic select in flight): no new text meanwhile. */
+  isLocked?: boolean;
   onSaved: (outcome: { reconciled: boolean }) => void;
   /** Just before an explicit discard or reload drops the draft: a remounted editor takes focus. */
   onReset: () => void;
@@ -205,6 +208,7 @@ export function BriefingEditor({
       : "Save briefing";
   const canSave = base.slot === "selected" || editor.isDirty;
   const control = editor.form.control;
+  const fieldsDisabled = editor.areFieldsLocked || isLocked;
 
   return (
     <article aria-labelledby={headingId}>
@@ -231,7 +235,7 @@ export function BriefingEditor({
                 control={control}
                 name="attendanceOverview"
                 label="Attendance overview"
-                isDisabled={editor.areFieldsLocked}
+                isDisabled={fieldsDisabled}
               />
               <VStack gap={0}>
                 <Text type="supporting">Check edited wording against the counts.</Text>
@@ -246,11 +250,12 @@ export function BriefingEditor({
                 control={control}
                 name="feedbackSummary"
                 label="Feedback summary"
-                isDisabled={editor.areFieldsLocked}
+                isDisabled={fieldsDisabled}
               />
               <SourceReferences
                 sourceIds={content.feedbackSummary.sourceIds}
                 notes={view.feedback}
+                disclosureScope={`${briefing.provenance.generationId}:feedbackSummary`}
               />
             </VStack>
             {LIST_SECTIONS.map((section) => (
@@ -267,9 +272,13 @@ export function BriefingEditor({
                             control={control}
                             name={`${section}.${index}.text`}
                             label={`${SECTION_COPY[section].itemLabel} ${String(index + 1)}`}
-                            isDisabled={editor.areFieldsLocked}
+                            isDisabled={fieldsDisabled}
                           />
-                          <SourceReferences sourceIds={item.sourceIds} notes={view.feedback} />
+                          <SourceReferences
+                            sourceIds={item.sourceIds}
+                            notes={view.feedback}
+                            disclosureScope={`${briefing.provenance.generationId}:${section}.${String(index)}`}
+                          />
                         </VStack>
                       </li>
                     ))}

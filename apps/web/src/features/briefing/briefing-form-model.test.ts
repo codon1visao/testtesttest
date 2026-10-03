@@ -56,8 +56,9 @@ describe("briefing form model (D2)", () => {
   it("T3 §11: the editor key is slot, generation and revision", () => {
     const base = toEditorBase(
       buildSeedEventView({ selectedPreview: briefing, briefingRevision: 2 }),
+      "preview",
     );
     expect(editorKey(base)).toBe(`selected:${ID}:2`);
-    expect(editorKey(toEditorBase(buildSeedEventView()))).toBe("none");
+    expect(editorKey(toEditorBase(buildSeedEventView(), "preview"))).toBe("none");
   });
 });

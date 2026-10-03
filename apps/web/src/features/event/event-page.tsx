@@ -8,6 +8,7 @@ import { useEventQuery } from "../../data/queries/use-event-query";
 import { NotFoundPage } from "../../shared/ui/not-found-page";
 import { LoadErrorState, LoadingState } from "../../shared/ui/page-states";
 import { PanelErrorBoundary } from "../../shared/ui/panel-error-boundary";
+import { useUiStore } from "../../state/ui-store";
 import { AttendancePanel } from "../attendance/attendance-panel";
 import { displayedBriefing } from "../briefing/active-briefing";
 import { BriefingPanel } from "../briefing/briefing-panel";
@@ -27,6 +28,7 @@ export function EventPage() {
 
 export function EventScreen({ eventId }: { eventId: EventId }) {
   const query = useEventQuery(eventId);
+  const activeView = useUiStore((state) => state.activeView);
 
   if (query.isPending) {
     return (
@@ -49,7 +51,7 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
   }
 
   const view = query.data;
-  const displayed = displayedBriefing(view);
+  const displayed = displayedBriefing(view, activeView);
   return (
     <main {...stylex.props(styles.page)}>
       <VStack gap={6}>

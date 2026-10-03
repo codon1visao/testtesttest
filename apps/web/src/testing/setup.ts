@@ -43,7 +43,12 @@ afterEach(() => {
   cleanup();
   // Tests simulate window focus to trigger refetches; hand focus tracking back to the browser default.
   focusManager.setFocused(undefined);
-  useUiStore.setState({ attendanceDirty: false, briefingDirty: false });
+  useUiStore.setState({
+    attendanceDirty: false,
+    briefingDirty: false,
+    activeView: "preview",
+    openSources: {},
+  });
   // Astryx announces toasts through document-level live regions that outlive cleanup(); clear them so
   // one test's announcement never satisfies the next test's query.
   for (const region of document.querySelectorAll("[data-astryx-live-region]"))

@@ -15,7 +15,11 @@ describe("SourceReferences (F3 inspection)", () => {
     const user = userEvent.setup();
     render(
       <Theme theme={neutralTheme}>
-        <SourceReferences sourceIds={ids("F05", "F06")} notes={NOTES} />
+        <SourceReferences
+          sourceIds={ids("F05", "F06")}
+          notes={NOTES}
+          disclosureScope="g1:themes.0"
+        />
       </Theme>,
     );
     const toggle = screen.getByRole("button", { name: "Read source F05" });
@@ -35,7 +39,7 @@ describe("SourceReferences (F3 inspection)", () => {
   it("F3: an ID missing from the event's notes is an error, never a note", () => {
     render(
       <Theme theme={neutralTheme}>
-        <SourceReferences sourceIds={ids("F99")} notes={NOTES} />
+        <SourceReferences sourceIds={ids("F99")} notes={NOTES} disclosureScope="g1:themes.0" />
       </Theme>,
     );
     expect(screen.getByText("Source F99 is unavailable")).toBeTruthy();
