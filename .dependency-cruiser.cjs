@@ -1,6 +1,5 @@
 /** Architecture rules (T3 §10). Paths are repository-relative; npm paths are pnpm real paths (the pattern matches the innermost node_modules segment). */
 const npm = (names) => `(^|/)node_modules/(${names})/`;
-const NPM_TYPES = ["npm", "npm-dev", "npm-peer", "npm-optional", "npm-no-pkg", "npm-unknown"];
 const TESTS = "\\.test\\.tsx?$";
 
 /** @type {import('dependency-cruiser').IConfiguration} */
@@ -23,9 +22,11 @@ module.exports = {
     },
     {
       name: "contracts-only-zod",
+      comment:
+        "Contracts import only their own source and zod: no other package (npm, workspace via the source condition, or relative cross-package).",
       severity: "error",
       from: { path: "^packages/contracts/src", pathNot: TESTS },
-      to: { dependencyTypes: NPM_TYPES, pathNot: npm("zod") },
+      to: { pathNot: ["^packages/contracts/src/", npm("zod")] },
     },
     {
       name: "packages-not-to-apps",
@@ -90,13 +91,11 @@ module.exports = {
     },
     {
       name: "domain-is-pure",
-      comment: "Functional core: domain folders import only contracts, zod and other domain code.",
+      comment:
+        "Functional core: domain folders import only contracts, zod and other domain code (no services, adapters or Node core).",
       severity: "error",
       from: { path: "/domain/", pathNot: TESTS },
-      to: {
-        dependencyTypesNot: ["local", "type-only"],
-        pathNot: [npm("zod"), "^packages/contracts/"],
-      },
+      to: { pathNot: ["/domain/", npm("zod"), "^packages/contracts/"] },
     },
   ],
   options: {
