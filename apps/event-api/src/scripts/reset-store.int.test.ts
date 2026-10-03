@@ -56,6 +56,11 @@ describe("apiAnswers", () => {
     expect(await apiAnswers(closedPortHealth)).toBe(false);
   });
 
+  it("treats a refused connection to localhost (IPv4 and IPv6 attempts) as stopped", async () => {
+    const closed = new URL(closedPortHealth);
+    expect(await probeApi(`http://localhost:${closed.port}/api/health`)).toBe("stopped");
+  });
+
   it("is true when the API answers with an error status", async () => {
     const { server, url } = await listen((_req, res) => {
       res.statusCode = 500;

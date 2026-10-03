@@ -11,6 +11,17 @@ export class ResetRefusedError extends Error {
   }
 }
 
+/** The reset failed after the database may already have been dropped; running it again completes it. */
+export class ResetIncompleteError extends Error {
+  constructor(database: string, cause: unknown) {
+    super(
+      `The reset did not finish and the database "${database}" may already have been dropped. Run pnpm db:reset again. (${cause instanceof Error ? cause.message : "unknown error"})`,
+      { cause },
+    );
+    this.name = "ResetIncompleteError";
+  }
+}
+
 const RESETTABLE_DATABASES = new Set(["event_desk", "event_desk_test"]);
 
 export function resettableDatabase(mysqlUrl: string): string {
@@ -34,16 +45,19 @@ export const API_PROBE_TIMEOUT_MS = 3_000;
 /** "answered": got a response of any status. "stopped": the connection was refused. "inconclusive": anything else. */
 export type ApiProbe = "answered" | "stopped" | "inconclusive";
 
-const isConnectionRefused = (error: unknown): boolean => {
-  if (!(error instanceof Error)) return false;
-  const cause: unknown = error.cause;
-  if (cause instanceof AggregateError) {
-    return cause.errors.length > 0 && cause.errors.every(isConnectionRefused);
+/**
+ * True only if every connection attempt was refused. Node reports the code in different places:
+ * on the error, on its `cause`, or (for `localhost`, which resolves to ::1 and 127.0.0.1) on each
+ * error of an AggregateError, so all three are followed.
+ */
+export function isConnectionRefused(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if (error instanceof AggregateError && error.errors.length > 0) {
+    return error.errors.every(isConnectionRefused);
   }
-  return (
-    typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ECONNREFUSED"
-  );
-};
+  if ("code" in error && error.code === "ECONNREFUSED") return true;
+  return "cause" in error && isConnectionRefused(error.cause);
+}
 
 /**
  * Fails closed. Only a refused connection proves the API is stopped; `/api/health` may take about
@@ -122,19 +136,23 @@ export async function resetStore(options: ResetOptions): Promise<ResetReport> {
       throw unreachable("MySQL", error);
     }
     try {
-      await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
-      await connection.query(
-        `CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
-      );
-    } finally {
-      await connection.end();
-    }
+      try {
+        await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+        await connection.query(
+          `CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
+        );
+      } finally {
+        await connection.end();
+      }
 
-    const deletedKeys: Record<string, number> = {};
-    for (const prefix of APPLICATION_KEY_PREFIXES) {
-      deletedKeys[prefix] = await deleteKeysByPrefix(redis, prefix);
+      const deletedKeys: Record<string, number> = {};
+      for (const prefix of APPLICATION_KEY_PREFIXES) {
+        deletedKeys[prefix] = await deleteKeysByPrefix(redis, prefix);
+      }
+      return { database, deletedKeys };
+    } catch (error) {
+      throw new ResetIncompleteError(database, error);
     }
-    return { database, deletedKeys };
   } finally {
     redis.disconnect();
   }

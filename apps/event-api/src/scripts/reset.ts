@@ -1,5 +1,5 @@
 import { ConfigError, loadConfig, loadDotEnv } from "../config/env.js";
-import { ResetRefusedError, resetStore } from "./reset-store.js";
+import { ResetIncompleteError, ResetRefusedError, resetStore } from "./reset-store.js";
 
 try {
   loadDotEnv(new URL("../../../../.env", import.meta.url));
@@ -23,7 +23,11 @@ try {
     ].join("\n"),
   );
 } catch (error) {
-  if (error instanceof ResetRefusedError || error instanceof ConfigError) {
+  if (
+    error instanceof ResetRefusedError ||
+    error instanceof ResetIncompleteError ||
+    error instanceof ConfigError
+  ) {
     console.error(error.message);
     process.exitCode = 1;
   } else {
