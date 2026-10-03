@@ -112,9 +112,8 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await expect(
     briefing.getByRole("heading", { name: "Generated preview — not saved as briefing" }),
   ).toBeVisible();
-  // "(run 2)": the scripted Gateway numbers its calls, and each Generate makes exactly one call.
   await expect(briefing.getByLabel("Theme 1")).toHaveValue(
-    "Requests for more rest-break time (run 2).",
+    "Requests for more rest-break time (interactive, 8 notes).",
   );
   // Spec 05: the saved briefing stays available beside the preview, through the switch; switching
   // away from unsaved preview text asks first (F5-10).
@@ -133,7 +132,7 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
     briefing.getByRole("heading", { name: "Generated preview — not saved as briefing" }),
   ).toBeFocused();
   await expect(briefing.getByLabel("Theme 1")).toHaveValue(
-    "Requests for more rest-break time (run 2).",
+    "Requests for more rest-break time (interactive, 8 notes).",
   );
   await themeItem(page, briefing).getByRole("button", { name: "Read source F05" }).click();
   await expect(themeItem(page, briefing).getByText(F05)).toBeVisible();
@@ -145,6 +144,6 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
     briefing.getByText("Up to date with the saved attendance and feedback."),
   ).toBeVisible();
   await expect(briefing.getByLabel("Theme 1")).toHaveValue(
-    "Requests for more rest-break time (run 2).",
+    "Requests for more rest-break time (interactive, 8 notes).",
   );
 });

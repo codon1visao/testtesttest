@@ -1,10 +1,20 @@
 import { createRpcServer, type RpcMessage } from "@event-desk/tcp-rpc";
+import { z } from "zod";
 import { E2E_GATEWAY_SECRET, E2E_PORTS } from "./e2e-env.js";
 
-let calls = 0;
+/** The part of a `briefing.generate.v1` request the scripted reply depends on. */
+const BriefingRequestSchema = z.object({
+  lane: z.enum(["interactive", "background"]),
+  input: z.object({ feedback: z.array(z.unknown()) }),
+});
+type Lane = z.infer<typeof BriefingRequestSchema>["lane"];
 
-/** Deterministic sections for the supplied notes; each call's theme wording is distinct. */
-function sections(call: number): unknown {
+/**
+ * Deterministic sections per request: the theme names the lane and the number of notes read, so a
+ * spec can tell a manual run from an automatic batch without depending on a call counter or on the
+ * order the specs run in. Only the supplied notes F01-F08 are cited; they are in every input.
+ */
+function sections(lane: Lane, noteCount: number): unknown {
   return {
     feedbackSummary: {
       text: "Feedback describes the walk as enjoyable, with comments mostly about logistics.",
@@ -12,7 +22,7 @@ function sections(call: number): unknown {
     },
     themes: [
       {
-        text: `Requests for more rest-break time (run ${String(call)}).`,
+        text: `Requests for more rest-break time (${lane}, ${String(noteCount)} notes).`,
         sourceIds: ["F05", "F06"],
       },
     ],
@@ -40,13 +50,13 @@ const server = createRpcServer({
   secret: E2E_GATEWAY_SECRET,
   idleTimeoutMs: 2_000,
   handle(request) {
-    calls += 1;
+    const { lane, input } = BriefingRequestSchema.parse(request);
     return Promise.resolve({
       v: 1,
       ok: true,
       ...correlation(request),
       result: {
-        sections: sections(calls),
+        sections: sections(lane, input.feedback.length),
         model: "e2e-fake-model",
         promptVersion: "e2e.v1",
         providerRequestId: null,

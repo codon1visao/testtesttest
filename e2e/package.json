@@ -8,7 +8,8 @@
     "fake-gateway": "tsx --conditions=@event-desk/source fake-gateway.ts"
   },
   "dependencies": {
-    "@event-desk/tcp-rpc": "workspace:*"
+    "@event-desk/tcp-rpc": "workspace:*",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

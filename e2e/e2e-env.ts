@@ -18,5 +18,7 @@ export const E2E_EVENT_API_ENV: Record<string, string> = {
   GATEWAY_HOST: "127.0.0.1",
   GATEWAY_PORT: String(E2E_PORTS.gateway),
   GATEWAY_SERVICE_SECRET: E2E_GATEWAY_SECRET,
+  // A short fixed window keeps the F7 spec quick while still collecting a burst into one batch.
+  BRIEFING_BATCH_WINDOW_MS: "2000",
   LOG_LEVEL: "warn",
 };
