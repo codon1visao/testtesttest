@@ -5,6 +5,7 @@ import {
   type EventId,
   type EvidenceSections,
   type FeedbackId,
+  type GenerationTrigger,
   feedbackDigest,
   type MemberAttendance,
   type RunId,
@@ -14,8 +15,9 @@ import type {
   BriefingGenerateV1Input,
   BriefingGenerateV1Result,
 } from "@event-desk/contracts/gateway-rpc";
-import type { AiGatewayClient } from "../../ports/ai-gateway-client.js";
+import type { AiGatewayClient, BriefingCallResult } from "../../ports/ai-gateway-client.js";
 import type { Clock } from "../../ports/clock.js";
+import type { AttemptReservation, GenerationLimits } from "../../ports/generation-limits.js";
 import type { IdGenerator } from "../../ports/id-generator.js";
 import type { UnitOfWork } from "../../ports/unit-of-work.js";
 import { AppError } from "../../shared/app-error.js";
@@ -25,7 +27,12 @@ import type { EventChangePublisher } from "../changes/event-change-publisher.js"
 import { buildAttendanceOverview } from "./domain/attendance-overview.js";
 import { toGenerationItems } from "./domain/generation-items.js";
 import { decideIncoming } from "./domain/incoming-slot-rules.js";
-import { gatewayFailureError } from "./gateway-failure.js";
+import {
+  cooldownError,
+  dailyLimitError,
+  DEFAULT_COOLDOWN_MS,
+  gatewayFailureError,
+} from "./gateway-failure.js";
 
 export interface BriefingGenerationDeps {
   uow: UnitOfWork;
@@ -34,6 +41,7 @@ export interface BriefingGenerationDeps {
   clock: Clock;
   changes: Pick<EventChangePublisher, "publish">;
   logger: Logger;
+  limits: GenerationLimits;
 }
 
 export interface ManualGenerateCommand {
@@ -63,6 +71,11 @@ export class BriefingGenerationService {
   async generateManual(command: ManualGenerateCommand): Promise<BriefingView> {
     const started = Date.now();
     const captured = await this.capture(command);
+    const now = this.deps.clock.now();
+    const cooldownEnd = await this.deps.limits.cooldownUntil(command.eventId, now);
+    if (cooldownEnd !== null) throw cooldownError(cooldownEnd.getTime() - now.getTime());
+    const reservation = await this.deps.limits.reserveAttempt(command.eventId, "manual", now);
+    if (reservation.kind === "limit-reached") throw dailyLimitError();
     const call = await this.deps.gateway.generateBriefing({
       runId: command.runId,
       attemptId: "1",
@@ -71,6 +84,7 @@ export class BriefingGenerationService {
       input: captured.input,
     });
     if (!call.ok) {
+      await this.settleFailedCall(command.eventId, "manual", reservation, call);
       if (call.code === "GATEWAY_AUTH_FAILED") {
         this.deps.logger.error(
           { runId: command.runId },
@@ -122,6 +136,26 @@ export class BriefingGenerationService {
       "briefing generated",
     );
     return preview;
+  }
+
+  /** Budget and cooldown bookkeeping after a failed attempt (F8): only an unsent attempt is free. */
+  private async settleFailedCall(
+    eventId: EventId,
+    trigger: GenerationTrigger,
+    reservation: AttemptReservation,
+    failure: Extract<BriefingCallResult, { ok: false }>,
+  ): Promise<void> {
+    if (failure.notSent && reservation.kind === "reserved") {
+      await this.deps.limits.releaseAttempt(eventId, trigger, reservation.day);
+    }
+    if (failure.code === "PROVIDER_RATE_LIMITED") {
+      const now = this.deps.clock.now();
+      await this.deps.limits.startCooldown(
+        eventId,
+        new Date(now.getTime() + (failure.retryAfterMs ?? DEFAULT_COOLDOWN_MS)),
+        now,
+      );
+    }
   }
 
   /** TX4: a consistent read-only snapshot; the revision check happens before any paid call. */

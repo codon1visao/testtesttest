@@ -9,3 +9,8 @@ export const eventViewVersionKey = (eventId: EventId): string =>
   `${EVENT_DESK_KEY_PREFIX}cache:event:${eventId}:ver`;
 export const eventViewKey = (eventId: EventId, version: number): string =>
   `${EVENT_DESK_KEY_PREFIX}cache:event:${eventId}:v${version}`;
+
+export const cooldownKey = (eventId: EventId): string =>
+  `${EVENT_DESK_KEY_PREFIX}gen:cooldown:${eventId}`;
+export const usageKey = (eventId: EventId, day: string, bucket: "total" | "batch"): string =>
+  `${EVENT_DESK_KEY_PREFIX}gen:usage:${eventId}:${day}:${bucket}`;

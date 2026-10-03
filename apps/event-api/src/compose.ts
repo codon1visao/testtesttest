@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import type { AppConfig } from "./config/env.js";
 import { createRedisClient, settleInitialConnection } from "./integrations/redis-client.js";
 import { RedisEventViewCache } from "./integrations/redis-event-view-cache.js";
+import { RedisGenerationLimits } from "./integrations/redis-generation-limits.js";
 import { RedisHealthProbe } from "./integrations/redis-health-probe.js";
 import { systemClock } from "./integrations/system-clock.js";
 import { TcpAiGatewayClient } from "./integrations/tcp-ai-gateway-client.js";
@@ -73,6 +74,7 @@ export async function composeEventApi(
     clock,
     changes,
     logger,
+    limits: new RedisGenerationLimits(redis, config.generationLimits, logger),
   });
   const manualGeneration = new ManualGenerationCoordinator({
     generation,

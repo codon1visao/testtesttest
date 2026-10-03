@@ -9,6 +9,7 @@ import request from "supertest";
 import type { DataSource } from "typeorm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { composeEventApi, type EventApi } from "../../compose.js";
+import { cooldownKey, usageKey } from "../../integrations/redis-keys.js";
 import { openTestDataSource, truncateAllTables } from "../../testing/database.js";
 import { type FakeGateway, startFakeGateway } from "../../testing/fake-gateway.js";
 import { errorCodeOf } from "../../testing/http.js";
@@ -210,5 +211,44 @@ describe("POST /api/events/:eventId/briefing-generations", () => {
       .send({ baseAttendanceRevision: 0, prompt: "write a poem" });
     expect([res.status, errorCodeOf(res)]).toEqual([400, "VALIDATION_FAILED"]);
     expect(gateway.requests).toHaveLength(0);
+  });
+});
+
+describe("persisted cooldown and daily budget (F4 step 2, F7, F8-09)", () => {
+  it("a rate limit starts a cooldown that blocks the next Generate before any paid call, across a restart", async () => {
+    gateway.enqueue({
+      kind: "error",
+      code: "PROVIDER_RATE_LIMITED",
+      notSent: true,
+      retryAfterMs: 30_000,
+    });
+    expect(errorCodeOf(await generate())).toBe("PROVIDER_COOLDOWN");
+    expect(await redis.pttl(cooldownKey(E101))).toBeGreaterThan(25_000);
+    await api.close();
+    api = await composeEventApi(
+      integrationConfig({ gateway: { host: "127.0.0.1", port: gateway.port, secret: SECRET } }),
+      { logger: silentLogger },
+    );
+    const blocked = await generate();
+    expect([blocked.status, errorCodeOf(blocked)]).toEqual([429, "PROVIDER_COOLDOWN"]);
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(20);
+    expect(gateway.requests).toHaveLength(1);
+  });
+
+  it("the daily total stops manual Generate with 429 DAILY_LIMIT_REACHED and no Gateway call", async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    await redis.set(usageKey(E101, day, "total"), "20");
+    const res = await generate();
+    expect([res.status, errorCodeOf(res)]).toEqual([429, "DAILY_LIMIT_REACHED"]);
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it("an attempt the provider never received does not use the budget", async () => {
+    gateway.enqueue({ kind: "error", code: "GATEWAY_UNAVAILABLE", notSent: true });
+    await generate();
+    const day = new Date().toISOString().slice(0, 10);
+    expect(await redis.get(usageKey(E101, day, "total"))).toBe("0");
+    await generate(); // the default fake reply succeeds
+    expect(await redis.get(usageKey(E101, day, "total"))).toBe("1");
   });
 });

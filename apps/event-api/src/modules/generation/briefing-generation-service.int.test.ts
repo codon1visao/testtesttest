@@ -17,6 +17,7 @@ import type { UnitOfWork } from "../../ports/unit-of-work.js";
 import { TypeOrmUnitOfWork } from "../../repositories/typeorm-unit-of-work.js";
 import { AppError } from "../../shared/app-error.js";
 import { openTestDataSource, truncateAllTables } from "../../testing/database.js";
+import { FakeGenerationLimits } from "../../testing/fake-generation-limits.js";
 import {
   insertEventFixture,
   insertGenerationFixture,
@@ -59,6 +60,7 @@ function setup(
     now?: () => Date;
     uow?: UnitOfWork;
     publish?: () => Promise<void>;
+    limits?: FakeGenerationLimits;
   } = {},
 ) {
   const calls: BriefingCallRequest[] = [];
@@ -76,6 +78,7 @@ function setup(
     clock: { now: overrides.now ?? (() => NOW) },
     changes: { publish },
     logger: silentLogger,
+    limits: overrides.limits ?? new FakeGenerationLimits(),
   });
   const command = (baseAttendanceRevision = 0) => ({
     eventId: E101,
@@ -96,6 +99,8 @@ async function appErrorOf(promise: Promise<unknown>): Promise<AppError> {
   throw new Error("expected an AppError");
 }
 const rows = async (sql: string) => dataSource.query<Record<string, unknown>[]>(sql);
+const count = async (table: string) =>
+  Number((await dataSource.query<{ n: number }[]>(`SELECT COUNT(*) AS n FROM ${table}`))[0]?.n);
 const outcomes = () =>
   rows("SELECT status, error_code, generation_id FROM generation_outcomes ORDER BY finished_at");
 /** The seeded incoming preview is still the only slot, and its generation row still exists. */
@@ -282,5 +287,29 @@ describe("BriefingGenerationService.generateManual", () => {
     );
     expect((await appErrorOf(service.generateManual(command()))).code).toBe("PROVIDER_REFUSED");
     expect(publish).toHaveBeenCalledWith(E101);
+  });
+});
+
+describe("limits on the manual path", () => {
+  it("an active cooldown is 429 PROVIDER_COOLDOWN with no call and no outcome", async () => {
+    const limits = new FakeGenerationLimits();
+    limits.cooldownEnd = new Date(NOW.getTime() + 5_000);
+    const { service, calls, command } = setup(() => Promise.resolve(result()), { limits });
+    await expect(service.generateManual(command())).rejects.toMatchObject({
+      code: "PROVIDER_COOLDOWN",
+      retryAfterMs: 5_000,
+    });
+    expect(calls).toHaveLength(0);
+    expect(await count("generation_outcomes")).toBe(0);
+  });
+
+  it("releases the reservation when the Gateway says the request was not sent", async () => {
+    const limits = new FakeGenerationLimits();
+    const { service, command } = setup(
+      () => Promise.resolve({ ok: false, code: "GATEWAY_UNAVAILABLE", notSent: true }),
+      { limits },
+    );
+    await expect(service.generateManual(command())).rejects.toBeInstanceOf(AppError);
+    expect(limits.used).toEqual({ total: 0, batch: 0 });
   });
 });

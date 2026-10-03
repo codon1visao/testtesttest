@@ -24,7 +24,7 @@ const LOG_LEVELS = [
   "silent",
 ] as const satisfies readonly LogLevel[];
 
-const EnvSchema = z.object({
+const EnvObject = z.object({
   HOST: z
     .enum(["127.0.0.1", "::1", "localhost"], { error: "HOST must be a loopback address" })
     .default("127.0.0.1"),
@@ -49,10 +49,24 @@ const EnvSchema = z.object({
     }),
   /** Capped below the web app's 90 s request timeout so the server always answers first. */
   MANUAL_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(85_000).default(60_000),
+  /** Paid attempts per event and UTC day, manual and batch together (F7). */
+  GENERATION_DAILY_ATTEMPT_LIMIT: z.coerce.number().int().min(1).max(1_000).default(20),
+  /** The part of the daily total that automatic batches may use. */
+  GENERATION_BATCH_DAILY_LIMIT: z.coerce.number().int().min(0).max(1_000).default(15),
+});
+
+const EnvSchema = EnvObject.superRefine((env, ctx) => {
+  if (env.GENERATION_BATCH_DAILY_LIMIT > env.GENERATION_DAILY_ATTEMPT_LIMIT) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["GENERATION_BATCH_DAILY_LIMIT"],
+      message: "must not exceed GENERATION_DAILY_ATTEMPT_LIMIT",
+    });
+  }
 });
 
 /** Derived from the schema so the `.env` allowlist cannot drift from what the config reads. */
-const DOT_ENV_KEYS: readonly string[] = Object.keys(EnvSchema.shape);
+const DOT_ENV_KEYS: readonly string[] = Object.keys(EnvObject.shape);
 
 export interface AppConfig {
   host: string;
@@ -69,6 +83,8 @@ export interface AppConfig {
   gateway: { host: string; port: number; secret: string };
   /** Deadline of one manual generation call (F4); the Gateway answers a margin before it. */
   manualGenerationTimeoutMs: number;
+  /** Daily paid attempts per event: the total, and the share automatic batches may use (F7). */
+  generationLimits: { dailyAttempts: number; batchDailyAttempts: number };
 }
 
 /** Invalid configuration. The message names variables and problems, never their values. */
@@ -101,6 +117,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: e.LOG_LEVEL,
     gateway: { host: e.GATEWAY_HOST, port: e.GATEWAY_PORT, secret: e.GATEWAY_SERVICE_SECRET },
     manualGenerationTimeoutMs: e.MANUAL_GENERATION_TIMEOUT_MS,
+    generationLimits: {
+      dailyAttempts: e.GENERATION_DAILY_ATTEMPT_LIMIT,
+      batchDailyAttempts: e.GENERATION_BATCH_DAILY_LIMIT,
+    },
   };
 }
 

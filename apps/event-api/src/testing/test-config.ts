@@ -21,6 +21,7 @@ export function integrationConfig(overrides: Partial<AppConfig> = {}): AppConfig
     logLevel: "silent",
     gateway: { host: "127.0.0.1", port: 1, secret: "event-api-test-secret-".padEnd(40, "s") },
     manualGenerationTimeoutMs: 10_000,
+    generationLimits: { dailyAttempts: 20, batchDailyAttempts: 15 },
     ...overrides,
   };
 }

@@ -65,6 +65,7 @@ describe("loadConfig", () => {
       logLevel: "info",
       gateway: { host: "127.0.0.1", port: 4100, secret: GATEWAY_SERVICE_SECRET },
       manualGenerationTimeoutMs: 60_000,
+      generationLimits: { dailyAttempts: 20, batchDailyAttempts: 15 },
     });
   });
 
@@ -119,6 +120,24 @@ describe("loadConfig", () => {
       }
     },
   );
+
+  it("reads the daily attempt budget and refuses a batch cap above the total", () => {
+    const config = loadConfig({
+      MYSQL_URL,
+      GATEWAY_SERVICE_SECRET,
+      GENERATION_DAILY_ATTEMPT_LIMIT: "30",
+      GENERATION_BATCH_DAILY_LIMIT: "0",
+    });
+    expect(config.generationLimits).toEqual({ dailyAttempts: 30, batchDailyAttempts: 0 });
+    expect(() =>
+      loadConfig({
+        MYSQL_URL,
+        GATEWAY_SERVICE_SECRET,
+        GENERATION_DAILY_ATTEMPT_LIMIT: "15",
+        GENERATION_BATCH_DAILY_LIMIT: "16",
+      }),
+    ).toThrow(/GENERATION_BATCH_DAILY_LIMIT: must not exceed GENERATION_DAILY_ATTEMPT_LIMIT/);
+  });
 
   it("refuses a non-loopback GATEWAY_HOST (S1)", () => {
     expect(() =>

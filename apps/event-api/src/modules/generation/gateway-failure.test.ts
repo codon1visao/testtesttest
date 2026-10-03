@@ -49,4 +49,19 @@ describe("gatewayFailureError (T3 §5, F4, F8)", () => {
     expect(fail("AI_OUTCOME_UNKNOWN").message).toMatch(/connection was lost/);
     expect(fail("AI_OUTCOME_UNKNOWN").message).toMatch(/no answer arrived in time/);
   });
+
+  it("words the wait in whole seconds, never zero", () => {
+    expect(fail("PROVIDER_RATE_LIMITED", true, 200).message).toBe(
+      "The AI provider is limiting requests. Try again in 1 second.",
+    );
+    expect(fail("PROVIDER_RATE_LIMITED", true, 2_500).message).toBe(
+      "The AI provider is limiting requests. Try again in 3 seconds.",
+    );
+  });
+
+  it("Plan 3B carry-forward: DEADLINE_EXCEEDED that never reached the provider is not 'may have been charged'", () => {
+    const error = fail("DEADLINE_EXCEEDED", true);
+    expect(error.code).toBe("GATEWAY_UNAVAILABLE");
+    expect(error.message).not.toMatch(/charged/);
+  });
 });

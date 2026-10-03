@@ -2,8 +2,25 @@ import { assertNever } from "@event-desk/contracts";
 import type { BriefingCallResult } from "../../ports/ai-gateway-client.js";
 import { AppError } from "../../shared/app-error.js";
 
-const DEFAULT_COOLDOWN_MS = 60_000;
+export const DEFAULT_COOLDOWN_MS = 60_000;
 const UNCHANGED = "Your saved work is unchanged";
+
+const seconds = (ms: number): string => {
+  const s = Math.max(1, Math.ceil(ms / 1000));
+  return `${String(s)} ${s === 1 ? "second" : "seconds"}`;
+};
+
+export function cooldownError(retryAfterMs: number): AppError {
+  return new AppError(
+    "PROVIDER_COOLDOWN",
+    `The AI provider is limiting requests. Try again in ${seconds(retryAfterMs)}.`,
+    { retryAfterMs },
+  );
+}
+
+export function dailyLimitError(): AppError {
+  return new AppError("DAILY_LIMIT_REACHED", `Today's generation limit is reached. ${UNCHANGED}.`);
+}
 
 /**
  * A failed Gateway attempt → the HTTP error the coordinator sees (T3 §5). Messages are fixed,
@@ -30,19 +47,10 @@ export function gatewayFailureError(failure: Extract<BriefingCallResult, { ok: f
         "PROVIDER_NOT_CONFIGURED",
         "The AI service has no provider configured. Ask the administrator to set the OpenAI key.",
       );
-    case "PROVIDER_RATE_LIMITED": {
-      const retryAfterMs = failure.retryAfterMs ?? DEFAULT_COOLDOWN_MS;
-      return new AppError(
-        "PROVIDER_COOLDOWN",
-        `The AI provider is limiting requests. Try again in ${Math.ceil(retryAfterMs / 1000)} seconds.`,
-        { retryAfterMs },
-      );
-    }
+    case "PROVIDER_RATE_LIMITED":
+      return cooldownError(failure.retryAfterMs ?? DEFAULT_COOLDOWN_MS);
     case "DAILY_LIMIT_REACHED":
-      return new AppError(
-        "DAILY_LIMIT_REACHED",
-        `Today's generation limit is reached. ${UNCHANGED}.`,
-      );
+      return dailyLimitError();
     case "PROVIDER_REFUSED":
       return new AppError(
         "PROVIDER_REFUSED",
@@ -59,10 +67,15 @@ export function gatewayFailureError(failure: Extract<BriefingCallResult, { ok: f
         `The AI model's answer broke the briefing rules and was discarded. ${UNCHANGED}.`,
       );
     case "DEADLINE_EXCEEDED":
-      return new AppError(
-        "DEADLINE_EXCEEDED",
-        `The AI model did not finish in time; the attempt may have been charged. ${UNCHANGED}.`,
-      );
+      return failure.notSent
+        ? new AppError(
+            "GATEWAY_UNAVAILABLE",
+            `The AI service could not start the request in time. ${UNCHANGED}; try again.`,
+          )
+        : new AppError(
+            "DEADLINE_EXCEEDED",
+            `The AI model did not finish in time; the attempt may have been charged. ${UNCHANGED}.`,
+          );
     case "AI_OUTCOME_UNKNOWN":
       return new AppError(
         "AI_OUTCOME_UNKNOWN",
