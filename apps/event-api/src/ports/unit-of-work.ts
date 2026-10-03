@@ -31,6 +31,10 @@ export interface EventReadRepository {
   findAggregate(eventId: EventId): Promise<EventAggregate | null>;
   /** Events whose notes were saved but not yet captured by a batch (F7 Durability). */
   pendingFeedbackEventIds(): Promise<EventId[]>;
+  /** The next note number and the pending flag; read under the event lock when writing (TX9). */
+  feedbackState(
+    eventId: EventId,
+  ): Promise<{ nextFeedbackNumber: number; pendingSince: Date | null }>;
 }
 
 export interface EventWriteRepository extends EventReadRepository {
@@ -40,10 +44,6 @@ export interface EventWriteRepository extends EventReadRepository {
   applyAttendanceChanges(eventId: EventId, changes: readonly AttendanceChange[]): Promise<void>;
   /** Bumps briefing_revision by one: the saved briefing changed (T4 TX8). */
   bumpBriefingRevision(eventId: EventId): Promise<void>;
-  /** Read under the event lock. */
-  feedbackState(
-    eventId: EventId,
-  ): Promise<{ nextFeedbackNumber: number; pendingSince: Date | null }>;
   /** next_feedback_number + 1; feedback_pending_since = COALESCE(feedback_pending_since, at) (T4 TX9). */
   recordFeedbackReceived(eventId: EventId, at: Date): Promise<void>;
   /** feedback_pending_since = NULL: a batch captured the event's notes (T4 TX10). */

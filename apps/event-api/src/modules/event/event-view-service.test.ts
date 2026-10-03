@@ -1,6 +1,7 @@
 import {
   EventIdSchema,
   type EventView,
+  RunIdSchema,
   SUPPLIED_EVENT,
   SUPPLIED_FEEDBACK,
   SUPPLIED_MEMBERS,
@@ -22,6 +23,7 @@ const idleActivity: GenerationActivity = {
 
 class FakeUnitOfWork implements UnitOfWork {
   snapshots = 0;
+  pendingSince: Date | null = null;
   /** Runs inside the snapshot, as a concurrent writer or a failed flush would. */
   duringSnapshot: () => void = () => undefined;
   readonly scope: ReadScope = {
@@ -39,6 +41,8 @@ class FakeUnitOfWork implements UnitOfWork {
             : null,
         ),
       pendingFeedbackEventIds: () => Promise.resolve([]),
+      feedbackState: () =>
+        Promise.resolve({ nextFeedbackNumber: 9, pendingSince: this.pendingSince }),
     },
     briefings: {
       loadSlots: () => Promise.resolve({ saved: null, selected: null, incoming: null }),
@@ -77,7 +81,7 @@ class FakeCache implements EventViewCache {
   }
 }
 
-function setup(defaultTtlMs = 30_000) {
+function setup(defaultTtlMs = 30_000, activity: GenerationActivity = idleActivity) {
   const uow = new FakeUnitOfWork();
   const cache = new FakeCache();
   const bypass = new CacheBypass();
@@ -85,7 +89,7 @@ function setup(defaultTtlMs = 30_000) {
     uow,
     cache,
     bypass,
-    activity: idleActivity,
+    activity,
     clock: { now: () => NOW },
     defaultTtlMs,
     logger: createLogger("silent"),
@@ -111,6 +115,34 @@ describe("EventViewService", () => {
     // Stored under the retired version 7, so the possibly stale view is never served.
     expect(cache.version).toBe(8);
     expect(cache.stored).toEqual([{ version: 7, ttlMs: 30_000 }]);
+  });
+
+  it("F7: shows the live batch job with the window's notes and the provider cooldown", async () => {
+    const cooldownUntil = new Date("2026-10-03T09:00:40.000Z");
+    const { uow, service } = setup(30_000, {
+      current: () =>
+        Promise.resolve({
+          manual: null,
+          batch: {
+            jobId: RunIdSchema.parse("batch_a"),
+            state: "collecting",
+            openedAt: NOW,
+            closesAt: new Date("2026-10-03T09:00:03.000Z"),
+            maxAttempts: 3,
+          },
+          cooldownUntil,
+        }),
+    });
+    uow.pendingSince = new Date(FIXTURE_TIME);
+    const view = await service.get(E101);
+    expect(view.generation.batch).toEqual({
+      state: "collecting",
+      jobId: "batch_a",
+      closesAt: "2026-10-03T09:00:03.000Z",
+      maxAttempts: 3,
+      newNoteIds: SUPPLIED_FEEDBACK.map((note) => note.id),
+    });
+    expect(view.generation.cooldownUntil).toBe("2026-10-03T09:00:40.000Z");
   });
 
   it("does not store a view built while a failed flush switched reads to MySQL", async () => {

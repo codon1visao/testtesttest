@@ -1,9 +1,5 @@
 import type { BriefingView, EventId, RunId } from "@event-desk/contracts";
 import type { Clock } from "../../ports/clock.js";
-import type {
-  GenerationActivity,
-  GenerationActivitySnapshot,
-} from "../../ports/generation-activity.js";
 import type { IdGenerator } from "../../ports/id-generator.js";
 import type { Logger } from "../../shared/logger.js";
 import type { EventChangePublisher } from "../changes/event-change-publisher.js";
@@ -28,9 +24,9 @@ interface InFlightRun {
 /**
  * Manual generation is synchronous and single-flight per event (T5 §2, F4-07): a second click or
  * tab joins the running call. One event-api process is assumed (T3 §14). Also the live source of
- * `generation.manual` for the event view.
+ * `generation.manual` for the event view (through GenerationActivityService).
  */
-export class ManualGenerationCoordinator implements GenerationActivity {
+export class ManualGenerationCoordinator {
   private readonly inFlight = new Map<EventId, InFlightRun>();
 
   constructor(private readonly deps: ManualGenerationDeps) {}
@@ -48,14 +44,6 @@ export class ManualGenerationCoordinator implements GenerationActivity {
     );
     this.inFlight.set(eventId, { runId, startedAt, result });
     return result;
-  }
-
-  current(eventId: EventId): Promise<GenerationActivitySnapshot> {
-    return Promise.resolve({
-      manual: this.manualStatus(eventId),
-      batch: null,
-      cooldownUntil: null,
-    });
   }
 
   /** The event's running manual generation, if any. */

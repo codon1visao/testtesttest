@@ -7,6 +7,7 @@ import { AppError } from "../../shared/app-error.js";
 import type { Logger } from "../../shared/logger.js";
 import { loadBriefingViews } from "../briefing/briefing-views.js";
 import type { CacheBypass } from "../changes/cache-bypass.js";
+import { toBatchStatusView } from "../generation/domain/batch-jobs.js";
 import { cacheTtlMs } from "./domain/cache-ttl.js";
 
 export interface EventViewServiceDeps {
@@ -67,10 +68,11 @@ export class EventViewService {
         aggregate.feedback,
       );
       const lastOutcome = await scope.outcomes.latest(eventId);
-      return { aggregate, briefings, lastOutcome };
+      const { pendingSince } = await scope.events.feedbackState(eventId);
+      return { aggregate, briefings, lastOutcome, pendingSince };
     });
     const activity = await this.deps.activity.current(eventId);
-    const { aggregate, briefings, lastOutcome } = snapshot;
+    const { aggregate, briefings, lastOutcome, pendingSince } = snapshot;
     return {
       event: aggregate.event,
       members: aggregate.members,
@@ -79,7 +81,12 @@ export class EventViewService {
       attendanceRevision: aggregate.attendanceRevision,
       briefingRevision: aggregate.briefingRevision,
       ...briefings,
-      generation: { ...activity, lastOutcome },
+      generation: {
+        manual: activity.manual,
+        batch: toBatchStatusView(activity.batch, aggregate.feedback, pendingSince),
+        cooldownUntil: activity.cooldownUntil?.toISOString() ?? null,
+        lastOutcome,
+      },
     };
   }
 }

@@ -287,6 +287,29 @@ describe("BullMqBriefingBatchQueue (T5 §3, spike S-1/S-3/S-4)", () => {
     }
   });
 
+  it("with the worker started and Redis never reachable, status fails fast enough for the event view and close returns", async () => {
+    const offline = new BullMqBriefingBatchQueue({
+      redisUrl: "redis://127.0.0.1:1/1",
+      windowMs: WINDOW_MS,
+      maxAttempts: 3,
+      ids: uuidV7IdGenerator,
+      clock: { now: () => new Date() },
+      logger: silentLogger,
+    });
+    offline.start(handler(() => Promise.resolve({ kind: "done" })).value);
+    try {
+      // GET /api/events/:id reads the batch status: it must not wait out the producer's 2 s deadline.
+      const statusStarted = Date.now();
+      await expect(offline.status(E101)).rejects.toBeInstanceOf(Error);
+      expect(Date.now() - statusStarted).toBeLessThan(1_000);
+    } finally {
+      // BullMQ's graceful close waits for a connection that never comes: it must not hang.
+      const closeStarted = Date.now();
+      await offline.close();
+      expect(Date.now() - closeStarted).toBeLessThan(1_000);
+    }
+  });
+
   it("schedule and status reject quickly when Redis goes away after connecting", async () => {
     const redisAddress = new URL(testRedisUrl());
     const proxy = await startFreezableTcpProxy({

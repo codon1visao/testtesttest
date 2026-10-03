@@ -42,12 +42,12 @@ function setup({ failPublishAt = [] as number[] } = {}) {
     ids,
     clock: { now: () => START },
     changes: {
-      publish: vi.fn(async () => {
+      publish: vi.fn(() => {
         publishes += 1;
-        events.push(
-          `publish:${(await coordinator.current(E101)).manual === null ? "idle" : "running"}`,
-        );
-        if (failPublishAt.includes(publishes)) throw new Error("publish failed");
+        events.push(`publish:${coordinator.manualStatus(E101) === null ? "idle" : "running"}`);
+        return failPublishAt.includes(publishes)
+          ? Promise.reject(new Error("publish failed"))
+          : Promise.resolve();
       }),
     },
     timeoutMs: 60_000,
@@ -84,18 +84,14 @@ describe("ManualGenerationCoordinator", () => {
     const { coordinator, pending, events } = setup();
     const run = coordinator.generate(E101, 0);
     await settled();
-    expect((await coordinator.current(E101)).manual).toEqual({
+    expect(coordinator.manualStatus(E101)).toEqual({
       runId: pending[0]?.command.runId,
       startedAt: START.toISOString(),
     });
     pending[0]?.result.resolve(buildBriefingView());
     await run;
     expect(events).toEqual(["publish:running", "generate", "publish:idle"]);
-    expect(await coordinator.current(E101)).toEqual({
-      manual: null,
-      batch: null,
-      cooldownUntil: null,
-    });
+    expect(coordinator.manualStatus(E101)).toBeNull();
   });
 
   it("releases the event after a failure so the next Generate starts a new run", async () => {
@@ -133,7 +129,7 @@ describe("ManualGenerationCoordinator", () => {
     pending[0]?.result.resolve(preview);
     expect(await run).toBe(preview);
     expect(lines.join("")).toContain("manual generation flush failed");
-    expect((await coordinator.current(E101)).manual).toBeNull();
+    expect(coordinator.manualStatus(E101)).toBeNull();
   });
 
   it("keeps the original error when the finish flush fails", async () => {

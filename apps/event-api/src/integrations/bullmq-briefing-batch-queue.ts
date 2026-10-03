@@ -27,6 +27,8 @@ const JOB_NAME = "briefing.batch";
  * down since startup would hang. Once connected, `maxRetriesPerRequest: 1` makes them fail fast.
  */
 const FIRST_CONNECTION_TIMEOUT_MS = 2_000;
+/** `status` is read by every event view, which must answer quickly while Redis is down (T3 §7). */
+const STATUS_FIRST_CONNECTION_TIMEOUT_MS = 250;
 
 /** Job payload: a pointer to the event plus execution markers; never candidate data (T5 §3). */
 const JobDataSchema = z.object({
@@ -66,6 +68,8 @@ export interface BullMqBatchQueueOptions {
 export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
   private readonly queue: Queue<JobData>;
   private worker: Worker<JobData> | null = null;
+  /** Both worker connections came up at least once, so it may hold a job. */
+  private workerReady = false;
 
   constructor(private readonly options: BullMqBatchQueueOptions) {
     this.queue = new Queue<JobData>(QUEUE_NAME, {
@@ -94,7 +98,7 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
   }
 
   async status(eventId: EventId): Promise<BatchJobStatus | null> {
-    await this.connected();
+    await this.connected(STATUS_FIRST_CONNECTION_TIMEOUT_MS);
     return pickBatchStatus(await this.liveJobs(eventId), this.options.maxAttempts);
   }
 
@@ -116,6 +120,9 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
         backoffStrategy: (_attemptsMade: number, _type?: string, error?: Error) =>
           error instanceof RetryDelayError ? error.delayMs : this.unexpectedRetryDelayMs(),
       },
+    });
+    worker.once("ready", () => {
+      this.workerReady = true;
     });
     worker.on("active", (job) => {
       const data = JobDataSchema.safeParse(job.data);
@@ -176,7 +183,9 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
 
   async close(): Promise<void> {
     try {
-      await this.worker?.close();
+      // A graceful close waits for the active job, but BullMQ also waits forever for worker
+      // connections that never came up; a worker that never connected holds no job: force it.
+      await this.worker?.close(!this.workerReady);
     } finally {
       await this.queue.close();
     }
@@ -189,12 +198,12 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
   }
 
   /** Rejects when the producer connection has not become ready within the deadline. */
-  private async connected(): Promise<void> {
+  private async connected(timeoutMs = FIRST_CONNECTION_TIMEOUT_MS): Promise<void> {
     let timer: NodeJS.Timeout | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         reject(new Error("batch queue store unreachable"));
-      }, FIRST_CONNECTION_TIMEOUT_MS);
+      }, timeoutMs);
     });
     try {
       await Promise.race([this.queue.waitUntilReady(), deadline]);

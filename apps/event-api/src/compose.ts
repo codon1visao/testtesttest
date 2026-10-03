@@ -22,8 +22,10 @@ import { EventViewService } from "./modules/event/event-view-service.js";
 import { BriefingGenerationService } from "./modules/generation/briefing-generation-service.js";
 import { feedbackRoutes } from "./modules/feedback/feedback-controller.js";
 import { FeedbackSubmissionService } from "./modules/feedback/feedback-submission-service.js";
+import { BatchGenerationProcessor } from "./modules/generation/batch-generation-processor.js";
 import { BatchScheduler } from "./modules/generation/batch-scheduler.js";
 import { BATCH_MAX_ATTEMPTS } from "./modules/generation/domain/batch-jobs.js";
+import { GenerationActivityService } from "./modules/generation/generation-activity-service.js";
 import { generationRoutes } from "./modules/generation/generation-controller.js";
 import { ManualGenerationCoordinator } from "./modules/generation/manual-generation-coordinator.js";
 import { healthRoutes } from "./modules/health/health-controller.js";
@@ -72,6 +74,7 @@ export async function composeEventApi(
   const bypass = new CacheBypass();
   const notifier = new InProcessChangeNotifier(logger);
   const changes = new EventChangePublisher(cache, bypass, notifier, logger);
+  const limits = new RedisGenerationLimits(redis, config.generationLimits, logger);
   const generation = new BriefingGenerationService({
     uow,
     gateway: new TcpAiGatewayClient(config.gateway, logger),
@@ -79,7 +82,7 @@ export async function composeEventApi(
     clock,
     changes,
     logger,
-    limits: new RedisGenerationLimits(redis, config.generationLimits, logger),
+    limits,
   });
   const manualGeneration = new ManualGenerationCoordinator({
     generation,
@@ -87,15 +90,6 @@ export async function composeEventApi(
     clock,
     changes,
     timeoutMs: config.manualGenerationTimeoutMs,
-    logger,
-  });
-  const eventViews = new EventViewService({
-    uow,
-    cache,
-    bypass,
-    activity: manualGeneration,
-    clock,
-    defaultTtlMs: config.eventViewCacheTtlMs,
     logger,
   });
   const attendance = new AttendanceService(uow, changes);
@@ -109,6 +103,21 @@ export async function composeEventApi(
     clock,
     logger,
   });
+  const eventViews = new EventViewService({
+    uow,
+    cache,
+    bypass,
+    activity: new GenerationActivityService({
+      manual: manualGeneration,
+      queue: batchQueue,
+      limits,
+      clock,
+      logger,
+    }),
+    clock,
+    defaultTtlMs: config.eventViewCacheTtlMs,
+    logger,
+  });
   const scheduler = new BatchScheduler({ queue: batchQueue, uow, changes, logger });
   const feedback = new FeedbackSubmissionService({
     uow,
@@ -117,7 +126,16 @@ export async function composeEventApi(
     changes,
     maxNotesPerEvent: config.feedback.maxNotesPerEvent,
   });
+  const processor = new BatchGenerationProcessor({
+    generation,
+    manual: manualGeneration,
+    limits,
+    changes,
+    clock,
+    logger,
+  });
   await scheduler.reconcile();
+  batchQueue.start(processor);
 
   const app = createApp({
     logger,

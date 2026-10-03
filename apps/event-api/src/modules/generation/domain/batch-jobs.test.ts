@@ -1,6 +1,11 @@
-import { RunIdSchema } from "@event-desk/contracts";
+import { FeedbackIdSchema, RunIdSchema } from "@event-desk/contracts";
 import { describe, expect, it } from "vitest";
-import { hasNewerReadyJob, pickBatchStatus, type QueuedBatchJob } from "./batch-jobs.js";
+import {
+  hasNewerReadyJob,
+  pickBatchStatus,
+  type QueuedBatchJob,
+  toBatchStatusView,
+} from "./batch-jobs.js";
 
 const job = (id: string, overrides: Partial<QueuedBatchJob> = {}): QueuedBatchJob => ({
   jobId: RunIdSchema.parse(id),
@@ -65,5 +70,49 @@ describe("hasNewerReadyJob (F7 rule 5)", () => {
     expect(
       hasNewerReadyJob(current, [job("batch_z", { createdAt: 500, queueState: "waiting" })], 9_000),
     ).toBe(false);
+  });
+});
+
+describe("toBatchStatusView (F7 'Collecting' text input)", () => {
+  const note = (id: string, receivedAt: string) => ({
+    id: FeedbackIdSchema.parse(id),
+    text: "x",
+    receivedAt,
+  });
+  const notes = [
+    note("F08", "2026-10-04T09:00:00.000Z"),
+    note("F10", "2026-10-04T10:00:01.000Z"),
+    note("F09", "2026-10-04T10:00:00.000Z"),
+  ];
+  it("lists the notes received since the window's first note, in ID order", () => {
+    const status = {
+      jobId: RunIdSchema.parse("batch_a"),
+      state: "collecting" as const,
+      openedAt: new Date("2026-10-04T10:00:00.050Z"),
+      closesAt: new Date("2026-10-04T10:00:03.050Z"),
+      maxAttempts: 3,
+    };
+    expect(toBatchStatusView(status, notes, new Date("2026-10-04T10:00:00.000Z"))).toEqual({
+      state: "collecting",
+      jobId: "batch_a",
+      closesAt: "2026-10-04T10:00:03.050Z",
+      maxAttempts: 3,
+      newNoteIds: ["F09", "F10"],
+    });
+  });
+  it("is null without a job and lists nothing without a pending flag", () => {
+    expect(toBatchStatusView(null, notes, null)).toBeNull();
+    const generating = {
+      jobId: RunIdSchema.parse("batch_a"),
+      state: "generating" as const,
+      openedAt: new Date(0),
+      attempt: 1,
+      maxAttempts: 3,
+    };
+    expect(toBatchStatusView(generating, notes, null)).toMatchObject({
+      state: "generating",
+      attempt: 1,
+      newNoteIds: [],
+    });
   });
 });

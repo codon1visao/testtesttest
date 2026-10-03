@@ -1,4 +1,10 @@
-import { assertNever, type RunId } from "@event-desk/contracts";
+import {
+  assertNever,
+  compareFeedbackIds,
+  type FeedbackNote,
+  type GenerationStatusView,
+  type RunId,
+} from "@event-desk/contracts";
 
 export type BatchJobState = "collecting" | "waiting" | "generating" | "retry_wait";
 
@@ -92,4 +98,36 @@ export function hasNewerReadyJob(
       job.createdAt > current.createdAt &&
       (job.queueState === "waiting" || (job.queueState === "delayed" && job.readyAt <= now)),
   );
+}
+
+/**
+ * The contract shape of a batch job (T3 §5 GenerationStatusView). The window's new notes are those
+ * received since the pending flag was set: the window's first note sets it and the job clears it
+ * when it captures its input (T4 TX9/TX10), so these are exactly the notes the window holds.
+ */
+export function toBatchStatusView(
+  status: BatchJobStatus | null,
+  notes: readonly FeedbackNote[],
+  pendingSince: Date | null,
+): GenerationStatusView["batch"] {
+  if (status === null) return null;
+  const since = pendingSince?.getTime();
+  const newNoteIds =
+    since === undefined
+      ? []
+      : notes
+          .filter((note) => Date.parse(note.receivedAt) >= since)
+          .map((note) => note.id)
+          .toSorted(compareFeedbackIds);
+  return {
+    state: status.state,
+    jobId: status.jobId,
+    ...(status.closesAt === undefined ? {} : { closesAt: status.closesAt.toISOString() }),
+    ...(status.nextAttemptAt === undefined
+      ? {}
+      : { nextAttemptAt: status.nextAttemptAt.toISOString() }),
+    ...(status.attempt === undefined ? {} : { attempt: status.attempt }),
+    maxAttempts: status.maxAttempts,
+    newNoteIds,
+  };
 }
