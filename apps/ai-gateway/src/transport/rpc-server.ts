@@ -1,7 +1,8 @@
 import {
   BRIEFING_GENERATE_V1,
-  type BriefingGenerateV1Response,
   BriefingGenerateV1RequestSchema,
+  type BriefingGenerateV1Response,
+  BriefingGenerateV1ResponseSchema,
   type GatewayErrorBody,
   GatewayRequestHeaderSchema,
 } from "@event-desk/contracts/gateway-rpc";
@@ -106,6 +107,33 @@ export function createGatewayRpcServer(deps: GatewayRpcServerDeps): RpcServer {
     const durationMs = () => Math.round(performance.now() - started);
     try {
       const result = await deps.briefingGenerateV1(request);
+      const reply = BriefingGenerateV1ResponseSchema.safeParse({
+        v: 1,
+        ok: true,
+        requestId: request.requestId,
+        runId: request.runId,
+        attemptId: request.attemptId,
+        result,
+      } satisfies BriefingGenerateV1Response);
+      if (!reply.success) {
+        // A Gateway bug, not a caller error: the provider call already happened, so notSent is false.
+        const fields = reply.error.issues.map((issue) => issue.path.map(String).join("."));
+        log.error(
+          {
+            lane: request.lane,
+            outcome: "OUTPUT_INVALID",
+            notSent: false,
+            durationMs: durationMs(),
+            fields,
+          },
+          "briefing result broke the contract",
+        );
+        return failure(correlation, {
+          code: "OUTPUT_INVALID",
+          message: "The Gateway produced a result that does not match briefing.generate.v1.",
+          notSent: false,
+        });
+      }
       log.info(
         {
           lane: request.lane,
@@ -118,15 +146,7 @@ export function createGatewayRpcServer(deps: GatewayRpcServerDeps): RpcServer {
         },
         "briefing generated",
       );
-      const success: BriefingGenerateV1Response = {
-        v: 1,
-        ok: true,
-        requestId: request.requestId,
-        runId: request.runId,
-        attemptId: request.attemptId,
-        result,
-      };
-      return success;
+      return reply.data;
     } catch (error) {
       const body =
         error instanceof GatewayError

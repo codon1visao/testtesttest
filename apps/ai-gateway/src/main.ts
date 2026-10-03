@@ -1,5 +1,6 @@
 import { composeGateway } from "./compose.js";
 import { ConfigError, type GatewayConfig, loadConfig, loadDotEnv } from "./config/env.js";
+import { errorMetadata } from "./shared/error-metadata.js";
 import { createLogger } from "./shared/logger.js";
 
 loadDotEnv(new URL("../../../.env", import.meta.url));
@@ -25,10 +26,7 @@ if (config.provider === null) {
 }
 
 const port = await gateway.listen().catch((error: unknown) => {
-  logger.fatal(
-    { errorClass: error instanceof Error ? error.name : typeof error },
-    "AI Gateway could not listen",
-  );
+  logger.fatal(errorMetadata(error), "AI Gateway could not listen");
   process.exit(1);
 });
 logger.info(
