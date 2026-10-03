@@ -1,0 +1,17 @@
+{
+  "name": "@event-desk/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "tsx reset.ts && playwright test",
+    "fake-gateway": "tsx --conditions=@event-desk/source fake-gateway.ts"
+  },
+  "dependencies": {
+    "@event-desk/tcp-rpc": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "tsx": "4.23.15"
+  }
+}

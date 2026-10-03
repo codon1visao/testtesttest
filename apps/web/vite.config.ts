@@ -14,6 +14,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     // Same origin for the browser: the API's Origin/Host guards see http://localhost:5173 / localhost.
-    proxy: { "/api": { target: "http://127.0.0.1:4000", changeOrigin: false } },
+    // EVENT_API_URL: the E2E stack's event API (e2e/playwright.config.ts); pnpm dev uses 4000.
+    proxy: {
+      "/api": { target: process.env.EVENT_API_URL ?? "http://127.0.0.1:4000", changeOrigin: false },
+    },
   },
 });

@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "e2e"
   - "spikes/*" # temporary: removed once Plan 5 ports these checks into event-api tests
 allowBuilds:
   "@astryxdesign/core": false # postinstall only prints an `astryx init` hint; the spike works without it
