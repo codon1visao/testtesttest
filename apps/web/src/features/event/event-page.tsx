@@ -1,0 +1,68 @@
+import { Banner } from "@astryxdesign/core/Banner";
+import { VStack } from "@astryxdesign/core/Layout";
+import { type EventId, EventIdSchema } from "@event-desk/contracts";
+import * as stylex from "@stylexjs/stylex";
+import { useParams } from "react-router";
+import { describeApiError } from "../../data/http/api-error";
+import { useEventQuery } from "../../data/queries/use-event-query";
+import { NotFoundPage } from "../../shared/ui/not-found-page";
+import { LoadErrorState, LoadingState } from "../../shared/ui/page-states";
+import { PanelErrorBoundary } from "../../shared/ui/panel-error-boundary";
+import { BriefingPanel } from "../briefing/briefing-panel";
+import { EventHeader } from "./event-header";
+
+const styles = stylex.create({
+  page: { maxWidth: 960, marginInline: "auto", padding: "1.5rem" },
+});
+
+export function EventPage() {
+  const { eventId = "" } = useParams();
+  const parsed = EventIdSchema.safeParse(eventId);
+  if (!parsed.success) return <NotFoundPage title="Event not found" />;
+  return <EventScreen eventId={parsed.data} />;
+}
+
+export function EventScreen({ eventId }: { eventId: EventId }) {
+  const query = useEventQuery(eventId);
+
+  if (query.isPending) {
+    return (
+      <main {...stylex.props(styles.page)}>
+        <LoadingState label="Loading event…" />
+      </main>
+    );
+  }
+  if (query.isLoadingError) {
+    if (query.error.code === "EVENT_NOT_FOUND") return <NotFoundPage title="Event not found" />;
+    return (
+      <main {...stylex.props(styles.page)}>
+        <LoadErrorState
+          title="The event could not be loaded"
+          reason={describeApiError(query.error)}
+          onRetry={() => void query.refetch()}
+        />
+      </main>
+    );
+  }
+
+  const view = query.data;
+  return (
+    <main {...stylex.props(styles.page)}>
+      <VStack gap={6}>
+        <EventHeader event={view.event} />
+        {query.isRefetchError ? (
+          <Banner
+            status="warning"
+            title="Showing the last loaded data"
+            description={`It could not be refreshed: ${describeApiError(query.error)}`}
+          />
+        ) : null}
+        {/* attendance: Task 7 */}
+        {/* feedback: Task 6 */}
+        <PanelErrorBoundary name="Briefing">
+          <BriefingPanel />
+        </PanelErrorBoundary>
+      </VStack>
+    </main>
+  );
+}
