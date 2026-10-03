@@ -17,3 +17,4 @@ minimumReleaseAgeExclude:
   - "@astryxdesign/theme-neutral@0.6.5"
   - pino@10.4.0
   - supertest@7.3.1
+  - msw@3.0.2

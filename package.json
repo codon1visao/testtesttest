@@ -7,9 +7,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b",
-    "dev": "pnpm --filter @event-desk/event-api dev",
+    "build": "tsc -b && pnpm --filter @event-desk/web build",
+    "typecheck": "tsc -b && tsc -p apps/web",
+    "dev": "pnpm --parallel --filter @event-desk/event-api --filter @event-desk/web dev",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -26,6 +26,7 @@
     "@types/node": "24.19.1",
     "dependency-cruiser": "18.5.0",
     "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "prettier": "3.9.9",
     "tsx": "4.23.15",
     "typescript": "6.0.3",

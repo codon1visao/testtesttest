@@ -204,7 +204,7 @@ module.exports = {
     exclude: { path: "^(packages|apps)/[^/]+/dist/" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
-      conditionNames: ["@event-desk/source", "import", "types", "default"],
+      conditionNames: ["@event-desk/source", "import", "node", "default"],
       exportsFields: ["exports"],
       extensions: [".ts", ".tsx", ".js"],
     },
