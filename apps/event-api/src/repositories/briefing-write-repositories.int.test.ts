@@ -65,7 +65,7 @@ describe("preview slots (TX7)", () => {
 });
 
 describe("generation structure (TX8 input)", () => {
-  it("returns items in reading order with sources in citation order, scoped to the event", async () => {
+  it("returns items in reading order with sources in citation order, and null for an unknown generation", async () => {
     const { id, itemIds } = await insertGeneration(3);
     const structure = await uow.run((tx) => tx.generations.structure(E101, id));
     expect(structure?.items.map((item) => [item.id, item.section, item.position])).toEqual([

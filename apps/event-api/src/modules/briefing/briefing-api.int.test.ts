@@ -65,6 +65,12 @@ const savedTexts = async () =>
     )
   ).map((row) => `${row.item_id}:${row.text}`);
 const briefingRevision = async () => count("SELECT briefing_revision AS n FROM events");
+const savedAtInDb = async () =>
+  (
+    await dataSource.query<{ savedAt: string }[]>(
+      "SELECT DATE_FORMAT(saved_at, '%Y-%m-%d %H:%i:%s.%f') AS savedAt FROM saved_briefings",
+    )
+  )[0]?.savedAt;
 
 beforeAll(async () => {
   dataSource = await openTestDataSource();
@@ -199,25 +205,39 @@ describe("PUT /api/events/:eventId/briefing (TX8)", () => {
       textEdits: EDITS,
     });
     expect(res.status).toBe(200);
-    expect(
-      SaveBriefingResponseSchema.parse(res.body).selectedPreview?.provenance.generationId,
-    ).toBe(selected.id);
+    const body = SaveBriefingResponseSchema.parse(res.body);
+    expect(body.selectedPreview?.provenance.generationId).toBe(selected.id);
+    expect(body.briefingRevision).toBe(1);
+    expect(body.savedBriefing.provenance.generationId).toBe(saved.id);
+    expect(await briefingRevision()).toBe(1);
+    expect(await count("SELECT COUNT(*) AS n FROM briefing_generations")).toBe(2);
   });
 
   it("a no-op save writes nothing and keeps the revision", async () => {
     const { id } = await insertGeneration(1);
     await putPreviewSlot(dataSource, "selected", id);
-    expect(
-      (await saveBriefing({ baseBriefingRevision: 0, generationId: id, textEdits: EDITS })).status,
-    ).toBe(200);
+    const first = await saveBriefing({
+      baseBriefingRevision: 0,
+      generationId: id,
+      textEdits: EDITS,
+    });
+    expect(first.status).toBe(200);
+    const savedAt = await savedAtInDb();
+    // A real write would stamp a later saved_at; give the clock room to move.
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const again = await saveBriefing({
       baseBriefingRevision: 1,
       generationId: id,
       textEdits: EDITS,
     });
     expect(again.status).toBe(200);
-    expect(SaveBriefingResponseSchema.parse(again.body).briefingRevision).toBe(1);
+    const body = SaveBriefingResponseSchema.parse(again.body);
+    expect(body.briefingRevision).toBe(1);
+    expect(body.savedBriefing.savedAt).toBe(
+      SaveBriefingResponseSchema.parse(first.body).savedBriefing.savedAt,
+    );
     expect(await briefingRevision()).toBe(1);
+    expect(await savedAtInDb()).toBe(savedAt);
   });
 
   it("Review Focus 1 / F5-06 / F6-11: a stale revision is rejected and changes nothing", async () => {

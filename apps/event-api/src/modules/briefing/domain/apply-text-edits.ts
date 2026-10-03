@@ -12,6 +12,10 @@ import type { ItemSection, NewItem } from "../../generation/domain/generation-it
 /** What a stored generation fixes and an edit may not touch: item IDs, order and sources. */
 export interface EditableStructure {
   feedbackIds: readonly FeedbackId[];
+  /**
+   * Precondition: ordered by section, then by position within the section (the order
+   * `GenerationWriteRepository.structure()` returns). Text positions are matched to items in this order.
+   */
   items: readonly NewItem[];
 }
 

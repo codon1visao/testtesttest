@@ -75,6 +75,11 @@ describe("applyTextEdits (D2: wording only)", () => {
       ok: false,
       field: "textEdits.attendanceOverview",
     });
+    expect(applyTextEdits(STRUCTURE, { ...EDITS, feedbackSummary: "  " })).toMatchObject({
+      ok: false,
+      code: "CONTENT_INVALID",
+      field: "textEdits.feedbackSummary",
+    });
   });
 
   it("F5-13: a stored reference outside the generation's input is REFERENCE_INVALID, never repaired", () => {
