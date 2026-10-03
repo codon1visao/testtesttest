@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Three-state attendance, application-calculated counts, backend persistence, explicit batch saving and revision-based conflict checks.
+Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): a retry after a lost response keeps the draft's base revision. Three-state attendance, application-calculated counts, backend persistence, explicit batch saving and revision-based conflict checks.
 
 ## Outcome and scope
 
@@ -70,7 +70,7 @@ On success, return persisted members, derived counts, the revision and current s
 | Save failed | Keep dirty selections and previous saved totals; show error and Retry |
 | Revision conflict | Preserve local selections; explain that saved attendance changed and offer reload after confirming draft discard |
 
-A lost response is ambiguous: the backend may already have persisted the save. Fetch current data to compare before retrying with a refreshed revision. Do not automatically replay an old full roster over newer values. Warn on page exit while dirty where the browser supports it; unsaved selections are not guaranteed to survive refresh.
+A lost response is ambiguous: the backend may already have persisted the save. Fetch current data once to compare: if the saved records match the draft, report it saved; otherwise keep the draft. A retry keeps the draft's base revision, so a change saved elsewhere meanwhile surfaces as a revision conflict instead of being overwritten. Do not automatically replay an old full roster over newer values. Warn on page exit while dirty where the browser supports it; unsaved selections are not guaranteed to survive refresh.
 
 ## Acceptance criteria
 
