@@ -85,6 +85,42 @@ describe("seedIfMissing (TX1)", () => {
   });
 });
 
+describe("seedIfMissing duplicate-key handling (TX1)", () => {
+  it("TX1 race: two concurrent seeders on an empty store seed exactly once", async () => {
+    const results = await Promise.all([
+      seedIfMissing(dataSource, NOW),
+      seedIfMissing(dataSource, NOW),
+    ]);
+    expect([...results].sort()).toEqual(["existing", "seeded"]);
+    expect(await countOf("events")).toBe(1);
+    expect(await countOf("members")).toBe(4);
+    expect(await countOf("feedback_notes")).toBe(8);
+  });
+
+  it("TX1: a duplicate on a child insert is rethrown, not reported as existing", async () => {
+    // An orphan member (no E101 event row) can only exist with FK checks off. The event insert then
+    // succeeds and the members insert hits a duplicate key, which must roll back and surface.
+    const runner = dataSource.createQueryRunner();
+    try {
+      await runner.query("SET FOREIGN_KEY_CHECKS = 0");
+      try {
+        await runner.query(
+          "INSERT INTO members (event_id, id, name, attendance, display_order) VALUES ('E101', 'M01', 'Orphan', 'attended', 1)",
+        );
+      } finally {
+        await runner.query("SET FOREIGN_KEY_CHECKS = 1");
+      }
+    } finally {
+      await runner.release();
+    }
+    await expect(seedIfMissing(dataSource, NOW)).rejects.toMatchObject({
+      driverError: { errno: 1062 },
+    });
+    expect(await countOf("events")).toBe(0);
+    expect(await countOf("feedback_notes")).toBe(0);
+  });
+});
+
 describe("bootstrapStore", () => {
   it("is idempotent: migrations already applied, data already seeded", async () => {
     await bootstrapStore(dataSource, silentLogger, NOW);

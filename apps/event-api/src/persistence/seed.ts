@@ -6,6 +6,8 @@ import { isDuplicateKeyError } from "./mysql-errors.js";
 /**
  * TX1: initialise E101 exactly once. Seeding happens only when the event row is absent.
  * Partial or corrupt data is left untouched for recovery (F1 rule 6); it is never reseeded.
+ * A duplicate-key error counts as "already seeded" only if the E101 row exists afterwards
+ * (a concurrent seeder won the race); a duplicate from a child insert is rethrown.
  */
 export async function seedIfMissing(
   dataSource: DataSource,
@@ -50,8 +52,13 @@ export async function seedIfMissing(
       return "seeded";
     });
   } catch (error) {
-    // Another process seeded between our check and insert: the data now exists.
-    if (isDuplicateKeyError(error)) return "existing";
+    if (isDuplicateKeyError(error) && (await eventRowExists(dataSource))) return "existing";
     throw error;
   }
+}
+
+async function eventRowExists(dataSource: DataSource): Promise<boolean> {
+  return (
+    (await dataSource.manager.findOne(EventEntity, { where: { id: SUPPLIED_EVENT.id } })) !== null
+  );
 }
