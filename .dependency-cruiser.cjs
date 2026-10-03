@@ -69,7 +69,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^apps/event-api/src",
-        pathNot: "^apps/event-api/src/(persistence|repositories|scripts|testing)/",
+        pathNot: ["^apps/event-api/src/(persistence|repositories|scripts|testing)/", TESTS],
       },
       to: { path: npm("typeorm|mysql2") },
     },
@@ -78,7 +78,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^apps/event-api/src",
-        pathNot: "^apps/event-api/src/(integrations|scripts|testing)/",
+        pathNot: ["^apps/event-api/src/(integrations|scripts|testing)/", TESTS],
       },
       to: { path: npm("bullmq|ioredis") },
     },
@@ -86,7 +86,7 @@ module.exports = {
       name: "services-use-ports",
       comment: "Modules depend on ports, never on adapters (T3 §11).",
       severity: "error",
-      from: { path: "^apps/event-api/src/modules/" },
+      from: { path: "^apps/event-api/src/modules/", pathNot: TESTS },
       to: { path: "^apps/event-api/src/(repositories|integrations|persistence)/" },
     },
     {
@@ -96,6 +96,14 @@ module.exports = {
       severity: "error",
       from: { path: "/domain/", pathNot: TESTS },
       to: { pathNot: ["/domain/", npm("zod"), "^packages/contracts/"] },
+    },
+    {
+      name: "no-production-to-testing",
+      comment:
+        "Production code never imports test helpers, which are exempt from the adapter rules.",
+      severity: "error",
+      from: { path: "^apps/[^/]+/src/", pathNot: ["^apps/[^/]+/src/testing/", TESTS] },
+      to: { path: "^apps/[^/]+/src/testing/" },
     },
     {
       name: "event-api-application-not-to-http",
