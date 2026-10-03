@@ -81,10 +81,17 @@ describe("POST /api/events/:eventId/briefing-generations", () => {
     gateway.release();
     const [a, b] = await responses;
     expect([a.status, b.status]).toEqual([201, 201]);
+    const generationId = GenerateBriefingResponseSchema.parse(a.body).incomingPreview.provenance
+      .generationId;
     expect(
-      GenerateBriefingResponseSchema.parse(a.body).incomingPreview.provenance.generationId,
-    ).toBe(GenerateBriefingResponseSchema.parse(b.body).incomingPreview.provenance.generationId);
+      GenerateBriefingResponseSchema.parse(b.body).incomingPreview.provenance.generationId,
+    ).toBe(generationId);
     expect(gateway.requests).toHaveLength(1);
+    // The view above was cached while the call was held; the flushes after the run must replace
+    // it (the coordinator's unit test pins the finish flush's order on its own).
+    const after = await view();
+    expect(after.generation.manual).toBeNull();
+    expect(after.incomingPreview?.provenance.generationId).toBe(generationId);
   });
 
   it("Review Focus 2 / F4-08: a candidate stays tied to the attendance it read; the save is not blocked", async () => {
@@ -112,7 +119,17 @@ describe("POST /api/events/:eventId/briefing-generations", () => {
 
   it("Review Focus 3 / F4-17: an abandoned request still commits, with no second call", async () => {
     gateway.enqueue({ kind: "hold" });
-    await expect(generate().timeout(300)).rejects.toThrow(/timeout/i);
+    // Settled into a value at once, so the timeout cannot become an unhandled rejection.
+    const abandoned = generate()
+      .timeout(300)
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    await vi.waitFor(() => {
+      expect(gateway.requests).toHaveLength(1);
+    });
+    expect(String(await abandoned)).toMatch(/timeout/i);
     gateway.release();
     await vi.waitFor(async () => {
       expect(await count("SELECT COUNT(*) AS n FROM preview_slots WHERE slot = 'incoming'")).toBe(

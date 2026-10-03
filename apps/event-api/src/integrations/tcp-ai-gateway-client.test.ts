@@ -112,4 +112,49 @@ describe("TcpAiGatewayClient", () => {
     expect(await gatewayClient.generateBriefing(request())).toEqual(unknown);
     expect(await gatewayClient.generateBriefing(request())).toEqual(unknown);
   });
+
+  it("passes a wrong-secret refusal through as GATEWAY_AUTH_FAILED, known not sent", async () => {
+    gateway = await startFakeGateway(SECRET);
+    const wrongSecret = new TcpAiGatewayClient(
+      { host: "127.0.0.1", port: gateway.port, secret: "another-secret-".padEnd(40, "x") },
+      silentLogger,
+    );
+    expect(await wrongSecret.generateBriefing(request())).toEqual({
+      ok: false,
+      code: "GATEWAY_AUTH_FAILED",
+      notSent: true,
+    });
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it("F8-05: a reply for another attempt of the same run is AI_OUTCOME_UNKNOWN", async () => {
+    const gatewayClient = await client();
+    const sent = request();
+    gateway?.enqueue({
+      kind: "raw",
+      message: {
+        v: 1,
+        ok: false,
+        runId: sent.runId,
+        attemptId: "2",
+        error: { code: "INTERNAL", message: "x", notSent: true },
+      },
+    });
+    expect(await gatewayClient.generateBriefing(sent)).toEqual({
+      ok: false,
+      code: "AI_OUTCOME_UNKNOWN",
+      notSent: false,
+    });
+  });
+
+  it("F8-08: no answer before the deadline is AI_OUTCOME_UNKNOWN", async () => {
+    const gatewayClient = await client();
+    gateway?.enqueue({ kind: "hold" });
+    const started = Date.now();
+    expect(
+      await gatewayClient.generateBriefing(request({ deadlineAt: new Date(Date.now() + 150) })),
+    ).toEqual({ ok: false, code: "AI_OUTCOME_UNKNOWN", notSent: false });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(gateway?.requests).toHaveLength(1);
+  });
 });
