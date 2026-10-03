@@ -19,6 +19,8 @@ const NOW = new Date("2026-10-03T09:00:00.000Z");
 
 class FakeUnitOfWork implements UnitOfWork {
   snapshots = 0;
+  /** Runs inside the snapshot, as a concurrent writer or a failed flush would. */
+  duringSnapshot: () => void = () => undefined;
   readonly scope: ReadScope = {
     events: {
       findAggregate: (eventId) =>
@@ -44,11 +46,13 @@ class FakeUnitOfWork implements UnitOfWork {
   }
   readSnapshot<T>(work: (scope: ReadScope) => Promise<T>): Promise<T> {
     this.snapshots += 1;
+    this.duringSnapshot();
     return work(this.scope);
   }
 }
 
 class FakeCache implements EventViewCache {
+  version = 7;
   cached: EventView | null = null;
   lookupError: Error | null = null;
   storeError: Error | null = null;
@@ -56,7 +60,7 @@ class FakeCache implements EventViewCache {
   lookup(): Promise<CachedEventView> {
     return this.lookupError
       ? Promise.reject(this.lookupError)
-      : Promise.resolve({ version: 7, view: this.cached });
+      : Promise.resolve({ version: this.version, view: this.cached });
   }
   store(_eventId: unknown, version: number, _view: EventView, ttlMs: number): Promise<void> {
     if (this.storeError) return Promise.reject(this.storeError);
@@ -64,7 +68,8 @@ class FakeCache implements EventViewCache {
     return Promise.resolve();
   }
   invalidate(): Promise<number> {
-    return Promise.resolve(8);
+    this.version += 1;
+    return Promise.resolve(this.version);
   }
 }
 
@@ -87,6 +92,8 @@ function setup(defaultTtlMs = 30_000) {
 describe("EventViewService", () => {
   it("builds the view on a miss and caches it at the version read before the database read", async () => {
     const { uow, cache, service } = setup();
+    // A write commits and flushes while the snapshot is read: the version moves on to 8.
+    uow.duringSnapshot = () => void cache.invalidate();
     const view = await service.get(E101);
     expect(view.counts).toEqual({ registered: 4, attended: 1, absent: 2, notRecorded: 1 });
     expect(view.generation).toEqual({
@@ -97,7 +104,19 @@ describe("EventViewService", () => {
     });
     expect(view.savedBriefing).toBeNull();
     expect(uow.snapshots).toBe(1);
+    // Stored under the retired version 7, so the possibly stale view is never served.
+    expect(cache.version).toBe(8);
     expect(cache.stored).toEqual([{ version: 7, ttlMs: 30_000 }]);
+  });
+
+  it("does not store a view built while a failed flush switched reads to MySQL", async () => {
+    const { uow, cache, bypass, service } = setup();
+    uow.duringSnapshot = () => {
+      bypass.activate();
+    };
+    await expect(service.get(E101)).resolves.toMatchObject({ event: SUPPLIED_EVENT });
+    expect(uow.snapshots).toBe(1);
+    expect(cache.stored).toEqual([]);
   });
 
   it("serves a cache hit without touching MySQL", async () => {
