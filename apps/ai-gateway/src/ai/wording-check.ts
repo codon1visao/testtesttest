@@ -19,7 +19,7 @@ export interface WordingFinding {
 }
 
 const PEOPLE =
-  /\bsome attendees\b|\bmost people\b|\beveryone\b|\bhalf the group\b|\b(members|attendees) (disagree|differ)/i;
+  /\bsome attendees\b|\bpeople\b|\bparticipants?\b|\beveryone\b|\bhalf the group\b|\b(members|attendees) (disagree|differ)/i;
 const VAGUE_TWO = /\b(several|many|multiple) notes\b/i;
 
 /**

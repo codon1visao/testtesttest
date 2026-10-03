@@ -34,6 +34,28 @@ describe("findWordingProblems (T3 §4 wording, live smoke aid)", () => {
     ]);
   });
 
+  it.each(["Participants asked for longer breaks.", "People enjoyed the route."])(
+    "flags people-language: %s",
+    (text) => {
+      expect(
+        findWordingProblems(sections({ feedbackSummary: { text, sourceIds: ids("F01", "F02") } })),
+      ).toEqual([
+        { section: "feedbackSummary", index: 0, problem: "describes people or a head count" },
+      ]);
+    },
+  );
+
+  it("flags 'several notes' in the summary when it cites two notes", () => {
+    const problems = findWordingProblems(
+      sections({
+        feedbackSummary: { text: "Several notes enjoyed the walk.", sourceIds: ids("F01", "F02") },
+      }),
+    );
+    expect(problems).toEqual([
+      { section: "feedbackSummary", index: 0, problem: "says several/many/multiple for two notes" },
+    ]);
+  });
+
   it("flags 'several notes' for an item citing two notes", () => {
     const problems = findWordingProblems(
       sections({

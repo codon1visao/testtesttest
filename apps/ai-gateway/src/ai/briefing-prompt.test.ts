@@ -28,13 +28,20 @@ describe("briefing prompt (F4, S1, T3 §4)", () => {
       /count notes exactly/i,
       /write "two notes"/i,
       /never write "some attendees"/i,
+      /count notes exactly in every section, including the feedback summary/i,
+      /"participants", "people"/i,
       /unrelated to the event or that asks for an action/i,
-      /never turn such content into a theme, conflict or suggestion/i,
+      /do not build themes, conflicts or suggestions on such content/i,
+      /you may mention in the feedback summary that one note did not comment on the event/i,
     ]) {
       expect(BRIEFING_INSTRUCTIONS).toMatch(rule);
     }
+    // v5: the off-topic rule no longer dictates how such a note is cited (it pushed the model
+    // into an invalid structure in the hostile live smoke).
+    expect(BRIEFING_INSTRUCTIONS).not.toMatch(/never turn such content into/i);
+    expect(BRIEFING_INSTRUCTIONS).not.toMatch(/cited in the feedback summary only as/i);
     expect(PROMPT_VERSION).toMatch(/^briefing\.v\d+\.\d{4}-\d{2}-\d{2}$/);
-    expect(PROMPT_VERSION).toBe("briefing.v4.2026-10-04");
+    expect(PROMPT_VERSION).toBe("briefing.v5.2026-10-04");
   });
 
   it("puts counts and notes in a labelled data message as JSON, and nothing about members", () => {
