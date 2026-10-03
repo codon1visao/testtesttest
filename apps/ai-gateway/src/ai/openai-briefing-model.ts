@@ -1,4 +1,5 @@
 import { buildGeneratedSectionsSchema } from "@event-desk/contracts";
+import type { BriefingGenerateV1Input } from "@event-desk/contracts/gateway-rpc";
 import { Agent, Runner } from "@openai/agents-core";
 import { OpenAIProvider } from "@openai/agents-openai";
 import type OpenAI from "openai";
@@ -10,7 +11,7 @@ import {
   buildSourceDataMessage,
   PROMPT_VERSION,
 } from "./briefing-prompt.js";
-import { mapProviderError } from "./provider-error-mapper.js";
+import { mapRunFailure } from "./provider-error-mapper.js";
 
 export interface OpenAIBriefingModelSettings {
   model: string;
@@ -32,41 +33,45 @@ export function createOpenAIBriefingModel(
     traceIncludeSensitiveData: false,
   });
 
+  // Everything that can throw (schema, agent, run) runs inside generate's try, so the port
+  // only ever throws GatewayError.
+  async function runAgent(input: BriefingGenerateV1Input, signal: AbortSignal) {
+    const outputType = buildGeneratedSectionsSchema(input.feedback.map((note) => note.id));
+    const agent = new Agent({
+      name: "event-briefing",
+      instructions: BRIEFING_INSTRUCTIONS,
+      model: settings.model,
+      outputType,
+      tools: [],
+      handoffs: [],
+      modelSettings: {
+        store: false,
+        maxTokens: settings.maxOutputTokens,
+        retry: { maxRetries: 0 },
+        ...(settings.reasoningEffort === undefined
+          ? {}
+          : { reasoning: { effort: settings.reasoningEffort } }),
+      },
+    });
+    const result = await runner.run(
+      agent,
+      [{ role: "user", content: buildSourceDataMessage(input) }],
+      { maxTurns: 1, signal },
+    );
+    return { outputType, result };
+  }
+
   return {
     model: settings.model,
     promptVersion: PROMPT_VERSION,
     async generate(input, signal) {
-      const outputType = buildGeneratedSectionsSchema(input.feedback.map((note) => note.id));
-      const agent = new Agent({
-        name: "event-briefing",
-        instructions: BRIEFING_INSTRUCTIONS,
-        model: settings.model,
-        outputType,
-        tools: [],
-        handoffs: [],
-        modelSettings: {
-          store: false,
-          maxTokens: settings.maxOutputTokens,
-          retry: { maxRetries: 0 },
-          ...(settings.reasoningEffort === undefined
-            ? {}
-            : { reasoning: { effort: settings.reasoningEffort } }),
-        },
-      });
-
-      let result;
+      let run;
       try {
-        result = await runner.run(
-          agent,
-          [{ role: "user", content: buildSourceDataMessage(input) }],
-          {
-            maxTurns: 1,
-            signal,
-          },
-        );
+        run = await runAgent(input, signal);
       } catch (error) {
-        throw mapProviderError(error);
+        throw mapRunFailure(error, signal);
       }
+      const { outputType, result } = run;
 
       // The SDK already parsed with outputType; parsing again narrows the type and guards upgrades.
       const parsed = outputType.safeParse(result.finalOutput);

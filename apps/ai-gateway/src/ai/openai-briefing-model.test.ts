@@ -4,6 +4,7 @@ import { GatewayError } from "../shared/gateway-error.js";
 import {
   briefingInput,
   createFakeOpenAI,
+  type FakeOpenAIOptions,
   type FakeReply,
   validSections,
 } from "../testing/fake-openai.js";
@@ -26,7 +27,7 @@ const never = () => new AbortController().signal;
 
 function modelWith(
   replies: FakeReply | FakeReply[],
-  options: { timeoutMs?: number } = {},
+  options: FakeOpenAIOptions = {},
   settings = SETTINGS,
 ) {
   const fake = createFakeOpenAI(replies, options);
@@ -160,6 +161,36 @@ describe("OpenAI briefing model: failures (S1-06, F8)", () => {
       { kind: "connection-refused" },
       { code: "PROVIDER_TEMPORARY", notSent: true },
     ],
+    [
+      "a connection reset after sending",
+      { kind: "connection-reset" },
+      { code: "AI_OUTCOME_UNKNOWN", notSent: false },
+    ],
+    [
+      "a forbidden key",
+      { kind: "http", status: 403 },
+      { code: "PROVIDER_NOT_CONFIGURED", notSent: false },
+    ],
+    [
+      "a bad request",
+      { kind: "http", status: 400 },
+      { code: "PROVIDER_NOT_CONFIGURED", notSent: false },
+    ],
+    [
+      "an unknown model",
+      { kind: "http", status: 404 },
+      { code: "PROVIDER_NOT_CONFIGURED", notSent: false },
+    ],
+    [
+      "an unprocessable request",
+      { kind: "http", status: 422 },
+      { code: "PROVIDER_NOT_CONFIGURED", notSent: false },
+    ],
+    [
+      "a provider conflict (retryable)",
+      { kind: "http", status: 409 },
+      { code: "PROVIDER_TEMPORARY", notSent: false },
+    ],
   ];
 
   for (const [name, reply, expected] of cases) {
@@ -186,5 +217,28 @@ describe("OpenAI briefing model: failures (S1-06, F8)", () => {
     const timedOut = modelWith({ kind: "hang" }, { timeoutMs: 100 });
     const timeout = await gatewayErrorOf(timedOut.model.generate(briefingInput(), never()));
     expect([timeout.code, timeout.notSent]).toEqual(["AI_OUTCOME_UNKNOWN", false]);
+  });
+
+  it("maps an already-expired deadline to DEADLINE_EXCEEDED", async () => {
+    const { model } = modelWith({ kind: "output", output: validSections() });
+    const controller = new AbortController();
+    controller.abort();
+    const error = await gatewayErrorOf(model.generate(briefingInput(), controller.signal));
+    expect([error.code, error.notSent]).toEqual(["DEADLINE_EXCEEDED", false]);
+  });
+
+  it("maps a deadline that fires while the provider's reply is being read to DEADLINE_EXCEEDED", async () => {
+    const controller = new AbortController();
+    const { model, requests } = modelWith(
+      { kind: "output", output: validSections() },
+      {
+        onReplyBodyRead: () => {
+          controller.abort();
+        },
+      },
+    );
+    const error = await gatewayErrorOf(model.generate(briefingInput(), controller.signal));
+    expect(requests).toHaveLength(1);
+    expect([error.code, error.notSent]).toEqual(["DEADLINE_EXCEEDED", false]);
   });
 });

@@ -21,14 +21,19 @@ import { GatewayError } from "../shared/gateway-error.js";
 
 const NETWORK_UNREACHABLE = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
 
+/** A non-negative number from a header; absent, blank or non-numeric (e.g. an HTTP date) → undefined. */
+function numericHeader(headers: Headers | undefined, name: string): number | undefined {
+  const raw = headers?.get(name)?.trim() ?? "";
+  if (raw === "") return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 export function retryAfterMsFrom(headers: Headers | undefined): number | undefined {
-  const ms = Number(headers?.get("retry-after-ms"));
-  if (Number.isFinite(ms) && ms >= 0 && headers?.has("retry-after-ms") === true)
-    return Math.round(ms);
-  const seconds = Number(headers?.get("retry-after"));
-  if (Number.isFinite(seconds) && seconds >= 0 && headers?.has("retry-after") === true)
-    return Math.round(seconds * 1000);
-  return undefined;
+  const ms = numericHeader(headers, "retry-after-ms");
+  if (ms !== undefined) return Math.round(ms);
+  const seconds = numericHeader(headers, "retry-after");
+  return seconds === undefined ? undefined : Math.round(seconds * 1000);
 }
 
 /** True when the cause chain shows the provider host was never reached (DNS or refused connection). */
@@ -44,7 +49,8 @@ function neverReached(error: unknown): boolean {
 /**
  * SDK and provider failures → stable Gateway codes with fixed messages (F8). Provider text never
  * leaves this function: SDK messages can contain model output (e.g. a refusal). Order matters:
- * the abort and timeout classes extend the connection-error class.
+ * `APIConnectionTimeoutError` extends `APIConnectionError`, and `APIUserAbortError` and
+ * `APIConnectionError` both extend `APIError`, so the specific classes are checked first.
  */
 export function mapProviderError(error: unknown): GatewayError {
   if (error instanceof GatewayError) return error;
@@ -68,11 +74,7 @@ export function mapProviderError(error: unknown): GatewayError {
     );
   }
   if (error instanceof APIUserAbortError) {
-    return new GatewayError(
-      "DEADLINE_EXCEEDED",
-      "The model did not answer before the deadline.",
-      sent,
-    );
+    return deadlineExceeded(error);
   }
   if (error instanceof APIConnectionTimeoutError || error instanceof ModelTimeoutError) {
     return new GatewayError(
@@ -100,12 +102,19 @@ export function mapProviderError(error: unknown): GatewayError {
       ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
     });
   }
+  // 409 is a transient provider-side conflict (the openai SDK itself treats it as retryable).
+  if (error instanceof ConflictError) {
+    return new GatewayError(
+      "PROVIDER_TEMPORARY",
+      "The AI provider is temporarily unavailable.",
+      sent,
+    );
+  }
   if (
     error instanceof AuthenticationError ||
     error instanceof PermissionDeniedError ||
     error instanceof BadRequestError ||
     error instanceof NotFoundError ||
-    error instanceof ConflictError ||
     error instanceof UnprocessableEntityError
   ) {
     return new GatewayError(
@@ -122,4 +131,20 @@ export function mapProviderError(error: unknown): GatewayError {
     );
   }
   return new GatewayError("INTERNAL", "The Gateway failed unexpectedly.", sent);
+}
+
+function deadlineExceeded(cause: unknown): GatewayError {
+  return new GatewayError("DEADLINE_EXCEEDED", "The model did not answer before the deadline.", {
+    notSent: false,
+    cause,
+  });
+}
+
+/**
+ * A failed agent run → GatewayError. Once our deadline signal has fired, the failure is the deadline
+ * whatever its class: agents-core's `throwIfAborted()` rethrows `signal.reason` (a DOMException
+ * AbortError or TimeoutError) after a model response, which mapProviderError alone would call INTERNAL.
+ */
+export function mapRunFailure(error: unknown, signal: AbortSignal): GatewayError {
+  return signal.aborted ? deadlineExceeded(error) : mapProviderError(error);
 }
