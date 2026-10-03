@@ -8,6 +8,7 @@ import { useEventQuery } from "../../data/queries/use-event-query";
 import { NotFoundPage } from "../../shared/ui/not-found-page";
 import { LoadErrorState, LoadingState } from "../../shared/ui/page-states";
 import { PanelErrorBoundary } from "../../shared/ui/panel-error-boundary";
+import { AttendancePanel } from "../attendance/attendance-panel";
 import { BriefingPanel } from "../briefing/briefing-panel";
 import { FeedbackPanel } from "../feedback/feedback-panel";
 import { EventHeader } from "./event-header";
@@ -58,7 +59,9 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
             description={`It could not be refreshed: ${describeApiError(query.error)}`}
           />
         ) : null}
-        {/* attendance: Task 7 */}
+        <PanelErrorBoundary name="Attendance">
+          <AttendancePanel eventId={eventId} view={view} refetch={query.refetch} />
+        </PanelErrorBoundary>
         <PanelErrorBoundary name="Feedback">
           <FeedbackPanel notes={view.feedback} />
         </PanelErrorBoundary>
