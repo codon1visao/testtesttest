@@ -17,11 +17,27 @@ function bodyParserMessage(error: unknown): string | undefined {
   return typeof error.type === "string" ? BODY_PARSER_MESSAGES[error.type] : undefined;
 }
 
+/** Express and body-parser tag client faults (bad URL escapes, undecodable bodies) with a 4xx status. */
+function clientErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  for (const key of ["status", "statusCode"] as const) {
+    const value = key in error ? (error as Record<string, unknown>)[key] : undefined;
+    if (typeof value === "number" && Number.isInteger(value) && value >= 400 && value <= 499)
+      return value;
+  }
+  return undefined;
+}
+
 function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;
   const parserMessage = bodyParserMessage(error);
   if (parserMessage !== undefined)
     return new AppError("VALIDATION_FAILED", parserMessage, { cause: error });
+  const clientStatus = clientErrorStatus(error);
+  if (clientStatus !== undefined) {
+    const code = clientStatus === 404 ? "NOT_FOUND" : "VALIDATION_FAILED";
+    return new AppError(code, "The request could not be processed.", { cause: error });
+  }
   return new AppError("INTERNAL", "Something went wrong. Try again.", { cause: error });
 }
 

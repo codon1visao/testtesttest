@@ -1,7 +1,12 @@
 import type { RequestHandler } from "express";
 import { AppError } from "../../shared/app-error.js";
 
-export const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Fail closed: anything that is not a known-safe method (including unusual verbs) is a mutation. */
+export function isMutation(method: string): boolean {
+  return !SAFE_METHODS.has(method);
+}
 
 /**
  * Cross-origin mutations are rejected (S1). Browsers always send Origin on mutations, so a
@@ -11,7 +16,7 @@ export const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 export function originGuard(allowedOrigins: readonly string[]): RequestHandler {
   const allowed = new Set(allowedOrigins);
   return (req, _res, next) => {
-    if (!MUTATING_METHODS.has(req.method)) {
+    if (!isMutation(req.method)) {
       next();
       return;
     }

@@ -1,3 +1,5 @@
+import type { AddressInfo } from "node:net";
+import { request as nodeRequest } from "node:http";
 import express from "express";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
@@ -14,6 +16,12 @@ function buildApp() {
   const routes = express.Router();
   routes.post("/echo", (req, res) => {
     res.json(validateBody(z.strictObject({ name: z.string() }), req.body));
+  });
+  routes.get("/items/:id", (req, res) => {
+    res.json({ id: req.params.id });
+  });
+  routes.all("/any", (_req, res) => {
+    res.json({ ok: true });
   });
   routes.get("/boom", () => {
     throw new Error("database password is hunter2");
@@ -118,6 +126,67 @@ describe("HTTP policy", () => {
     expect(JSON.stringify(res.body)).not.toContain("hunter2");
     expect(JSON.stringify(res.body)).not.toContain("stack");
     expect(lines.join("")).toContain('"requestId":"req-42"');
+  });
+
+  it("answers a malformed URL parameter with 400, never 500", async () => {
+    const { app, lines } = buildApp();
+    const res = await request(app).get("/api/items/%zz");
+    expect(res.status).toBe(400);
+    expect(errorCodeOf(res)).toBe("VALIDATION_FAILED");
+    expect(JSON.stringify(res.body)).not.toContain("URIError");
+    expect(JSON.stringify(res.body)).not.toContain("stack");
+    expect(lines.join("")).not.toContain('"level":50');
+  });
+
+  it("answers a body that cannot be decoded with 400, never 500", async () => {
+    const { app } = buildApp();
+    const res = await request(app)
+      .post("/api/echo")
+      .set("Content-Type", "application/json")
+      .set("Content-Encoding", "gzip")
+      .send("this is not gzip");
+    expect(res.status).toBe(400);
+    expect(errorCodeOf(res)).toBe("VALIDATION_FAILED");
+    expect(JSON.stringify(res.body)).not.toContain("stack");
+    expect(JSON.stringify(res.body)).not.toContain("incorrect header check");
+  });
+
+  it("treats any non-safe method as a mutation, so unusual verbs cannot skip the origin check", async () => {
+    const { app } = buildApp();
+    const server = app.listen(0, "127.0.0.1");
+    try {
+      await new Promise<void>((resolve) => server.once("listening", resolve));
+      const { port } = server.address() as AddressInfo;
+      const response = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+        const req = nodeRequest(
+          {
+            host: "127.0.0.1",
+            port,
+            path: "/api/any",
+            method: "PROPFIND",
+            headers: { Origin: "http://evil.example" },
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (chunk: Buffer) => {
+              chunks.push(chunk);
+            });
+            res.on("end", () => {
+              resolve({
+                status: res.statusCode ?? 0,
+                body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown,
+              });
+            });
+          },
+        );
+        req.on("error", reject);
+        req.end();
+      });
+      expect(response.status).toBe(403);
+      expect(errorCodeOf(response)).toBe("ORIGIN_REJECTED");
+    } finally {
+      server.close();
+    }
   });
 
   it("answers unknown API routes with NOT_FOUND", async () => {
