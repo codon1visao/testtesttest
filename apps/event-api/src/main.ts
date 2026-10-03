@@ -1,6 +1,7 @@
 import { composeEventApi } from "./compose.js";
 import { type AppConfig, ConfigError, loadConfig, loadDotEnv } from "./config/env.js";
 import { createLogger } from "./shared/logger.js";
+import { gracefulShutdown } from "./shutdown.js";
 
 const SHUTDOWN_GRACE_MS = 10_000;
 
@@ -33,19 +34,12 @@ const server = api.app.listen(config.port, config.host, (error?: Error) => {
   logger.info({ host: config.host, port: config.port }, "event API listening");
 });
 
-function shutdown(signal: NodeJS.Signals): void {
-  logger.info({ signal }, "shutting down");
-  setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS).unref();
-  server.close(() => {
-    void api.close().then(
-      () => process.exit(0),
-      (error: unknown) => {
-        logger.error({ err: error }, "shutdown failed");
-        process.exit(1);
-      },
-    );
-  });
-}
-
-process.once("SIGTERM", shutdown);
-process.once("SIGINT", shutdown);
+const shutdown = gracefulShutdown({
+  logger,
+  server,
+  closeApi: () => api.close(),
+  exit: (code) => process.exit(code),
+  graceMs: SHUTDOWN_GRACE_MS,
+});
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
