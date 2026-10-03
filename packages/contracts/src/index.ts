@@ -2,3 +2,6 @@ export * from "./assert-never.js";
 export * from "./ids.js";
 export * from "./text.js";
 export * from "./attendance.js";
+export * from "./event.js";
+export * from "./feedback.js";
+export * from "./supplied-records.js";
