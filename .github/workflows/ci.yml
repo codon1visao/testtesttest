@@ -29,4 +29,37 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm arch
       - run: pnpm test
-  # Plan 2 adds the integration job (MySQL and Redis service containers); Plan 4 adds Playwright.
+  integration:
+    name: integration tests (MySQL 8.4, Redis 8)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: event_desk_root
+          MYSQL_DATABASE: event_desk_test
+          MYSQL_USER: event_desk
+          MYSQL_PASSWORD: event_desk_local
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pevent_desk_root --silent"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_MYSQL_URL: mysql://event_desk:event_desk_local@127.0.0.1:3306/event_desk_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379/1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:integration
