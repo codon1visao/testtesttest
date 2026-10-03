@@ -30,11 +30,18 @@ test("F7-15 / F3-10: notes from the feedback form reach the open coordinator pag
     timeout: 15_000,
   });
 
+  // E101 starts with no briefing, so no editor is open: the automatic result is shown read-only
+  // and offered for review, never opened on its own (F7).
+  await expect(
+    briefing.getByRole("heading", { name: "New preview (not yet reviewed)" }),
+  ).toBeVisible();
+  await expect(briefing.getByLabel("Theme 1")).toHaveCount(0);
+
   // One batch for the three notes: the result read all eleven notes on the background lane.
   await briefing.getByRole("button", { name: "Review new preview" }).click();
-  const discard = page.getByRole("button", { name: "Discard and review" });
-  if (await discard.isVisible()) await discard.click();
   await expect(briefing.getByLabel("Theme 1")).toHaveValue(
     "Requests for more rest-break time (background, 11 notes).",
   );
+  // Nothing was being edited, so reviewing never asked to discard a draft.
+  await expect(page.getByRole("button", { name: "Discard and review" })).toHaveCount(0);
 });
