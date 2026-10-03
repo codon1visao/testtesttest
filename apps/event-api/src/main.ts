@@ -37,10 +37,8 @@ const server = api.app.listen(config.port, config.host, (error?: Error) => {
 const shutdown = gracefulShutdown({
   logger,
   server,
-  closeApi: () => api.close(),
-  beforeClose: () => {
-    api.stopStreams();
-  },
+  stopWork: () => api.stopWork(),
+  closeStores: () => api.closeStores(),
   exit: (code) => process.exit(code),
   graceMs: SHUTDOWN_GRACE_MS,
 });

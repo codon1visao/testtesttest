@@ -38,14 +38,21 @@ import type { Clock } from "./ports/clock.js";
 import type { IdGenerator } from "./ports/id-generator.js";
 import { TypeOrmUnitOfWork } from "./repositories/typeorm-unit-of-work.js";
 import type { Logger } from "./shared/logger.js";
-import { closeApiResources } from "./shutdown.js";
+import { type ApiResources, closeApiStores, stopApiWork } from "./shutdown.js";
 
 export interface EventApi {
   readonly app: Express;
   readonly changes: EventChangePublisher;
   /** Ends every open change stream; the HTTP server cannot close while one is open. */
   stopStreams(): void;
-  /** Ends streams, stops the worker while manual runs drain, then closes the stores (T3 §10). */
+  /**
+   * The first half of shutdown, started at the signal (T3 §10): ends streams and stops the batch
+   * worker while manual runs drain. Self-bounded; repeated calls share one close.
+   */
+  stopWork(): Promise<void>;
+  /** The second half: closes Redis and MySQL. Call once stopWork and the HTTP server are done. */
+  closeStores(): Promise<void>;
+  /** Both halves in order (for callers without a signal handler). */
   close(): Promise<void>;
 }
 
@@ -164,27 +171,34 @@ export async function composeEventApi(
     ],
   });
 
+  const resources: ApiResources = {
+    logger,
+    stopStreams: () => {
+      hub.closeAll();
+    },
+    closeBatchQueue: () => batchQueue.close(),
+    // A manual run records its outcome before the stores go away (carry-forward from Plan 4).
+    whenManualIdle: () => manualGeneration.whenAllIdle(),
+    manualDrainMs: MANUAL_DRAIN_MS,
+    closeRedis: () => {
+      redis.disconnect();
+    },
+    closeDatabase: () => dataSource.destroy(),
+  };
+  let stopping: Promise<void> | null = null;
+  const stopWork = () => (stopping ??= stopApiWork(resources));
+
   return {
     app,
     changes,
     stopStreams() {
       hub.closeAll();
     },
-    close() {
-      return closeApiResources({
-        logger,
-        stopStreams: () => {
-          hub.closeAll();
-        },
-        closeBatchQueue: () => batchQueue.close(),
-        // A manual run records its outcome before the stores go away (carry-forward from Plan 4).
-        whenManualIdle: () => manualGeneration.whenAllIdle(),
-        manualDrainMs: MANUAL_DRAIN_MS,
-        closeRedis: () => {
-          redis.disconnect();
-        },
-        closeDatabase: () => dataSource.destroy(),
-      });
+    stopWork,
+    closeStores: () => closeApiStores(resources),
+    async close() {
+      await stopWork();
+      await closeApiStores(resources);
     },
   };
 }
