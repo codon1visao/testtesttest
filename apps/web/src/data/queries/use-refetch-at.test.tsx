@@ -29,7 +29,7 @@ describe("useRefetchAt", () => {
   it("invalidates the event read shortly after each future time", () => {
     renderHook(
       () => {
-        useRefetchAt(eventId, [at(10_000), null, undefined, at(30_000)]);
+        useRefetchAt(eventId, [at(10_000), null, undefined, at(30_000)], NOW);
       },
       { wrapper },
     );
@@ -42,10 +42,10 @@ describe("useRefetchAt", () => {
     expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
-  it("ignores past and unparseable times", () => {
+  it("ignores unparseable times", () => {
     renderHook(
       () => {
-        useRefetchAt(eventId, [at(-60_000), "not a date", at(-1_000)]);
+        useRefetchAt(eventId, ["not a date", ""], NOW);
       },
       { wrapper },
     );
@@ -53,10 +53,32 @@ describe("useRefetchAt", () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 
+  it("M4: a time already past (browser clock ahead) gets one short follow-up re-read per read", () => {
+    const { rerender } = renderHook(
+      ({ readAt }) => {
+        useRefetchAt(eventId, [at(-60_000), at(-1_000)], readAt);
+      },
+      { wrapper, initialProps: { readAt: NOW } },
+    );
+    vi.advanceTimersByTime(999);
+    expect(invalidate).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(invalidate).toHaveBeenCalledTimes(1); // one follow-up for both past times
+    vi.advanceTimersByTime(60_000);
+    expect(invalidate).toHaveBeenCalledTimes(1); // and only one until the next read
+    // The re-read still carries the past time (the server is still cooling): one more follow-up,
+    // after a longer wait so a lasting state is not polled every second.
+    rerender({ readAt: NOW + 61_000 });
+    vi.advanceTimersByTime(1_999);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(invalidate).toHaveBeenCalledTimes(2);
+  });
+
   it("clears its timers on unmount and when the times change", () => {
     const { rerender, unmount } = renderHook(
       ({ times }) => {
-        useRefetchAt(eventId, times);
+        useRefetchAt(eventId, times, NOW);
       },
       { wrapper, initialProps: { times: [at(10_000)] } },
     );

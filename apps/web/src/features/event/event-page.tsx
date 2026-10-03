@@ -38,6 +38,7 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
     generation === undefined
       ? []
       : [generation.cooldownUntil, generation.batch?.closesAt, generation.batch?.nextAttemptAt],
+    query.dataUpdatedAt,
   );
   const activeView = useUiStore((state) => state.activeView);
 
