@@ -1,4 +1,8 @@
 {
   "files": [],
-  "references": [{ "path": "packages/contracts" }, { "path": "apps/event-api" }]
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/tcp-rpc" },
+    { "path": "apps/event-api" }
+  ]
 }
