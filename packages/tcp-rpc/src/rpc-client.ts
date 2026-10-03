@@ -1,14 +1,18 @@
-import { connect } from "node:net";
+import { connect, type Socket } from "node:net";
 import { RpcCallError, type RpcCallReason } from "./errors.js";
 import { DEFAULT_LIMITS, encodeFrame, FrameDecoder, type RpcMessage } from "./frame-codec.js";
+import { LOOPBACK_HOSTS } from "./loopback.js";
 
 export interface RpcClientOptions {
+  /** Must be a loopback host: the shared secret never crosses an unprotected remote link (F8). */
   host: string;
   port: number;
   secret: string;
   connectTimeoutMs?: number;
   maxRequestBytes?: number;
   maxResponseBytes?: number;
+  /** Opens the connection; defaults to `net.connect`. Tests inject a socket that never connects. */
+  createConnection?: (options: { host: string; port: number }) => Socket;
 }
 
 export interface RpcClient {
@@ -17,6 +21,12 @@ export interface RpcClient {
 }
 
 export function createRpcClient(options: RpcClientOptions): RpcClient {
+  if (!LOOPBACK_HOSTS.has(options.host)) {
+    throw new Error(
+      `Refusing to call ${options.host}: the RPC client sends its credential to loopback only`,
+    );
+  }
+  const createConnection = options.createConnection ?? connect;
   const connectTimeoutMs = options.connectTimeoutMs ?? 2_000;
   const maxRequestBytes = options.maxRequestBytes ?? DEFAULT_LIMITS.maxRequestBytes;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_LIMITS.maxResponseBytes;
@@ -38,7 +48,7 @@ export function createRpcClient(options: RpcClientOptions): RpcClient {
         }
 
         const decoder = new FrameDecoder(maxResponseBytes);
-        const socket = connect({ host: options.host, port: options.port });
+        const socket = createConnection({ host: options.host, port: options.port });
         let written = false;
         let settled = false;
 

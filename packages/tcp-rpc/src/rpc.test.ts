@@ -2,6 +2,7 @@ import { createServer, type Server, Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { RpcCallError } from "./errors.js";
 import { encodeFrame, FrameDecoder, type RpcMessage } from "./frame-codec.js";
+import { LOOPBACK_HOSTS } from "./loopback.js";
 import { createRpcClient } from "./rpc-client.js";
 import {
   createRpcServer,
@@ -237,6 +238,20 @@ describe("rpc server and client", () => {
   });
 });
 
+describe("rpc client host (F8)", () => {
+  it("refuses to send the credential to a non-loopback host", () => {
+    for (const host of ["10.0.0.5", "0.0.0.0", "example.com", "127.0.0.2"]) {
+      expect(() => createRpcClient({ host, port: 4100, secret: SECRET })).toThrow(/loopback/);
+    }
+  });
+
+  it("accepts every loopback host", () => {
+    for (const host of LOOPBACK_HOSTS) {
+      expect(() => createRpcClient({ host, port: 4100, secret: SECRET })).not.toThrow();
+    }
+  });
+});
+
 describe("rpc client failure classification", () => {
   it("is not-sent when the connection is refused", async () => {
     const { server, port } = await startServer();
@@ -248,17 +263,25 @@ describe("rpc client failure classification", () => {
   });
 
   it("T3 §9: is not-sent when the connection is not established within the connect timeout", async () => {
-    // 10.255.255.1 is non-routable: the SYN goes unanswered, so only the connect timer ends the call.
+    // A socket that is never connected never emits "connect": only the connect timer ends the call.
     const started = Date.now();
+    const sockets: Socket[] = [];
     const client = createRpcClient({
-      host: "10.255.255.1",
+      host: HOST,
       port: 9,
       secret: SECRET,
       connectTimeoutMs: 50,
+      createConnection: () => {
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket;
+      },
     });
     const error = await failureOf(client.call({ requestId: "r1" }, soon()));
     expect([error.kind, error.reason]).toEqual(["not-sent", "connect-timeout"]);
     expect(Date.now() - started).toBeLessThan(1_000);
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]?.destroyed).toBe(true);
   });
 
   it("is not-sent when the deadline has already passed", async () => {

@@ -2,8 +2,7 @@ import { createServer, type Socket } from "node:net";
 import { secretsMatch } from "./auth.js";
 import { FrameTooLargeError } from "./errors.js";
 import { DEFAULT_LIMITS, encodeFrame, FrameDecoder, type RpcMessage } from "./frame-codec.js";
-
-export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "::1", "localhost"]);
+import { LOOPBACK_HOSTS } from "./loopback.js";
 
 export type RpcRejectionReason =
   "unauthenticated" | "malformed" | "too-large" | "idle-timeout" | "response-too-large";
