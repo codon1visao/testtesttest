@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { computeFreshness } from "../freshness.js";
+import {
+  SUPPLIED_FEEDBACK,
+  SUPPLIED_FEEDBACK_DIGEST,
+  SUPPLIED_MEMBERS,
+} from "../supplied-records.js";
 import { buildBriefingView, buildSeedEventView } from "../testing/index.js";
 import { SaveAttendanceRequestSchema } from "./attendance-api.js";
 import { SaveBriefingRequestSchema, SelectPreviewRequestSchema } from "./briefing-api.js";
@@ -9,6 +15,17 @@ import { GenerateBriefingRequestSchema } from "./generation-api.js";
 const GENERATION_ID = "0199a4e8-7c1a-7cc2-9d6e-2f3b4c5d6e7f";
 
 describe("EventView", () => {
+  it("builds a briefing whose recorded freshness matches the supplied records", () => {
+    const view = buildBriefingView();
+    const recomputed = computeFreshness(view.provenance.input, {
+      members: SUPPLIED_MEMBERS,
+      feedbackIds: SUPPLIED_FEEDBACK.map((note) => note.id),
+      feedbackDigest: SUPPLIED_FEEDBACK_DIGEST,
+    });
+    expect(view.freshness.current).toBe(true);
+    expect(recomputed.current).toBe(true);
+  });
+
   it("parses the seeded view (F1-01) and a view with a briefing", () => {
     expect(buildSeedEventView().counts).toEqual({
       registered: 4,
@@ -105,6 +122,15 @@ describe("POST /feedback body (F3)", () => {
 
   it("accepts an anonymous note", () => {
     expect(SubmitFeedbackRequestSchema.safeParse(body).success).toBe(true);
+  });
+
+  it("requires a lowercase submissionId, which is what the ascii_bin column stores", () => {
+    expect(
+      SubmitFeedbackRequestSchema.safeParse({
+        ...body,
+        submissionId: body.submissionId.toUpperCase(),
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects identity fields, blank and over-long text (F3-12)", () => {

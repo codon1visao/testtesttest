@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { deriveAttendanceCounts } from "./attendance.js";
-import { SUPPLIED_EVENT, SUPPLIED_FEEDBACK, SUPPLIED_MEMBERS } from "./supplied-records.js";
+import { feedbackDigest } from "./feedback.js";
+import {
+  SUPPLIED_EVENT,
+  SUPPLIED_FEEDBACK,
+  SUPPLIED_FEEDBACK_DIGEST,
+  SUPPLIED_MEMBERS,
+} from "./supplied-records.js";
 
 describe("supplied records (project brief)", () => {
   it("describe the ended Saturday Walk", () => {
@@ -40,5 +46,9 @@ describe("supplied records (project brief)", () => {
     ]);
     expect(SUPPLIED_FEEDBACK[3]?.text).toBe("An earlier start would be difficult for me.");
     expect(SUPPLIED_FEEDBACK[7]?.text).toBe("No extra suggestions from me.");
+  });
+
+  it("pins the digest of the eight notes, so fixtures can claim a current briefing", async () => {
+    expect(await feedbackDigest(SUPPLIED_FEEDBACK)).toBe(SUPPLIED_FEEDBACK_DIGEST);
   });
 });

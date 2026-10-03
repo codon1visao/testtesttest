@@ -23,6 +23,13 @@ export const SUPPLIED_MEMBERS = z
     { id: "M04", name: "Drew", attendance: "absent" },
   ]);
 
+/**
+ * `feedbackDigest(SUPPLIED_FEEDBACK)`, pinned so fixtures can claim a current briefing; a test
+ * recomputes it. If the notes change, update both.
+ */
+export const SUPPLIED_FEEDBACK_DIGEST =
+  "46ce46ade6f36894ac4b85135a0dce484f7f471056d2fcfc842a100f376db69b";
+
 export type SuppliedNote = Pick<FeedbackNote, "id" | "text">;
 
 export const SUPPLIED_FEEDBACK: readonly SuppliedNote[] = z

@@ -5,7 +5,12 @@ import {
   type EventView,
   EventViewSchema,
 } from "../api/event-view.js";
-import { SUPPLIED_EVENT, SUPPLIED_FEEDBACK, SUPPLIED_MEMBERS } from "../supplied-records.js";
+import {
+  SUPPLIED_EVENT,
+  SUPPLIED_FEEDBACK,
+  SUPPLIED_FEEDBACK_DIGEST,
+  SUPPLIED_MEMBERS,
+} from "../supplied-records.js";
 
 export const FIXTURE_TIME = "2026-10-03T09:00:00.000Z";
 
@@ -39,7 +44,7 @@ export function buildBriefingView(overrides: Partial<BriefingView> = {}): Briefi
         attendance: SUPPLIED_MEMBERS.map((m) => ({ memberId: m.id, attendance: m.attendance })),
         counts: deriveAttendanceCounts(SUPPLIED_MEMBERS),
         feedbackIds: SUPPLIED_FEEDBACK.map((note) => note.id),
-        feedbackDigest: "0".repeat(64),
+        feedbackDigest: SUPPLIED_FEEDBACK_DIGEST,
       },
     },
     content: {
