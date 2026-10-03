@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeSourceIds } from "./briefing-rules.js";
 import type { FeedbackId } from "./ids.js";
 
 /**
@@ -9,7 +10,7 @@ import type { FeedbackId } from "./ids.js";
  * strict-mode subset of JSON Schema. The event backend always revalidates.
  */
 export function buildGeneratedSectionsSchema(feedbackIds: readonly FeedbackId[]) {
-  const [first, ...rest] = feedbackIds;
+  const [first, ...rest] = normalizeSourceIds(feedbackIds);
   if (first === undefined) throw new Error("A generation needs at least one feedback note");
   const sourceId = z.enum([first, ...rest]);
   const item = z.strictObject({ text: z.string(), sourceIds: z.array(sourceId) });

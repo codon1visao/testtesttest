@@ -13,6 +13,11 @@
       "@event-desk/source": "./src/testing/index.ts",
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
+    },
+    "./gateway-rpc": {
+      "@event-desk/source": "./src/gateway-rpc/index.ts",
+      "types": "./dist/gateway-rpc/index.d.ts",
+      "default": "./dist/gateway-rpc/index.js"
     }
   },
   "scripts": {

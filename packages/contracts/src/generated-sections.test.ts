@@ -52,4 +52,10 @@ describe("buildGeneratedSectionsSchema", () => {
     const raw: RawEvidenceSections = parsed;
     expect(raw.themes[0]?.sourceIds).toEqual(["F05", "F02"]);
   });
+
+  it("tolerates repeated IDs in the captured set (strict enums need unique values)", () => {
+    const repeated = buildGeneratedSectionsSchema([...IDS, ...IDS]);
+    expect(repeated.safeParse(output).success).toBe(true);
+    expect(z.toJSONSchema(repeated)).toEqual(z.toJSONSchema(schema));
+  });
 });
