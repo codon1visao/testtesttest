@@ -69,7 +69,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^apps/event-api/src",
-        pathNot: "^apps/event-api/src/(persistence|repositories|scripts)/",
+        pathNot: "^apps/event-api/src/(persistence|repositories|scripts|testing)/",
       },
       to: { path: npm("typeorm|mysql2") },
     },
@@ -78,7 +78,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^apps/event-api/src",
-        pathNot: "^apps/event-api/src/(integrations|scripts)/",
+        pathNot: "^apps/event-api/src/(integrations|scripts|testing)/",
       },
       to: { path: npm("bullmq|ioredis") },
     },
@@ -96,6 +96,63 @@ module.exports = {
       severity: "error",
       from: { path: "/domain/", pathNot: TESTS },
       to: { pathNot: ["/domain/", npm("zod"), "^packages/contracts/"] },
+    },
+    {
+      name: "event-api-application-not-to-http",
+      comment:
+        "Services, domain code, ports and adapters never depend on HTTP or controllers (T3 §11).",
+      severity: "error",
+      from: {
+        path: "^apps/event-api/src/(modules|ports|repositories|integrations|persistence|shared)/",
+        pathNot: ["-controller\\.ts$", TESTS],
+      },
+      to: {
+        path: ["^apps/event-api/src/http/", "-controller\\.ts$", "^apps/event-api/src/app\\.ts$"],
+      },
+    },
+    {
+      name: "event-api-ports-are-abstract",
+      comment:
+        "Ports declare contracts only: contracts, domain types, shared types and other ports.",
+      severity: "error",
+      from: { path: "^apps/event-api/src/ports/", pathNot: TESTS },
+      to: {
+        pathNot: [
+          "^apps/event-api/src/ports/",
+          "^packages/contracts/",
+          "/domain/",
+          "^apps/event-api/src/shared/",
+        ],
+      },
+    },
+    {
+      name: "event-api-adapters-not-to-application",
+      comment: "Adapters implement ports; they never call services, controllers or the HTTP layer.",
+      severity: "error",
+      from: {
+        path: "^apps/event-api/src/(repositories|integrations|persistence)/",
+        pathNot: TESTS,
+      },
+      to: { path: "^apps/event-api/src/(modules|http)/", pathNot: "/domain/" },
+    },
+    {
+      name: "event-api-shared-is-leaf",
+      comment: "shared/ holds cross-cutting primitives and depends on nothing else in the app.",
+      severity: "error",
+      from: { path: "^apps/event-api/src/shared/", pathNot: TESTS },
+      to: {
+        path: "^apps/event-api/src/(modules|ports|repositories|integrations|persistence|http|config|scripts)/",
+      },
+    },
+    {
+      name: "event-api-composition-root",
+      comment: "Only main.ts and test helpers import the composition root.",
+      severity: "error",
+      from: {
+        path: "^apps/event-api/src/",
+        pathNot: ["^apps/event-api/src/main\\.ts$", "^apps/event-api/src/testing/", TESTS],
+      },
+      to: { path: "^apps/event-api/src/(main|compose)\\.ts$" },
     },
   ],
   options: {
