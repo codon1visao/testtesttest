@@ -12,7 +12,7 @@ type ShowToast = ReturnType<typeof useToast>;
 function createToastSink(initial: ShowToast) {
   let current = initial;
   return {
-    use: (next: ShowToast) => {
+    setShowToast: (next: ShowToast) => {
       current = next;
     },
     notify: (toast: ToastMessage) => {
@@ -26,7 +26,7 @@ function QueryProvider({ children }: { children: ReactNode }) {
   const showToast = useToast();
   const [toastSink] = useState(() => createToastSink(showToast));
   useEffect(() => {
-    toastSink.use(showToast);
+    toastSink.setShowToast(showToast);
   }, [toastSink, showToast]);
   const [queryClient] = useState(() => createQueryClient(toastSink.notify));
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
