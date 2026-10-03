@@ -21,11 +21,15 @@ describe("briefing prompt (F4, S1, T3 §4)", () => {
       /at most 8 distinct feedback IDs per item/i,
       /refer to notes, not people/i,
       /never attribute feedback to members, attendees or a counted group, in any section/i,
+      /only if it expresses that same pattern/i,
+      /never add an unrelated note to reach two/i,
+      /belongs in suggestions, not themes/i,
+      /do not repeat a disagreement as a theme/i,
     ]) {
       expect(BRIEFING_INSTRUCTIONS).toMatch(rule);
     }
     expect(PROMPT_VERSION).toMatch(/^briefing\.v\d+\.\d{4}-\d{2}-\d{2}$/);
-    expect(PROMPT_VERSION).toBe("briefing.v2.2026-10-03");
+    expect(PROMPT_VERSION).toBe("briefing.v3.2026-10-04");
   });
 
   it("puts counts and notes in a labelled data message as JSON, and nothing about members", () => {
