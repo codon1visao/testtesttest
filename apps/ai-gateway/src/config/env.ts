@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import { z } from "zod";
 import type { LogLevel } from "../shared/logger.js";
 
@@ -16,36 +18,39 @@ export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 /** A copied .env.example leaves optional variables empty: treat "" as unset. */
 const blankAsUnset = (value: unknown) => (value === "" ? undefined : value);
 
-const EnvSchema = z
-  .object({
-    GATEWAY_HOST: z
-      .enum(["127.0.0.1", "::1", "localhost"], { error: "must be a loopback address" })
-      .default("127.0.0.1"),
-    GATEWAY_PORT: z.coerce.number().int().min(1).max(65_535).default(4100),
-    GATEWAY_SERVICE_SECRET: z
-      .string({ error: "is required" })
-      .refine((value) => Buffer.byteLength(value, "utf8") >= 32, {
-        message: "must be at least 32 bytes",
-      }),
-    OPENAI_API_KEY: z.preprocess(blankAsUnset, z.string().trim().min(1).optional()),
-    OPENAI_MODEL: z.preprocess(blankAsUnset, z.string().trim().min(1).max(100).optional()),
-    OPENAI_REASONING_EFFORT: z.preprocess(blankAsUnset, z.enum(REASONING_EFFORTS).optional()),
-    OPENAI_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(50_000),
-    MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(16_000).default(4_000),
-    GATEWAY_MAX_CALL_MS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
-    GATEWAY_RESPONSE_MARGIN_MS: z.coerce.number().int().min(100).max(10_000).default(1_000),
-    GATEWAY_DAILY_CALL_LIMIT: z.coerce.number().int().min(1).max(10_000).default(40),
-    LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
-  })
-  .superRefine((env, ctx) => {
-    if (env.OPENAI_API_KEY !== undefined && env.OPENAI_MODEL === undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["OPENAI_MODEL"],
-        message: "is required when OPENAI_API_KEY is set",
-      });
-    }
-  });
+const EnvShape = z.object({
+  GATEWAY_HOST: z
+    .enum(["127.0.0.1", "::1", "localhost"], { error: "must be a loopback address" })
+    .default("127.0.0.1"),
+  GATEWAY_PORT: z.coerce.number().int().min(1).max(65_535).default(4100),
+  GATEWAY_SERVICE_SECRET: z
+    .string({ error: "is required" })
+    .refine((value) => Buffer.byteLength(value, "utf8") >= 32, {
+      message: "must be at least 32 bytes",
+    }),
+  OPENAI_API_KEY: z.preprocess(blankAsUnset, z.string().trim().min(1).optional()),
+  OPENAI_MODEL: z.preprocess(blankAsUnset, z.string().trim().min(1).max(100).optional()),
+  OPENAI_REASONING_EFFORT: z.preprocess(blankAsUnset, z.enum(REASONING_EFFORTS).optional()),
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(50_000),
+  MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(16_000).default(4_000),
+  GATEWAY_MAX_CALL_MS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
+  GATEWAY_RESPONSE_MARGIN_MS: z.coerce.number().int().min(100).max(10_000).default(1_000),
+  GATEWAY_DAILY_CALL_LIMIT: z.coerce.number().int().min(1).max(10_000).default(40),
+  LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
+});
+
+const EnvSchema = EnvShape.superRefine((env, ctx) => {
+  if (env.OPENAI_API_KEY !== undefined && env.OPENAI_MODEL === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["OPENAI_MODEL"],
+      message: "is required when OPENAI_API_KEY is set",
+    });
+  }
+});
+
+/** Derived from the schema so the `.env` allowlist cannot drift from what the config reads. */
+const DOT_ENV_KEYS: readonly string[] = Object.keys(EnvShape.shape);
 
 export interface ProviderConfig {
   apiKey: string;
@@ -111,12 +116,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   };
 }
 
-/** Loads the repository's `.env` if it exists. Variables already set in the environment win. */
-export function loadDotEnv(path: URL): void {
+/**
+ * Loads the repository's `.env` if it exists, copying in only this app's own keys (S1-12): one
+ * shared file must not hand the event API's database and Redis URLs to this process. Variables already set in the environment win.
+ */
+export function loadDotEnv(path: URL, env: NodeJS.ProcessEnv = process.env): void {
+  let content: string;
   try {
-    process.loadEnvFile(path);
+    content = readFileSync(path, "utf8");
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
     throw error;
+  }
+  const parsed = parseEnv(content);
+  for (const key of DOT_ENV_KEYS) {
+    const value = parsed[key];
+    if (value !== undefined && env[key] === undefined) env[key] = value;
   }
 }
