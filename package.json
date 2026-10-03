@@ -18,6 +18,7 @@
     "e2e": "pnpm --filter @event-desk/e2e e2e",
     "smoke:live": "pnpm --filter @event-desk/ai-gateway smoke:live",
     "db:reset": "pnpm --filter @event-desk/event-api db:reset",
+    "feedback:simulate": "pnpm --filter @event-desk/event-api feedback:simulate",
     "arch": "depcruise apps packages --config .dependency-cruiser.cjs",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm arch && pnpm test",
     "infra:up": "docker compose up -d --wait",
