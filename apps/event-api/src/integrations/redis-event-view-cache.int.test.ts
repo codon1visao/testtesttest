@@ -37,6 +37,11 @@ describe("RedisEventViewCache", () => {
     expect(ttl).toBeLessThanOrEqual(30_000);
   });
 
+  it("does not cache when the TTL is zero (a deadline has already passed)", async () => {
+    await expect(cache.store(E101, 0, view, 0)).resolves.toBeUndefined();
+    expect(await redis.exists(eventViewKey(E101, 0))).toBe(0);
+  });
+
   it("invalidates by bumping the version and deleting the old entry", async () => {
     await cache.store(E101, 0, view, 30_000);
     expect(await cache.invalidate(E101)).toBe(1);

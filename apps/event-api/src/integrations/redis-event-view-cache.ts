@@ -21,6 +21,7 @@ export class RedisEventViewCache implements EventViewCache {
   }
 
   async store(eventId: EventId, version: number, view: EventView, ttlMs: number): Promise<void> {
+    if (ttlMs <= 0) return;
     await this.redis.set(eventViewKey(eventId, version), JSON.stringify(view), "PX", ttlMs);
   }
 

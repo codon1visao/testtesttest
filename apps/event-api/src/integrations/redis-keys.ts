@@ -6,6 +6,6 @@ export const BRIEFING_BATCH_KEY_PREFIX = "bull:briefing-batch:";
 export const APPLICATION_KEY_PREFIXES = [EVENT_DESK_KEY_PREFIX, BRIEFING_BATCH_KEY_PREFIX] as const;
 
 export const eventViewVersionKey = (eventId: EventId): string =>
-  `event-desk:cache:event:${eventId}:ver`;
+  `${EVENT_DESK_KEY_PREFIX}cache:event:${eventId}:ver`;
 export const eventViewKey = (eventId: EventId, version: number): string =>
-  `event-desk:cache:event:${eventId}:v${version}`;
+  `${EVENT_DESK_KEY_PREFIX}cache:event:${eventId}:v${version}`;
