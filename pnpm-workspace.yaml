@@ -1,7 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "spikes/*" # temporary: removed once Plan 5 ports these checks into event-api tests
 allowBuilds:
   esbuild: true
+  msgpackr-extract: false # optional native accelerator pulled in by bullmq; msgpackr falls back to pure JS
 minimumReleaseAgeExclude:
   - eslint@10.12.0

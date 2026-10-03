@@ -27,4 +27,8 @@ export default defineConfig(
     files: ["**/*.js", "**/*.config.ts"],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    files: ["spikes/**"],
+    rules: { "no-console": "off", "@typescript-eslint/require-await": "off" },
+  },
 );
