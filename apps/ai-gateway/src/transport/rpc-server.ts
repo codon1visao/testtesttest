@@ -164,6 +164,10 @@ export function createGatewayRpcServer(deps: GatewayRpcServerDeps): RpcServer {
           notSent: body.notSent,
           durationMs: durationMs(),
           errorClass: error instanceof Error ? error.constructor.name : typeof error,
+          // Which evidence rules the candidate broke: section, index and code only (S1, P17).
+          ...(error instanceof GatewayError && error.evidenceIssues !== undefined
+            ? { evidenceIssues: error.evidenceIssues }
+            : {}),
         },
         "briefing failed",
       );

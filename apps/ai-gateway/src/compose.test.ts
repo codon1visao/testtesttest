@@ -185,6 +185,26 @@ describe("AI Gateway over TCP", () => {
     expect(errorOf(await slow).code).toBe("DEADLINE_EXCEEDED");
   });
 
+  it("F4/P17: an evidence rejection logs each issue's section, index and code only", async () => {
+    const output = {
+      ...validSections(),
+      themes: [{ text: "A theme about the meeting point.", sourceIds: ["F05"] }],
+    };
+    const { port, lines } = await start({ kind: "output", output });
+    expect(errorOf(await call(port, request())).code).toBe("OUTPUT_INVALID");
+    const failed = lines.find((line) => line.includes('"msg":"briefing failed"'));
+    expect(failed).toBeDefined();
+    const entry: unknown = JSON.parse(failed ?? "{}");
+    expect(entry).toMatchObject({
+      outcome: "OUTPUT_INVALID",
+      evidenceIssues: [{ section: "themes", index: 0, code: "TOO_FEW_SOURCES" }],
+    });
+    // Metadata only: no item text, no issue message, no source IDs.
+    expect(failed).not.toContain("meeting point");
+    expect(failed).not.toContain("message");
+    expect(failed).not.toContain("F05");
+  });
+
   it("S1-08: logs carry metadata only — no notes, model output or secret", async () => {
     const { port, lines } = await start([
       { kind: "output", output: validSections() },

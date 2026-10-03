@@ -76,6 +76,11 @@ export function createBriefingGenerateV1(deps: BriefingGenerateV1Deps): Briefing
           "The model's briefing does not meet the evidence rules.",
           {
             notSent: false,
+            evidenceIssues: evidence.issues.map(({ section, index, code }) => ({
+              section,
+              index,
+              code,
+            })),
           },
         );
       }

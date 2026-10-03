@@ -88,6 +88,12 @@ async function callGateway(): Promise<unknown> {
 const response = BriefingGenerateV1ResponseSchema.parse(await callGateway());
 if (!response.ok) {
   console.error(`Gateway answered ${response.error.code}: ${response.error.message}`);
+  if (response.error.code === "OUTPUT_INVALID") {
+    // The wire error carries no detail (the RPC contract stays narrow); the Gateway logs it.
+    console.error(
+      'The broken evidence rules (section, index, code) are in the Gateway\'s "briefing failed" log line, field evidenceIssues.',
+    );
+  }
   process.exit(1);
 }
 
