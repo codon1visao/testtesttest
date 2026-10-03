@@ -283,7 +283,7 @@ describe("briefing panel", () => {
     });
   });
 
-  it("F4 step 7: text typed while the automatic select is in flight is never replaced", async () => {
+  it("F4 step 7 / F6-09: text typed while the automatic select is in flight is kept, and the new preview is announced", async () => {
     const first = buildBriefingView();
     const second = buildBriefingView({
       provenance: {
@@ -313,10 +313,39 @@ describe("briefing panel", () => {
         second.provenance.generationId,
       );
     });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(await region.findByText("New briefing ready to review")).toBeTruthy();
     expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
       "Requests for more rest-break time. Late draft.",
     );
+
+    await user.click(region.getByRole("button", { name: "Review new preview" }));
+    await user.click(await screen.findByRole("button", { name: "Discard and review" }));
+    await waitFor(() => {
+      expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
+        "Second preview theme.",
+      );
+    });
+    // Already selected on the server: reviewing it makes no second select.
+    expect(api.selectRequests).toHaveLength(1);
+    expect(region.queryByText("New briefing ready to review")).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toBe("Generated preview — not saved as briefing");
+    });
+  });
+
+  it("F4 step 7: a clean automatic select does not announce the preview it is opening", async () => {
+    api.selectDelayMs = 300;
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(generateButton(region));
+    await waitFor(() => {
+      expect(api.selectRequests).toHaveLength(1);
+    });
+    expect(region.queryByText("New briefing ready to review")).toBeNull();
+    expect(
+      await region.findByRole("heading", { name: "Generated preview — not saved as briefing" }),
+    ).toBeTruthy();
+    expect(region.queryByText("New briefing ready to review")).toBeNull();
   });
 
   it("F7: a result from elsewhere is offered, not opened, and the saved briefing stays in the editor", async () => {
