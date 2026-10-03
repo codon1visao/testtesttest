@@ -43,7 +43,7 @@ class FakeUnitOfWork implements UnitOfWork {
     briefings: {
       loadSlots: () => Promise.resolve({ saved: null, selected: null, incoming: null }),
     },
-    outcomes: { latest: () => Promise.resolve(null), exists: () => Promise.resolve(false) },
+    outcomes: { latest: () => Promise.resolve(null), statusOf: () => Promise.resolve(null) },
   };
   run<T>(_work: (tx: TransactionScope) => Promise<T>): Promise<T> {
     return Promise.reject(new Error("the event read never writes"));

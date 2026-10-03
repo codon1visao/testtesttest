@@ -86,8 +86,8 @@ export type LastOutcome = NonNullable<GenerationStatusView["lastOutcome"]>;
 
 export interface OutcomeReadRepository {
   latest(eventId: EventId): Promise<LastOutcome | null>;
-  /** Whether the run already has an outcome row (it finished). */
-  exists(runId: RunId): Promise<boolean>;
+  /** The run's recorded outcome status, or null while it has none (it has not finished). */
+  statusOf(runId: RunId): Promise<RunOutcomeStatus | null>;
 }
 
 export type RunOutcomeStatus = (typeof RUN_OUTCOME_STATUSES)[number];

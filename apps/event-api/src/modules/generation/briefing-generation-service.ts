@@ -90,8 +90,6 @@ interface CapturedInput {
   input: BriefingGenerateV1Input;
 }
 
-type CommitStatus = "succeeded" | "superseded" | "superseded_by_manual";
-
 /** A run's identity as the shared steps need it. */
 interface RunRef {
   eventId: EventId;
@@ -213,7 +211,15 @@ export class BriefingGenerationService {
     );
     if (reservation.kind === "limit-reached") return fail("DAILY_LIMIT_REACHED");
 
-    await command.beforeDispatch();
+    try {
+      await command.beforeDispatch();
+    } catch (error) {
+      // Nothing was sent: give the attempt back before the caller sees the failure.
+      if (reservation.kind === "reserved") {
+        await this.deps.limits.releaseAttempt(command.eventId, "feedback_batch", reservation.day);
+      }
+      throw error;
+    }
     const call = await this.dispatch({
       runId: command.runId,
       attemptId: String(command.attempt),
@@ -240,7 +246,7 @@ export class BriefingGenerationService {
     }
     const sections = this.validate(call.result, captured.feedbackIds);
     if (sections === null) return fail("OUTPUT_INVALID");
-    let status: CommitStatus;
+    let status: RunOutcomeStatus;
     try {
       status = (await this.commit(run, captured, call.result, sections)).status;
     } catch (error) {
@@ -280,7 +286,9 @@ export class BriefingGenerationService {
 
   /** Whether the run already finished (has an outcome row). */
   hasOutcome(runId: RunId): Promise<boolean> {
-    return this.deps.uow.readSnapshot((scope) => scope.outcomes.exists(runId));
+    return this.deps.uow.readSnapshot(
+      async (scope) => (await scope.outcomes.statusOf(runId)) !== null,
+    );
   }
 
   /** Exactly one Gateway attempt (the client never throws for a Gateway failure). */
@@ -379,20 +387,24 @@ export class BriefingGenerationService {
 
   /**
    * TX5: lock, apply the F7 incoming-slot rules, insert, record the outcome; publish after commit.
-   * A run commits at most once (T4-05): a repeated runId writes nothing and reports `succeeded`.
+   * A run commits at most once (T4-05): under the lock, a run that already has an outcome (or,
+   * once its outcome was pruned, a generation) writes nothing and reports what it recorded then.
    */
   private commit(
     run: RunRef,
     captured: CapturedInput,
     result: BriefingGenerateV1Result,
     sections: EvidenceSections,
-  ): Promise<{ status: CommitStatus; views: BriefingViews }> {
+  ): Promise<{ status: RunOutcomeStatus; views: BriefingViews }> {
     const { eventId, runId, trigger } = run;
     return this.deps.uow.run(async (tx) => {
       const aggregate = await tx.events.lockForUpdate(eventId);
       const now = this.deps.clock.now();
-      let status: CommitStatus = "succeeded";
-      if ((await tx.generations.findIdByRunId(runId)) === null) {
+      const recorded =
+        (await tx.outcomes.statusOf(runId)) ??
+        ((await tx.generations.findIdByRunId(runId)) === null ? null : "succeeded");
+      let status: RunOutcomeStatus = recorded ?? "succeeded";
+      if (recorded === null) {
         const current = await tx.slots.incoming(eventId);
         const decision = decideIncoming(current, {
           trigger,
@@ -429,7 +441,7 @@ export class BriefingGenerationService {
           status = decision.outcome;
           await tx.outcomes.record({
             ...outcome,
-            status,
+            status: decision.outcome,
             errorCode: null,
             generationId: null,
           });

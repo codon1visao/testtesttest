@@ -1,10 +1,22 @@
-import { type EventId, GenerationStatusViewSchema, type RunId } from "@event-desk/contracts";
+import {
+  type EventId,
+  GenerationStatusViewSchema,
+  RUN_OUTCOME_STATUSES,
+  type RunId,
+} from "@event-desk/contracts";
+import { z } from "zod";
 import type { EntityManager } from "typeorm";
 import { GenerationOutcomeEntity } from "../persistence/entities/generation-outcome.entity.js";
-import type { LastOutcome, NewOutcome, OutcomeWriteRepository } from "../ports/unit-of-work.js";
+import type {
+  LastOutcome,
+  NewOutcome,
+  OutcomeWriteRepository,
+  RunOutcomeStatus,
+} from "../ports/unit-of-work.js";
 import { parseStoredRow, toIsoTimestamp } from "./row-parsing.js";
 
 const LastOutcomeSchema = GenerationStatusViewSchema.shape.lastOutcome.unwrap();
+const RunOutcomeStatusSchema = z.enum(RUN_OUTCOME_STATUSES);
 
 export class TypeOrmOutcomeRepository implements OutcomeWriteRepository {
   constructor(private readonly manager: EntityManager) {}
@@ -28,8 +40,14 @@ export class TypeOrmOutcomeRepository implements OutcomeWriteRepository {
     );
   }
 
-  async exists(runId: RunId): Promise<boolean> {
-    return (await this.manager.count(GenerationOutcomeEntity, { where: { runId } })) > 0;
+  async statusOf(runId: RunId): Promise<RunOutcomeStatus | null> {
+    const row = await this.manager.findOne(GenerationOutcomeEntity, {
+      where: { runId },
+      select: { runId: true, status: true },
+    });
+    return row === null
+      ? null
+      : parseStoredRow(RunOutcomeStatusSchema, row.status, "generation_outcomes");
   }
 
   async record(outcome: NewOutcome): Promise<void> {

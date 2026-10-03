@@ -526,6 +526,58 @@ describe("generateBatch (T5 §1, F7)", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("T4-05: a repeated batch runId commits at most once and reports the stored outcome", async () => {
+    await insertGenerationFixture(dataSource); // manual, unreviewed in the incoming slot
+    await putPreviewSlot(dataSource, "incoming", GENERATION_FIXTURE_ID);
+    await insertSubmittedNote(dataSource, { id: "F09", text: "New note." });
+    const { service } = setup(() => Promise.resolve(result()));
+    expect(await service.generateBatch(batch("batch_repeat", 1).command)).toEqual({
+      kind: "finished",
+      status: "superseded_by_manual",
+    });
+    // The coordinator reviews the manual preview: the incoming slot is now empty.
+    await dataSource.query("UPDATE preview_slots SET slot = 'selected'");
+    expect(await service.generateBatch(batch("batch_repeat", 2).command)).toEqual({
+      kind: "finished",
+      status: "superseded_by_manual",
+    });
+    expect(await count("briefing_generations")).toBe(1);
+    expect(await rows("SELECT slot FROM preview_slots")).toEqual([{ slot: "selected" }]);
+  });
+
+  it("releases the reservation and rethrows when the dispatch marker cannot be persisted", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const limits = new FakeGenerationLimits();
+    const { service, calls } = setup(() => Promise.resolve(result()), { limits });
+    const markerDown = new Error("redis down");
+    const { command } = batch();
+    await expect(
+      service.generateBatch({ ...command, beforeDispatch: () => Promise.reject(markerDown) }),
+    ).rejects.toBe(markerDown);
+    expect(calls).toHaveLength(0);
+    expect(limits.used).toEqual({ total: 0, batch: 0 });
+    expect(await count("generation_outcomes")).toBe(0);
+  });
+
+  it("F4-09: a batch commit failure is recorded as RESULT_PERSIST_FAILED and stores nothing", async () => {
+    await insertSubmittedNote(dataSource, { id: "F09", text: "x" });
+    const sameItemId: IdGenerator = {
+      ...uuidV7IdGenerator,
+      itemId: () => "0199a4e8-7c1a-7cc2-9d6e-000000000001",
+    };
+    const { service } = setup(() => Promise.resolve(result()), { ids: sameItemId });
+    expect(await service.generateBatch(batch().command)).toEqual({
+      kind: "finished",
+      status: "failed",
+    });
+    expect(await outcome("batch_run-1")).toMatchObject({
+      status: "failed",
+      error_code: "RESULT_PERSIST_FAILED",
+      trigger_type: "feedback_batch",
+    });
+    expect(await count("briefing_generations")).toBe(0);
+  });
+
   it("records superseded and failed outcomes for the processor, and reports whether a run finished", async () => {
     const { service } = setup(() => Promise.resolve(result()));
     expect(await service.hasOutcome(RunIdSchema.parse("batch_x"))).toBe(false);
