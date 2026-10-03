@@ -33,6 +33,12 @@ describe("business identifiers", () => {
     );
   });
 
+  it("rejects uppercase generation IDs, which can never match the ascii_bin column", () => {
+    expect(GenerationIdSchema.safeParse("0199A4E8-7C1A-7CC2-9D6E-2F3B4C5D6E7F").success).toBe(
+      false,
+    );
+  });
+
   it("accepts manual run IDs and BullMQ job IDs, up to 64 safe characters", () => {
     expect(RunIdSchema.safeParse("manual:0199a4e8-7c1a-7cc2-9d6e-2f3b4c5d6e7f").success).toBe(true);
     expect(RunIdSchema.safeParse("42").success).toBe(true);

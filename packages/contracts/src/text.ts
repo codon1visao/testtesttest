@@ -9,10 +9,12 @@ export function textLength(value: string): number {
  * Text that is non-blank after trimming and fits `max` characters as stored.
  * Trimming is for validation only: the parsed value is the original string, and the
  * maximum applies to that stored form so the database never rejects what we accepted.
+ * Lone UTF-16 surrogates are rejected: encoders would silently replace them with U+FFFD.
  */
 export function boundedText(max: number) {
   return z
     .string()
+    .refine((value) => value.isWellFormed(), { message: "Must be valid Unicode text" })
     .refine((value) => value.trim().length > 0, { message: "Must not be blank" })
     .refine((value) => textLength(value) <= max, { message: `Must be at most ${max} characters` });
 }

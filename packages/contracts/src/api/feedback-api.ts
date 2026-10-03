@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FeedbackNoteSchema, FeedbackTextSchema } from "../feedback.js";
 
 export const SubmitFeedbackRequestSchema = z.strictObject({
-  submissionId: z.uuid(),
+  submissionId: z.uuid().regex(/^[0-9a-f-]{36}$/, "Expected a lowercase UUID"),
   text: FeedbackTextSchema,
 });
 export type SubmitFeedbackRequest = z.infer<typeof SubmitFeedbackRequestSchema>;

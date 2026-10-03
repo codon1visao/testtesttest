@@ -19,7 +19,11 @@ export const FeedbackIdSchema = z
   .brand<"FeedbackId">();
 export type FeedbackId = z.infer<typeof FeedbackIdSchema>;
 
-export const GenerationIdSchema = z.uuid({ version: "v7" }).brand<"GenerationId">();
+// Lowercase only: the column is ascii_bin, so an uppercase UUID could never match its row.
+export const GenerationIdSchema = z
+  .uuid({ version: "v7" })
+  .regex(/^[0-9a-f-]{36}$/, "Expected a lowercase UUID")
+  .brand<"GenerationId">();
 export type GenerationId = z.infer<typeof GenerationIdSchema>;
 
 /** A manual run ID (`manual:<uuid>`) or a BullMQ batch job ID. */
