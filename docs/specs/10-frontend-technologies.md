@@ -2,7 +2,7 @@
 
 [All specifications](README.md)
 
-Status: **Technology choices confirmed by the user on 2026-10-02.** This records the selected stack and conventions; application implementation has not started.
+Status: **Confirmed by the user on 2026-10-02; React Router and Server-Sent Events added 2026-10-03.** This records the selected stack and conventions; application implementation has not started.
 
 ## Selected stack
 
@@ -10,7 +10,9 @@ Status: **Technology choices confirmed by the user on 2026-10-02.** This records
 | --- | --- |
 | Foundation | React, TypeScript and Vite; prefer the latest stable, compatible React release |
 | Package management | pnpm |
-| Location | Root `frontend/` directory; the backend monorepo lives separately in root `backend/` |
+| Routing | React Router v7 in declarative mode (confirmed 2026-10-03): `/` → `/events/E101`, coordinator page `/events/:eventId`, test feedback form `/events/:eventId/feedback`, not-found route. Data loading stays in React Query. |
+| Live updates | Server-Sent Events via the browser's `EventSource` (confirmed 2026-10-03): `changed` messages invalidate the event query; polling fallback |
+| Location | `apps/web` in the root pnpm workspace; shared contracts from `packages/contracts` ([T3](12-architecture-and-repository.md)) |
 | HTTP requests | Axios |
 | Server data and mutations | TanStack Query (React Query) |
 | UI and styling | [Astryx](https://astryx.atmeta.com/) |
@@ -36,6 +38,6 @@ The official [React versions page](https://react.dev/versions) lists 19.3 as the
 
 Every mutation action shows one success or error toast, including attendance saves, generation requests/retries, preview selection and briefing saves/replacement. Use a shared policy and [Astryx toast facilities](https://astryx.atmeta.com/components/LayerProvider); avoid duplicate notifications from both the HTTP client and mutation handlers. Keep actionable validation/conflict errors visible beside the relevant form as well.
 
-For queued generation, a `202` success toast means **Generation request accepted**, not that a briefing has been generated or saved. Announce eventual job completion/failure separately, once per outcome. Repeated polling responses must not repeat toasts or overwrite drafts. Generation retries remain owned by the backend queue; do not automatically replay mutation requests from the frontend.
+Generate is synchronous: its success toast says **Briefing generated** (a preview, not a saved briefing). Automatic batch results from new feedback are announced separately, once per outcome. The feedback form's submit shows **Feedback submitted**. Live changes arrive through the SSE change stream, which invalidates the event query; it never resets dirty forms. Repeated polling responses must not repeat toasts or overwrite drafts. Generation retries remain owned by the backend queue; do not automatically replay mutation requests from the frontend.
 
 Backend choices and shared conventions are recorded in [T2](11-backend-technologies.md). No dependencies have been installed; additional production dependencies require confirmation under the repository working agreements.

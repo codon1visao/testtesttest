@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Frontend technologies](10-frontend-technologies.md)
 
-Status: **User-selected technologies and repository conventions, confirmed on 2026-10-02.** Queue and TCP library recommendations remain open. Application implementation has not started.
+Status: **Confirmed by the user on 2026-10-02; updated 2026-10-03** (MySQL/TypeORM, root `apps/` + `packages/` workspace, BullMQ, native `net` TCP, T4 schema). Application implementation has not started.
 
 ## Selected stack
 
@@ -10,28 +10,31 @@ Status: **User-selected technologies and repository conventions, confirmed on 20
 | --- | --- |
 | Runtime | Node.js and TypeScript |
 | HTTP framework | Express |
-| Database access | MongoDB through Mongoose, behind the repository layer |
-| API response caching | Redis |
+| Database access | MySQL 8.4 through TypeORM (`mysql2` driver, `EntitySchema` definitions), behind the repository layer |
+| API response caching | Redis: the single event read, flushed after every write |
+| Batch queue | BullMQ on the same Redis (`noeviction`, AOF); confirmed 2026-10-03 |
+| Live updates | Server-Sent Events from Express (`GET /api/events/:id/changes`); no extra dependency |
 | Validation | Zod |
 | AI | OpenAI Agents SDK, used exclusively inside the internal AI Gateway |
-| Internal communication | TCP; concrete transport library remains open |
+| Internal communication | TCP via Node's native `net` with the shared `packages/tcp-rpc` length-prefixed framing |
 | Package management | pnpm for both frontend and backend |
-| Backend organisation | pnpm monorepo inside the root `backend/` directory |
+| Repository organisation | One root pnpm workspace: `apps/web`, `apps/event-api`, `apps/ai-gateway`, `packages/contracts`, `packages/tcp-rpc` |
+| Local infrastructure | Docker Compose runs MySQL and Redis only; apps run locally with `pnpm dev` |
 | Architecture | Layered, including a repository layer |
 | Naming | Kebab-case folders and filenames |
 
-Use [Mongoose](https://mongoosejs.com/docs/) for database schemas/models and persistence. Zod owns API/TCP boundary contracts; shared types and rules should be reused rather than independently rewritten in each layer. Mongoose models stay behind repositories and do not become frontend contracts.
+Use [TypeORM](https://typeorm.io/) for entities, migrations and transactions. Define entities with `EntitySchema` rather than decorators, because `tsx` and Vitest compile with esbuild, which does not emit decorator metadata. Keep `synchronize` disabled and use versioned migrations. Zod owns API/TCP boundary contracts and validates loaded rows/JSON columns; shared types and rules are reused rather than rewritten in each layer. TypeORM entities stay behind repositories and do not become frontend contracts.
 
 ## Shared clean-code conventions
 
 For both frontend and backend: use clear names, focused functions/components, explicit error handling and readable types. Keep responsibilities in their intended layers. Reuse existing functions, APIs, DTOs, schemas and hooks; avoid duplicate logic and abstractions without a current use. Kebab-case applies to folders/files; normal TypeScript and React identifier conventions still apply. Multiple related frontend components may share a file.
 
-For the backend, the normal path is **routes/controllers → services → repositories → Mongoose/MongoDB**. Controllers handle transport concerns, services implement business rules, and repositories own database access. Queue handlers reuse services. AI execution and provider credentials remain exclusively in the separate Gateway under [F8](09-ai-gateway.md).
+For the backend, the normal path is **routes/controllers → services → repositories → TypeORM/MySQL**. Controllers handle transport concerns, services implement business rules, and repositories own database access. Queue handlers reuse services. AI execution and provider credentials remain exclusively in the separate Gateway under [F8](09-ai-gateway.md).
 
-Redis caches eligible API read responses with expiry and invalidation after relevant changes. MongoDB remains authoritative: cached data must not decide save conflicts, generation inputs or freshness. Cache handling must preserve accurate attendance, current job status and preview availability; volatile state must be read live unless a correct invalidation policy is established.
+Redis caches the `GET /api/events/:eventId` response. Every committed write and queue-state change flushes it by bumping a version counter and deleting the old key, so a read racing with a write cannot repopulate stale data; TTL is capped at the next time-driven state change. If a flush fails, reads bypass the cache until a flush succeeds. MySQL remains authoritative: cached data never decides save conflicts, generation inputs or freshness. Details: [T3 §7](12-architecture-and-repository.md#7-response-cache-a4).
 
 ## Remaining implementation choices
 
-BullMQ for queue execution, ioredis for Redis access and Node's native TCP transport are recommendations, not confirmed selections. Redis caching does not implicitly select Redis queue storage. The [fixed-window and FIFO requirements](07-generation-queue.md) apply to whichever queue is selected. Exact versions, document layout, indexes, cache policy and package linking remain to be specified.
+BullMQ for batch execution is confirmed (D7, 2026-10-03), with a behaviour spike as the first build step ([T5 §6](14-generation-queue-implementation.md#6-spike-first-build-step)). ioredis for Redis access and Node's native `net` TCP transport are confirmed (T3). A database-backed queue was rejected. The [fixed-window and FIFO requirements](07-generation-queue.md) apply unchanged. Exact versions and the final table/index list remain to be fixed during implementation.
 
 No application packages have been created or dependencies installed. Additional production dependencies require confirmation under the repository working agreements.

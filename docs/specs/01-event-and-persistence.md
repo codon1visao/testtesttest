@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Draft for discussion.** Seed values and durability requirements come from the brief. MongoDB through Mongoose is confirmed; document layout, atomic-write mechanics and API shape remain proposed.
+Status: **Confirmed by the user on 2026-10-03.** Seed values and durability requirements come from the brief. Persistence uses MySQL through TypeORM, with the tables, relations and transactions defined in [T4](13-data-model-and-transactions.md).
 
 ## Outcome and scope
 
@@ -28,7 +28,7 @@ This feature owns initialisation, event loading, durable writes and reset docume
 | `M03` | Chris | `not_recorded` | Not recorded |
 | `M04` | Drew | `absent` | Absent |
 
-Initial counts are 4 registered, 1 attended, 2 absent and 1 not recorded. Seed the eight exact feedback notes defined in [F3](03-feedback-and-sources.md#supplied-sources). Initially there is no saved briefing or generated preview. If the optional counter mechanism is chosen, initialise its counters to 0.
+Initial counts are 4 registered, 1 attended, 2 absent and 1 not recorded. Seed the eight exact feedback notes defined in [F3](03-feedback-and-sources.md#supplied-sources). Initially there is no saved briefing or generated preview. Initialise `attendanceRevision` and `briefingRevision` to 0.
 
 ## Required behaviour
 
@@ -42,20 +42,22 @@ Initial counts are 4 registered, 1 attended, 2 absent and 1 not recorded. Seed t
 
 ## API and loading flow
 
-`GET /api/events/E101` returns event, members, feedback, derived counts, optional counters, saved briefing, selected generated preview, incoming preview and generation job status under [F7](07-generation-queue.md). Each briefing includes backend-computed freshness. Return `null` for missing briefings rather than fabricated content. Persist job/input/result state consistently with event data so recovery cannot lose pending work or the selected editor base.
+`GET /api/events/E101` returns event, members, feedback, derived counts, revision counters, saved briefing, selected generated preview, incoming preview and generation job status under [F7](07-generation-queue.md). Each briefing includes backend-computed freshness. Return `null` for missing briefings rather than fabricated content. Persist job/input/result state consistently with event data so recovery cannot lose pending work or the selected editor base. The response is served through the Redis event-view cache, which every write flushes ([T3 §7](12-architecture-and-repository.md#7-response-cache-a4)); the cache never replaces MySQL as the source of truth.
 
 On initial load, show a loading state without presenting empty or zero attendance as fact. On success, populate all panels from the response. On failure, show an understandable error and Retry. After a later refresh failure, an already displayed snapshot may remain visible with a warning that it could not be refreshed.
 
 Unknown event IDs return `404`. There is no event creation, member editing or feedback write endpoint.
 
-## Proposed persistence and reset
+## Persistence and reset
 
-Use MongoDB through Mongoose repositories under [T2](11-backend-technologies.md). Validate writes and enforce conflict checks in the same atomic update as the changed state; use a transaction when an operation must span documents. Preserve the all-or-nothing contract when choosing the document layout and deployment configuration. Do not overwrite unrelated fields from an outdated whole-event snapshot. A database connection/read failure is not an empty database and must never trigger reseeding.
+Use MySQL through TypeORM repositories under [T2](11-backend-technologies.md); tables, relations and transaction boundaries are in [T4](13-data-model-and-transactions.md). Run every write as one InnoDB transaction that first locks the event row (`SELECT … FOR UPDATE`), checks the relevant revision and then applies only the changed rows; never rewrite unrelated data from an outdated whole-event snapshot. Schema changes are versioned migrations (`synchronize` disabled). Validate loaded rows and JSON columns with the shared Zod schemas. A database connection/read failure is not an empty database and must never trigger reseeding.
+
+Structural invalidity (unparseable rows/JSON, unknown enum values, missing event) fails clearly as `STORE_CORRUPT`. A stored briefing reference that no longer matches a feedback note is reported per item and blocks Save under [F3](03-feedback-and-sources.md) and [F5](05-briefing-editor.md); it does not prevent the event from loading.
 
 The explicit reset is a local developer operation, not a button or public HTTP endpoint:
 
 1. Stop the event backend/worker and AI Gateway so no application save or returned generation can race with reset. Cancelling an already submitted provider request does not guarantee it was not processed.
-2. Run a dedicated reset command against the documented application database/collections and associated cache/queue namespaces; state clearly that it removes saved attendance, briefings, selected/incoming previews, jobs and retained generation snapshots. Never reset unrelated MongoDB databases or flush a shared Redis instance.
+2. Run the dedicated reset command against the documented application MySQL database and the application's Redis key prefixes (queue and cache); state clearly that it removes saved attendance, briefings, selected/incoming previews, jobs and retained generation snapshots. Never drop unrelated databases or run `FLUSHALL`. The command refuses to run while the event API health check answers.
 3. Start the Gateway and event backend, then verify that the supplied seed is restored with no old job/result carried over.
 
 The implementation must document the actual command, target database/collections and application cache/queue namespaces before delivery, without exposing connection secrets. Do not advertise a command that does not exist yet. Normal startup and setup commands must not delete saved work. Any backup before reset is an operator choice; no backup subsystem is required.
@@ -75,4 +77,4 @@ The implementation must document the actual command, target database/collections
 
 ## Discussion
 
-[D3 in the index](README.md#decisions-to-resolve-together) confirms MongoDB through Mongoose. The document layout and write/transaction strategy must satisfy the same durability, conflict and reset requirements. Redis response caching does not replace durable storage.
+[D3 in the index](README.md#decisions) confirms MySQL through TypeORM (2026-10-03). The table layout and transaction strategy must satisfy the same durability, conflict and reset requirements; InnoDB's default `innodb_flush_log_at_trx_commit=1` provides durable commits. Redis response caching does not replace durable storage.

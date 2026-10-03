@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Draft for discussion.** Text-only editing and saving a separate preview to replace the saved briefing are confirmed (D1/D2, 2026-10-02). The detailed controls and API mechanics remain proposed.
+Status: **Confirmed by the user on 2026-10-03.** Text-only editing, explicit save, and saving a separate preview to replace the saved briefing (D1/D2).
 
 ## Outcome and scope
 
@@ -19,7 +19,7 @@ Contribution to the [client goal](README.md#product-goal-solve-the-client-situat
 5. Select **Save briefing**. When editing a preview while a saved briefing exists, label the action **Save and replace briefing** so its effect is explicit.
 6. On success, display the persisted response as the new saved baseline. On failure, retain the complete local text draft and show retryable feedback.
 
-Proposed controls are labelled text areas for the overview and existing item text, with adjacent read-only source disclosure controls. Section labels and item positions remain fixed. No source checkboxes, item Add/Remove actions, drag reordering or rich-text document structure controls are provided.
+Controls are labelled text areas for the overview and existing item text, with adjacent read-only source disclosure controls. Section labels and item positions remain fixed. No source checkboxes, item Add/Remove actions, drag reordering or rich-text document structure controls are provided.
 
 Background generation may continue while this editor is open. A ready result only shows a notice. The selected preview remains stored and addressable by its generation ID, so automatic completion cannot invalidate the references/provenance needed to save typed text. The separate incoming slot and selection contract are defined in [F7](07-generation-queue.md#preview-ownership-and-the-editor).
 
@@ -92,4 +92,4 @@ A lost save response may mean the write succeeded. Re-fetch and compare the cont
 
 ## Dependencies and discussion
 
-Depends on [F3](03-feedback-and-sources.md), [F4](04-ai-briefing-generation.md) and [F6](06-freshness-and-regeneration.md). [D2](README.md#decisions-to-resolve-together) confirms text-only editing. The read-only reference associations preserve the generated source links while the coordinator reviews and revises wording.
+Depends on [F3](03-feedback-and-sources.md), [F4](04-ai-briefing-generation.md) and [F6](06-freshness-and-regeneration.md). [D2](README.md#decisions) confirms text-only editing. The read-only reference associations preserve the generated source links while the coordinator reviews and revises wording.

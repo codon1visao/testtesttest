@@ -1,135 +1,137 @@
-# F7 — Queued briefing generation
+# F7 — Automatic briefing generation from feedback batches
 
-[All specifications](README.md) · [Generation content rules](04-ai-briefing-generation.md) · [OpenAI security](08-openai-security.md) · [AI Gateway](09-ai-gateway.md)
+[All specifications](README.md) · [Generation content rules](04-ai-briefing-generation.md) · [OpenAI security](08-openai-security.md) · [AI Gateway](09-ai-gateway.md) · [Queue implementation (T5)](14-generation-queue-implementation.md)
 
-Status: **Ordered generation with a configurable 3-second collection window confirmed by the user on 2026-10-02.** Within each window, only the latest generation request is selected; earlier requests are omitted. The timing, persistence and failure details below specify that behaviour. The original brief does not require a queue or a feedback-ingestion feature. Feedback remains read-only to the coordinator and is treated as untrusted user input. No queue library, broker or production dependency is approved by this document.
+Status: **Confirmed by the user on 2026-10-03.** This replaces the earlier "latest request wins + FIFO winners" design (former D9).
+
+- **Automatic batching.** When new feedback notes arrive for an event, they are batched in a fixed window, and each window produces **one** generation that uses all of the event's notes at that moment.
+- **Manual generation bypasses the queue.** The coordinator's **Generate** does not use the queue. It runs synchronously ([F4](04-ai-briefing-generation.md#generation-flow)) and **takes priority** over automatic work.
+- **Implementation.** BullMQ (confirmed 2026-10-03); details in [T5](14-generation-queue-implementation.md).
 
 ## Outcome and scope
 
-Prepare a briefing in the background while allowing the coordinator to read notes, inspect sources and edit existing briefing text. Both automatic and manual triggers use the same generation logic and safety checks.
+When feedback arrives in bursts (for example, five notes submitted within a few seconds), the coordinator gets one up-to-date automatic briefing candidate instead of five overlapping paid model calls. Automatic work never disturbs the coordinator's own generation, open editor or saved briefing.
 
-Contribution to the [client goal](README.md#product-goal-solve-the-client-situation): make a useful candidate available without losing reviewed work or confusing older feedback with current evidence.
+Contribution to the [client goal](README.md#product-goal-solve-the-client-situation): keep a useful candidate briefing available as feedback comes in, without wasting model calls or confusing older and newer evidence.
 
-## Triggers and the feedback boundary
+## Triggers
 
-| Trigger | Behaviour |
+| Event | Behaviour |
 | --- | --- |
-| Coordinator selects Generate or Regenerate | Join the collection window from saved input, or attach to equivalent existing work; the browser resolves unsaved attendance/text first |
-| A new feedback note has been durably added by an upstream source | Add a generation request to the collection window after persistence; the coordinator does not add the note |
-| Attendance changes | Mark earlier content out of date; do not silently add an automatic attendance-triggered model call |
-| Read notes, open the page or restart the backend | Do not create a new generation merely because data was read or reloaded |
+| A new feedback note is saved ([F3](03-feedback-and-sources.md#adding-feedback-test-extension) form or script) | Join the event's open batch window, or open one. Never generate per note. |
+| The coordinator selects **Generate** or **Retry** | **Not queued.** Synchronous generation under [F4](04-ai-briefing-generation.md#generation-flow), with priority over automatic work (see "Coordinator priority" below) |
+| Attendance is saved | Mark earlier content out of date ([F6](06-freshness-and-regeneration.md)); no automatic generation |
+| Page load, read or backend restart | No generation, except re-scheduling a batch for notes that were saved but never scheduled (see "Durability") |
 
-The supplied build currently has only F01–F08. The automatic trigger is a backend integration boundary for a future/external note arrival; the actual producer and ingestion mechanism are not yet specified or approved. This proposal adds no feedback form, submission endpoint, public webhook or connector. With only seeded notes, manual generation is available and there are no live note-arrival events. Seed the complete supplied set once; do not issue eight model calls while seeding.
+Seeding F01–F08 does not trigger generation.
 
-If an upstream integration is later selected, it must preserve stable note IDs, validate the envelope and persist the note plus pending-generation intent atomically (or reconcile missed intent after restart). An upstream identity is trusted only to submit a note; its note text is still untrusted data. Replayed delivery of the same note must not add a duplicate note or another paid job. Those ingestion details must be specified before claiming the automatic path is implemented.
+## Batching rule
 
-## One queue path
-
-1. Validate the trigger and load the event from backend state. The client does not supply source text, counts, prompts, a model name or an OpenAI URL to the generation endpoint.
-2. In one serialized store operation, durably record the request's order and saved attendance/complete feedback snapshot in the open collection window, replacing its previous candidate. Equivalent requests attach to existing work. A window has one stable job ID, so callers continue following that job when its candidate changes.
-3. Close the window at its fixed deadline and seal its latest candidate. One worker claims closed-window winners in order, records an attempt identifier and uses the winning snapshot. Neither waiting nor starting the worker reloads newer inputs into that job.
-4. Call the internal AI Gateway over TCP using [F8](09-ai-gateway.md). Only the Gateway calls OpenAI. Validate the returned candidate against the saved snapshot using shared schemas and the rules in [F4](04-ai-briefing-generation.md)/[S1](08-openai-security.md).
-5. Atomically commit the validated result and successful job state only if this attempt still owns the job. Reject late results from timed-out or superseded attempts.
-6. Put the result in the incoming-preview slot. It never writes the saved briefing or the preview currently selected for editing.
-7. The UI announces **New briefing ready to review**. The coordinator chooses when to inspect it, select it for text editing and save it.
-
-Automatic work uses saved attendance even if an open browser has unsaved selections. Keep that browser's unsaved marker visible; do not suggest the background result includes its local changes. Manual Generate remains disabled until its local attendance draft is saved or discarded.
-
-## Fixed collection windows and ordering
-
-Here a **generation request** is the notification to prepare a briefing, not a feedback note or the club event E101. **Omit earlier generation requests, never their notes.** The winner contains the complete saved feedback set as of that request, including notes whose individual triggers were omitted. Apply source limits without silently dropping notes.
-
-1. Use a backend setting `BRIEFING_GENERATION_WINDOW_MS`, default **3000 milliseconds**. Require a positive integer; invalid configuration fails startup. Clients, note text and the Gateway cannot override it. A configuration change affects newly opened windows only.
-2. The first accepted request while no window is open starts `[openedAt, closesAt)`, with `closesAt = openedAt + windowMs`. There is no repeating timer while idle. Requests arriving during this interval replace the candidate, **without extending the deadline**. This is a fixed window, not a wait for three quiet seconds.
-3. Order requests by a backend-assigned increasing sequence within the serialized admission operation, not client timestamps, note IDs or socket arrival order. The highest accepted sequence before the cutoff wins. Equal-time arrivals therefore have a deterministic order. This is queue ordering, not attendance revision history.
-4. At the cutoff, seal the winner and append it to the FIFO of ready jobs. No Gateway call starts before the cutoff. A request accepted exactly at or after the cutoff opens the next window; the admission operation closes an expired window first, even if its timer callback is late.
-5. Keep **one running job, one open collection window and a bounded FIFO of closed-window winners**. A slow Gateway call does not extend a window or allow later windows to replace earlier winners. Dispatch winners oldest first; never process a newer winner concurrently or skip a queued winner merely because fresher notes exist.
-6. Freeze each winner's saved attendance/counts and complete feedback ID/text snapshot. Later arrivals enter another window and never mutate a sealed or running job. Retries use that same snapshot. Compute freshness against current saved input when publishing or displaying the result, even if it became stale while waiting.
+1. **Configuration.** `BRIEFING_BATCH_WINDOW_MS`, default **3000**, must be a positive integer; invalid values fail startup. Clients and note text cannot change it.
+2. **Fixed window.** The first saved note while no window is open starts a window `[openedAt, openedAt + windowMs)`. Notes saved inside it add nothing to the queue, and **the cutoff never moves**: this is a fixed window, not "wait for 3 quiet seconds".
+3. **One job per window.** At the cutoff the window's single job becomes ready. A note saved at or after the cutoff opens the next window.
+4. **Data read at execution time.** When the job starts, it reads the event's **complete current feedback set and saved attendance** in one consistent read. Every note saved before that moment is included, even if it arrived after the cutoff while the job was waiting.
+5. **One batch job runs at a time.** If the worker is busy, a newer ready job makes older waiting ones redundant: an older job is skipped as `superseded`, because the newer one reads at least the same data.
+6. **Nothing new, no call.** If the captured input (per-member attendance and the note ID set) equals the input of the most recent generation for the event, whether manual or automatic, the job finishes as `skipped` without calling the AI Gateway.
 
 Example with the default window and an idle worker:
 
-| Backend acceptance time | Request | Result |
+| Time | Event | Result |
 | --- | --- | --- |
-| `0.0s` | A after a note is saved | Open the window ending at `3.0s`; no AI call |
-| `1.0s` | B after another note is saved | Replace A as the candidate; cutoff remains `3.0s` |
-| `2.9s` | C after another note is saved | Replace B; C's input includes all saved notes, including A's and B's |
-| `3.0s` cutoff | Select C | Only C becomes eligible for a Gateway call; A and B cause no calls |
-| `3.0s` or later | D | Open a new 3-second window; its winner waits behind C if C is still running |
+| 0.0 s | F09 saved | Window opens, closing at 3.0 s; job created as delayed |
+| 0.4 s, 1.2 s, 2.0 s, 2.9 s | F10–F13 saved | No new jobs; the cutoff stays at 3.0 s |
+| 3.0 s | Cutoff | One job runs. It reads F01–F13 and saved attendance, then makes one Gateway call. |
+| 3.5 s | F14 saved | A new window opens, closing at 6.5 s. If the 3.0 s job is still running, this one waits. |
 
-The cutoff is an eligibility time, not a guaranteed provider start or completion time. A busy worker, retry cooldown or usage limit can delay dispatch. Only the selected job may use the existing bounded retry policy; omitted requests are never retried. Thus one winner per window does not promise one network attempt if that winner encounters a retryable failure.
+Five notes in one window produce exactly one generation.
 
-Manual and automatic triggers share these rules. A manual request for the same saved inputs as collecting/queued/running work attaches to that job without starting or extending a window. A different saved input updates the open window or opens a new one. Explicit Regenerate after completion starts a new window, subject to limits. Manual action does not bypass the collection delay.
+## Coordinator priority
 
-## Durability and bounded backlog
+A coordinator generation is **never queued behind, blocked by, or overwritten by** automatic work:
 
-- Persist the open window's fixed cutoff, latest candidate/order/snapshot, closed winners in FIFO order and successful results. On restart, resume the remaining window time or close it immediately if expired; do not restart a full 3-second wait or combine it with later arrivals.
-- A running job with uncertain Gateway/provider dispatch becomes `AI_OUTCOME_UNKNOWN` and requires coordinator Retry for that job; only a provably undispatched attempt may retry automatically under the bounded policy. New, separately accepted jobs keep their own order and input.
-- An automatic retry stays with its current job at the head of the queue; it does not create a new generation event or window. Later winners wait until that job succeeds or reaches a terminal state. Completion removes only that job, never the open window or other queued winners.
-- Compare both attendance and feedback inputs for freshness. If either changed, label the result out of date. Never let an older completion displace a newer available result.
-- Bound waiting work. Proposed initial capacity: **10 waiting jobs**, counting the open window plus closed winners and excluding the active job. Updating an existing open window or attaching to equivalent work does not consume another slot. If a new window cannot fit, return a retryable `QUEUE_FULL` (`429` for manual requests); never evict an acknowledged winner.
-- The future upstream integration must handle backpressure durably: persist a note and its generation intent atomically, or retain/retry an unacknowledged trigger for an already persisted note. Queue-full must not delete feedback, acknowledge a dropped trigger or create an unbounded hidden backlog. No such integration is claimed implemented here.
-- Store enough request/attempt identity to reject late completion. This does not promise exactly-once provider execution or billing: a timed-out request may already have reached OpenAI.
+- **Own Gateway lane.** Manual calls use the Gateway's `interactive` lane and batch jobs use the `background` lane, each with concurrency 1. A running batch call never delays a manual call.
+- **Batch waits for manual.** A batch job that becomes ready while a manual generation for the same event is running waits for it to finish, then applies the "nothing new" check. Typically it skips, avoiding a duplicate paid call.
+- **Manual results win in the incoming slot** (rules below).
+- **Reserved budget.** Batch jobs may use at most `GENERATION_BATCH_DAILY_LIMIT` (default 15) of the daily attempt budget (`GENERATION_DAILY_ATTEMPT_LIMIT`, default 20). The rest is reserved for the coordinator.
+- **What still applies.** The shared provider cooldown applies to both paths, because the provider's rate limit is real. A manual request during a cooldown gets a clear `429` with the time to wait.
 
-Keep one worker in the event-backend process. MongoDB through Mongoose is the selected domain store, and Redis is selected for API response caching under [T2](11-backend-technologies.md). BullMQ is a queue recommendation, not a confirmed selection; MongoDB-backed job state remains an alternative. If a Redis queue is chosen, explicitly reconcile the MongoDB-write/queue-enqueue boundary and protect durable queue data from cache eviction. Whichever implementation is selected must preserve the fixed windows, FIFO including retries, recovery and atomic result/state requirements above. The AI Gateway remains a separate process with no second queue or event-store access. Job state is operational data, not attendance history or an audit subsystem.
+### Who may replace the incoming preview
 
-Keep the minimal job metadata: job ID, trigger, collecting/queued/running/succeeded/failed state, window open/cutoff times and configured duration, latest request sequence, winning input snapshot, attempt count/current attempt ID, next-attempt time when waiting, execution deadline and sanitised terminal error/result identity. Retain only collecting/queued/running work and the latest terminal status needed by the page; do not keep omitted requests as runnable jobs or create an audit history. Keep selected/saved generation data independently so job cleanup cannot remove an editor's base.
+| Incoming slot holds | New result | Replace? |
+| --- | --- | --- |
+| Nothing | Any | Yes |
+| Automatic result | Manual result | Yes |
+| Automatic result | Automatic result with data read later | Yes |
+| Manual result | Manual result with data read later | Yes |
+| Manual result not yet reviewed | Automatic result | **No.** Recorded as outcome `superseded_by_manual`; the manual result's freshness shows the newer notes, and the coordinator can Generate again |
+| Any | Result whose data was read earlier than the current one's | No (`superseded`) |
+
+The worker never writes the saved briefing or the selected preview (the editor's base). After a successful manual generation, the UI selects the result automatically if the editor has no unsaved changes. Otherwise it shows **Review new preview** ([F5](05-briefing-editor.md)).
 
 ## Preview ownership and the editor
 
 | Slot | Who may replace it? | Purpose |
 | --- | --- | --- |
 | Saved briefing | Coordinator's explicit Save / Save and replace briefing | Durable human-approved wording |
-| Selected generated preview | Coordinator's explicit Review new preview selection, after resolving local edits | Stable server-owned text structure, sources and provenance for the editor |
-| Incoming preview | Successful worker completion, only with a result newer than its current content | Latest candidate waiting for review; no human edits are stored here |
+| Selected generated preview | Coordinator's explicit selection (manual: automatic when the editor is clean) | Stable server-owned structure, sources and provenance for the editor |
+| Incoming preview | Manual or batch generation, under the rules above | Latest candidate waiting for review; holds no human edits |
 
-This bounded pair of generated previews protects an editor's base while allowing automatic generation. It is not full version history. **Review new preview** changes only the selected preview; **Save and replace briefing** changes the saved briefing. An automatic result must not change editor fields, focus, selected generation or source associations.
+Selecting incoming content requires its exact generation ID and the expected selected-preview ID (or `null`). A changed selection returns `409` rather than silently binding the editor to another generation. If the selected preview has local edits, offer Save, a confirmed Discard, or Cancel before switching.
 
-Selecting incoming content requires its exact generation ID and the expected selected-preview ID (or `null`). Reject a changed selection/result with `409` rather than bind the editor to another generation silently. If the selected preview has local human edits, offer Save, explicitly confirmed Discard, or Cancel before switching. Preserve the server base until that selection succeeds. Another tab's explicit conflicting selection returns a clear conflict on later saves and retains the local text draft.
+## Generation state in the UI
 
-## Proposed API and UI states
+The coordinator sees automatic work as it happens, in the briefing panel. All states are in text, not just colour, and announced through a polite live region:
 
-| Operation | Contract |
+| State | Example text |
 | --- | --- |
-| `POST /api/events/E101/briefing-preview` | Collect/attach to work; return `202` with stable `{ jobId, state }`, not a finished briefing. An optional attendance baseline check may reject an outdated manual request |
-| `GET /api/events/E101` | Include collecting cutoff, active job, bounded queued-job status/order, saved briefing, selected `generatedPreview`, `incomingPreview` and their freshness; reuse this read for bounded polling |
-| `POST /api/events/E101/briefing-preview/select` | `{ generationId, expectedPreviewGenerationId }`; return `200` with selected preview; never save the briefing implicitly |
+| Collecting | "New feedback received (3 notes). Preparing an automatic briefing at 14:02:03." |
+| Waiting | "Automatic briefing queued; waiting for the current generation to finish." |
+| Generating | "Generating automatic briefing…" |
+| Retry wait | "Automatic briefing will retry at 14:02:40 (attempt 2 of 3)." |
+| Ready | "New automatic briefing ready to review." |
+| Skipped | No banner, since there was no new input; the outcome is visible in the status details only |
+| Failed | "Automatic briefing failed: AI service unavailable. Your saved briefing is unchanged." with a **Generate** button |
 
-Poll only while work is collecting/queued/running and stop when no work remains or on leaving the page. Show **Collecting requests**, **Queued**, **Generating**, retry-wait, ready and failed states distinctly. During collection, explain that the latest request will use all saved notes in its snapshot. Superseded triggers remain attached to the stable window job; do not report them as failed. A ready incoming candidate can coexist with later waiting jobs. Do not hold an HTTP request open for the window or model call. Automatic completion is a notification in this page, not email or messaging.
+The manual generation state ("Generating briefing…" on the button and panel) is shown separately, so both can be visible at once.
 
-The existing text-only save endpoint still accepts only the selected preview or saved briefing's generation ID. Saving an incoming candidate requires selecting it first. This prevents an automatic job from invalidating the server-owned references of a preview being edited.
+**How the page learns about changes.** The event page subscribes to `GET /api/events/E101/changes` (Server-Sent Events). The server sends a `changed` message whenever the event view changes: a new note, batch state, result, or save. The client then re-fetches the cached event read. Notes added by the script or another tab therefore appear without a reload. If the stream disconnects, the page falls back to polling every 5 s (every 1 s while a batch is collecting or generating).
 
-## Failures, retry and cost limits
+## Durability
 
-Proposed defaults: one active Gateway generation request, at most three total attempts per job, a 60-second RPC attempt deadline and a five-minute execution/retry deadline starting with the first attempt. Gateway enforces a provider timeout within the supplied deadline and its own limit. These are reviewable operational limits, not brief requirements.
+- **Pending flag.** Saving a note and setting `events.feedback_pending_since` happen in **one** transaction ([T4](13-data-model-and-transactions.md) TX9). The batch job is scheduled after commit.
+  - If scheduling fails, the note is still saved, and the response says the automatic briefing is deferred.
+  - On startup, and whenever a note is saved, the backend re-schedules a batch if the pending flag is set and no batch job exists.
+  - A batch job clears the flag in the same transaction that reads its input.
+- **Restarts.** The window's cutoff and the waiting job survive a restart (Redis with AOF). A restart never starts a full new window for notes already covered.
+- **Crash mid-call.** A batch job interrupted after its Gateway request was sent ends as `AI_OUTCOME_UNKNOWN` and is not replayed automatically. A job interrupted before sending resumes.
+- **Idempotent commit.** A result commit is idempotent per run ID, so a crash after commit cannot produce a second paid call.
 
-Retry known pre-dispatch connection failures, explicit temporary Gateway/provider errors and temporary rate limits with backoff and jitter, following [F8](09-ai-gateway.md#deadlines-retries-and-uncertain-outcomes). Honour the Gateway's validated provider cooldown; if it exceeds the remaining job deadline, fail/defer visibly rather than retry earlier. Configuration/authentication errors, exhausted quota/billing, refusal and invalid/incomplete output do not enter automatic retry loops. A connection loss after submission or uncertain provider timeout becomes `AI_OUTCOME_UNKNOWN` and requires coordinator Retry for that failed job. Explicit Retry after a terminal outcome enters the same collection-window path from current saved inputs, with fresh job/attempt identity and any cooldown preserved; it cannot jump ahead of queued winners. Collection and FIFO waiting do not consume provider attempts or the execution/retry deadline, which starts at the first attempt.
+## Failures, retries and cost limits
 
-Persist the validated provider cooldown as a shared backend not-before time for this queue, taking the later of any existing and newly received deadline. Apply it to every job and preserve it across restart. If the head job reaches a terminal state, the next FIFO winner still waits until the cooldown expires; failing a job or starting a fresh manual request cannot bypass it.
-
-The event queue is the sole retry owner. Disable automatic retries/resends in the Gateway, TCP client and the Gateway's OpenAI SDK so layers cannot multiply attempts. OpenAI documents bounded retries and avoiding nested retry multiplication in its [rate-limit guidance](https://developers.openai.com/api/docs/guides/rate-limits#retrying-with-exponential-backoff).
-
-Queue persistence failure returns an error rather than a successful enqueue. A model/result-save failure keeps the previous saved briefing and both preview slots intact. For a lost enqueue response, look up current job state before requesting another run. Cap pending work and model usage as described in [S1](08-openai-security.md#resource-and-cost-controls).
+- **Retries.** A batch job may retry known pre-dispatch connection failures, explicit temporary Gateway/provider errors and temporary rate limits. It makes at most **3 attempts** within a **5-minute** execution deadline, with exponential backoff, jitter, and the provider cooldown honoured. Because each job reads current data, a retry never processes stale input in a way that matters: a later job would supersede it.
+- **No retry loops.** Configuration/authentication errors, exhausted quota, refusal, and invalid or incomplete output fail the job without retrying.
+- **Uncertain dispatch** (`AI_OUTCOME_UNKNOWN`) is never retried automatically.
+- **Single retry owner.** The queue is the only retry owner for automatic work. Gateway, TCP client and OpenAI SDK retries stay disabled ([F8](09-ai-gateway.md#deadlines-retries-and-uncertain-outcomes)).
+- **Manual generation** never retries automatically. The UI's **Retry** button is simply Generate again ([F4](04-ai-briefing-generation.md#generation-flow)).
+- **Failures preserve work.** A failure never changes the saved briefing, the selected preview or the incoming preview.
 
 ## Acceptance criteria
 
 | ID | Scenario | Expected result |
 | --- | --- | --- |
-| F7-01 | Manual Generate | Durable collecting job acknowledged; fixed window applies; clear progress; winner becomes available for review |
-| F7-02 | Several copies of the same trigger arrive | One equivalent collecting/queued/running job; no extended cutoff or duplicate note/model call from delivery replay |
-| F7-03 | Notes arrive across multiple windows during generation | Running input unchanged; one winner per window waits FIFO; older output cannot appear current and no winner is replaced across windows |
-| F7-04 | Worker finishes while coordinator types in a selected preview | Draft, selected generation and source references remain saveable; new candidate is only announced |
-| F7-05 | Select incoming preview, edit text and save | Selection does not replace saved work; only explicit Save and replace does |
-| F7-06 | Restart during collecting/queued/running work | Original cutoff, winner snapshots and FIFO order recover; expired window closes without another full wait; uncertain dispatched work requires coordinator Retry |
-| F7-07 | OpenAI fails or rejects the request | Correct failed/retry-wait state; retries bounded; saved human content preserved |
-| F7-08 | Unsaved local attendance exists during automatic work | Worker uses saved records; UI keeps unsaved warning; no automatic local save |
-| F7-09 | Only seeded feedback exists | No invented ingestion endpoint; manual generation works; automatic-trigger integration remains explicitly unverified |
-| F7-10 | Candidate already available and generation is retried | Newer result cannot overwrite selected/editor content or saved briefing; only unreviewed incoming slot may change |
-| F7-11 | Gateway unavailable or TCP result lost after submission | Follow bounded/unknown-outcome rules; no direct OpenAI fallback and no automatic replay of uncertain paid work |
-| F7-12 | A at `0s`, B at `1s`, C at `2.9s`, no failures | No call before `3s`; exactly one Gateway call for C when worker is free; all saved notes from A/B/C included |
-| F7-13 | Request accepted exactly at the cutoff, or timer callback is delayed | Previous window closes first; request belongs to the next window; backend sequence breaks equal-time ties |
-| F7-14 | Worker is busy through three completed windows | Their three winners remain queued in order; each keeps its own snapshot; no concurrent dispatch or cross-window replacement |
-| F7-15 | Configure 5 seconds, or change configuration with an open window | New windows use 5 seconds; existing cutoff stays fixed; invalid values rejected; repeated arrivals do not postpone the cutoff |
-| F7-16 | Manual request shares a window with new-note triggers | Stable acknowledged job ID follows the latest candidate; no early manual call, failed superseded status or lost notes |
-| F7-17 | Queue reaches waiting capacity | New window is rejected/deferred visibly; existing-window updates still fit; accepted winners and source notes remain intact |
-| F7-18 | Head job receives a retryable error while newer winners wait | Retry uses the same snapshot/queue position and bounded policy; no new window, revived omitted request or overtaking |
-| F7-19 | Head job fails with an unexpired provider cooldown, then backend restarts | Next winner retains FIFO position and waits for the persisted shared cooldown; no new-job or restart bypass |
+| F7-01 | Five notes saved within 1 second, idle worker | Exactly one batch job and one Gateway call at the cutoff; the result's input includes all five new notes plus F01–F08 |
+| F7-02 | Notes keep arriving at 0.0 s, 1.0 s, 2.9 s | The cutoff stays at 3.0 s; there is no extension |
+| F7-03 | A note arrives at or after the cutoff | It opens a new window; its job runs after the current one |
+| F7-04 | A note arrives after the cutoff but before the job starts (worker busy) | That job includes the note; the next window's job skips as "nothing new" |
+| F7-05 | Worker busy through several windows | Only the newest ready job calls the Gateway; older ready jobs end `superseded` |
+| F7-06 | Coordinator presses Generate while a batch job is running | Manual call starts immediately on the interactive lane; its result is never replaced by that batch result |
+| F7-07 | Batch window closes while a manual generation is running | Batch waits, then skips if the input equals the manual generation's input |
+| F7-08 | Manual result is unreviewed in the incoming slot; a later batch completes with newer notes | Incoming keeps the manual result; batch outcome `superseded_by_manual`; manual result shows "new notes since this briefing" |
+| F7-09 | Restart while a window is collecting | The original cutoff still applies; one job runs |
+| F7-10 | Crash after the note commit, before scheduling | On restart the pending flag re-schedules one batch |
+| F7-11 | Crash during a batch Gateway call | `AI_OUTCOME_UNKNOWN`; no automatic replay; existing content intact |
+| F7-12 | Temporary provider error on a batch job | Bounded retries with backoff and cooldown; saved and selected content untouched |
+| F7-13 | The batch share of the daily budget is used up | Batch jobs fail visibly with `DAILY_LIMIT_REACHED`; manual Generate still works until the full limit |
+| F7-14 | A batch completes while the coordinator is editing | Editor fields, focus, selected generation and references unchanged; "New automatic briefing ready" notice appears |
+| F7-15 | Notes added by the script while the coordinator page is open | The new notes, collecting/generating states and the ready notice appear without a reload |
+| F7-16 | Change `BRIEFING_BATCH_WINDOW_MS` to 5000 or to an invalid value | New windows last 5 s; an invalid value fails startup |

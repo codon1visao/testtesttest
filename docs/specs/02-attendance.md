@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Draft for discussion.** Three-state attendance, application-calculated counts and backend persistence are required. Explicit batch saving and revision checks are proposed.
+Status: **Confirmed by the user on 2026-10-03.** Three-state attendance, application-calculated counts, backend persistence, explicit batch saving and revision-based conflict checks.
 
 ## Outcome and scope
 
@@ -10,7 +10,7 @@ The coordinator updates the four registered members, sees accurate totals and de
 
 Contribution to the [client goal](README.md#product-goal-solve-the-client-situation): establish the reliable factual record behind the briefing's account of what happened, including what remains unrecorded.
 
-“Record attendance” means update and save each member's current attendance status. It does not mean create an attendance revision, history entry or audit record. Revision fields in the proposed API below are an optional internal mechanism, not functionality requested by the brief.
+“Record attendance” means update and save each member's current attendance status. It does not mean create an attendance revision, history entry or audit record. The `attendanceRevision` field below is a confirmed internal concurrency token for conflicting saves, not functionality requested by the brief.
 
 ## Coordinator flow
 
@@ -21,7 +21,7 @@ Contribution to the [client goal](README.md#product-goal-solve-the-client-situat
 5. On success, replace the saved baseline with the response, clear the dirty state and update briefing freshness using [F6](06-freshness-and-regeneration.md).
 6. On failure, retain selections, show the failure and allow a deliberate retry.
 
-Use a labelled native select for each member as the proposed compact interaction. The accessible name includes the member name. Show an explicit **Discard attendance changes** action that restores the last confirmed saved values. Do not autosave or discard another panel's changes as a side effect.
+Use a labelled native select for each member as the compact interaction. The accessible name includes the member name. Show an explicit **Discard attendance changes** action that restores the last confirmed saved values. Do not autosave or discard another panel's changes as a side effect.
 
 If a generated or saved briefing already exists, a successful attendance change marks it out of date. If its editor is open, update the warning and current saved counts in place while preserving every unsaved text edit and fixed reference. Do not replace editor content with a refetched server copy or trigger generation automatically. A failed attendance save keeps the earlier saved baseline; the unsaved-attendance warning remains.
 
@@ -39,7 +39,7 @@ If a generated or saved briefing already exists, a successful attendance change 
 
 ## API contract
 
-The payload below illustrates the optional counter approach. If selected during technical design, `attendanceRevision` advances once per successful save with an actual status change; no-op saves leave it unchanged. Product acceptance depends on saved values and correct out-of-date behaviour, not on the presence or value of this counter.
+`attendanceRevision` advances once per successful save with an actual status change; no-op saves leave it unchanged. It detects conflicting saves only; freshness is computed by comparing each briefing's stored attendance snapshot with current saved statuses ([F6](06-freshness-and-regeneration.md)).
 
 `PUT /api/events/E101/attendance`
 
@@ -90,4 +90,4 @@ A lost response is ambiguous: the backend may already have persisted the save. F
 
 ## Dependencies and discussion
 
-Depends on [F1](01-event-and-persistence.md); triggers [F6](06-freshness-and-regeneration.md). Explicit batch Save is the proposed default because it makes the durable attendance baseline visible before generation. Automatic saving would need a different dirty-state and generation contract.
+Depends on [F1](01-event-and-persistence.md); triggers [F6](06-freshness-and-regeneration.md). Explicit batch Save is the chosen behaviour because it makes the durable attendance baseline visible before generation. Automatic saving would need a different dirty-state and generation contract.
