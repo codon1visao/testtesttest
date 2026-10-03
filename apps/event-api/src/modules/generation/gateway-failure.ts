@@ -66,7 +66,7 @@ export function gatewayFailureError(failure: Extract<BriefingCallResult, { ok: f
     case "AI_OUTCOME_UNKNOWN":
       return new AppError(
         "AI_OUTCOME_UNKNOWN",
-        `The connection to the AI service was lost after the request was sent; the attempt may have been charged. ${UNCHANGED}.`,
+        `The AI service did not confirm the result (the connection was lost or no answer arrived in time); the attempt may have been charged. ${UNCHANGED}.`,
       );
     default:
       return assertNever(failure.code, "gateway error code");

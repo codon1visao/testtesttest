@@ -89,13 +89,14 @@ describe("loadConfig", () => {
       GATEWAY_SERVICE_SECRET,
       GATEWAY_HOST: "::1",
       GATEWAY_PORT: "4200",
-      MANUAL_GENERATION_TIMEOUT_MS: "90000",
+      MANUAL_GENERATION_TIMEOUT_MS: "85000",
     });
     expect(config.gateway).toEqual({ host: "::1", port: 4200, secret: GATEWAY_SERVICE_SECRET });
-    expect(config.manualGenerationTimeoutMs).toBe(90_000);
+    expect(config.manualGenerationTimeoutMs).toBe(85_000);
   });
 
-  it.each(["4999", "300001", "2.5"])("rejects MANUAL_GENERATION_TIMEOUT_MS=%s", (value) => {
+  // The server must always answer before the web app's 90 s request timeout (T5 §2).
+  it.each(["4999", "85001", "90000", "2.5"])("rejects MANUAL_GENERATION_TIMEOUT_MS=%s", (value) => {
     expect(() =>
       loadConfig({ MYSQL_URL, GATEWAY_SERVICE_SECRET, MANUAL_GENERATION_TIMEOUT_MS: value }),
     ).toThrow(/MANUAL_GENERATION_TIMEOUT_MS/);

@@ -43,4 +43,10 @@ describe("gatewayFailureError (T3 §5, F4, F8)", () => {
     expect(fail("DEADLINE_EXCEEDED").message).toMatch(/may have been charged/);
     expect(fail("GATEWAY_UNAVAILABLE", true).message).toMatch(/saved work is unchanged/);
   });
+
+  it("explains an unknown outcome for a lost connection and for no answer in time alike", () => {
+    expect(fail("AI_OUTCOME_UNKNOWN").message).toMatch(/did not confirm the result/);
+    expect(fail("AI_OUTCOME_UNKNOWN").message).toMatch(/connection was lost/);
+    expect(fail("AI_OUTCOME_UNKNOWN").message).toMatch(/no answer arrived in time/);
+  });
 });

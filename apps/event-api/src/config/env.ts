@@ -47,7 +47,8 @@ const EnvSchema = z.object({
     .refine((value) => Buffer.byteLength(value, "utf8") >= 32, {
       message: "must be at least 32 bytes",
     }),
-  MANUAL_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(300_000).default(60_000),
+  /** Capped below the web app's 90 s request timeout so the server always answers first. */
+  MANUAL_GENERATION_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(85_000).default(60_000),
 });
 
 /** Derived from the schema so the `.env` allowlist cannot drift from what the config reads. */
