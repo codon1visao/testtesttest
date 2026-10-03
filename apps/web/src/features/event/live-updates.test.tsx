@@ -1,17 +1,33 @@
 import { FeedbackIdSchema } from "@event-desk/contracts";
 import { FIXTURE_TIME } from "@event-desk/contracts/testing";
 import { screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeEventApi } from "../../testing/fake-event-api";
 import { FakeEventSource } from "../../testing/fake-event-source";
 import { mswServer } from "../../testing/msw-server";
 import { renderApp } from "../../testing/render-app";
 
 let api: FakeEventApi;
+let readsServed: number;
 beforeEach(() => {
   api = new FakeEventApi();
+  readsServed = 0;
   mswServer.use(...api.handlers());
+  mswServer.events.on("response:mocked", ({ request }) => {
+    if (request.method === "GET" && new URL(request.url).pathname === "/api/events/E101")
+      readsServed++;
+  });
 });
+afterEach(() => {
+  mswServer.events.removeAllListeners();
+});
+
+/** Waits until the event read has been served this many times, so a refetch cannot swallow a later change. */
+const settledAfterReads = async (count: number) => {
+  await waitFor(() => {
+    expect(readsServed).toBe(count);
+  });
+};
 
 /** The first read has been served and rendered, so later changes to the fake API are genuinely new. */
 const loadedFeedback = async () => within(await screen.findByRole("region", { name: "Feedback" }));
@@ -32,7 +48,7 @@ describe("live updates (F7-15, F3-10)", () => {
     expect(source.url).toBe("/api/events/E101/changes");
     const panel = await loadedFeedback();
     expect(panel.queryByText("From the script.")).toBeNull();
-    source.open();
+    await settledAfterReads(1);
     api.view = {
       ...api.view,
       feedback: [
@@ -48,7 +64,8 @@ describe("live updates (F7-15, F3-10)", () => {
     renderApp();
     const source = await stream();
     const panel = await loadedFeedback();
-    source.open();
+    source.open(); // refetches once
+    await settledAfterReads(2);
     source.fail();
     api.view = {
       ...api.view,
