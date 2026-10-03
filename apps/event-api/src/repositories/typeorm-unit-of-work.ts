@@ -6,7 +6,9 @@ import type { ReadScope, TransactionScope, UnitOfWork } from "../ports/unit-of-w
 import type { Logger } from "../shared/logger.js";
 import { TypeOrmBriefingReadRepository } from "./briefing-read-repository.js";
 import { TypeOrmEventRepository } from "./event-repository.js";
-import { TypeOrmOutcomeReadRepository } from "./outcome-read-repository.js";
+import { TypeOrmGenerationWriteRepository } from "./generation-write-repository.js";
+import { TypeOrmOutcomeRepository } from "./outcome-repository.js";
+import { TypeOrmPreviewSlotRepository } from "./preview-slot-repository.js";
 import { storeBusy, storeUnavailable, toStoreError } from "./store-errors.js";
 
 type Effect = () => Promise<void>;
@@ -86,7 +88,7 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
     return {
       events: new TypeOrmEventRepository(manager),
       briefings: new TypeOrmBriefingReadRepository(manager),
-      outcomes: new TypeOrmOutcomeReadRepository(manager),
+      outcomes: new TypeOrmOutcomeRepository(manager),
     };
   }
 
@@ -94,7 +96,9 @@ export class TypeOrmUnitOfWork implements UnitOfWork {
     return {
       events: new TypeOrmEventRepository(manager),
       briefings: new TypeOrmBriefingReadRepository(manager),
-      outcomes: new TypeOrmOutcomeReadRepository(manager),
+      generations: new TypeOrmGenerationWriteRepository(manager),
+      slots: new TypeOrmPreviewSlotRepository(manager),
+      outcomes: new TypeOrmOutcomeRepository(manager),
       afterCommit: (effect) => {
         effects.push(effect);
       },

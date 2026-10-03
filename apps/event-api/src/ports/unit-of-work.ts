@@ -1,14 +1,21 @@
 import type {
   AttendanceChange,
   BriefingContent,
+  ErrorCode,
   EventId,
   EventSummary,
+  FeedbackId,
   FeedbackNote,
+  GenerationId,
   GenerationProvenance,
   GenerationStatusView,
   GenerationTrigger,
   Member,
+  MemberAttendance,
+  RUN_OUTCOME_STATUSES,
+  RunId,
 } from "@event-desk/contracts";
+import type { NewItem } from "../modules/generation/domain/generation-items.js";
 
 /** The event row with its roster and notes, as one consistent read. */
 export interface EventAggregate {
@@ -54,6 +61,61 @@ export interface OutcomeReadRepository {
   latest(eventId: EventId): Promise<LastOutcome | null>;
 }
 
+export type RunOutcomeStatus = (typeof RUN_OUTCOME_STATUSES)[number];
+
+export interface NewOutcome {
+  runId: RunId;
+  eventId: EventId;
+  trigger: GenerationTrigger;
+  status: RunOutcomeStatus;
+  /** Required when status is "failed" (T4 ck_outcome_error), otherwise null. */
+  errorCode: ErrorCode | null;
+  generationId: GenerationId | null;
+  finishedAt: Date;
+}
+
+export interface OutcomeWriteRepository extends OutcomeReadRepository {
+  /** Records the run's outcome (a repeated runId is a no-op) and keeps the event's latest 20. */
+  record(outcome: NewOutcome): Promise<void>;
+}
+
+export interface NewGeneration {
+  id: GenerationId;
+  eventId: EventId;
+  runId: RunId;
+  trigger: GenerationTrigger;
+  model: string;
+  promptVersion: string;
+  attendanceOverview: string;
+  feedbackDigest: string;
+  inputCapturedAt: Date;
+  generatedAt: Date;
+  attendance: readonly MemberAttendance[];
+  feedbackIds: readonly FeedbackId[];
+  items: readonly NewItem[];
+}
+
+export interface GenerationWriteRepository {
+  /** Inserts the immutable generation with its inputs, items and sources (T4 §2). */
+  insert(generation: NewGeneration): Promise<void>;
+  /** The generation a run already committed, if any: a run commits at most once (T4-05). */
+  findIdByRunId(runId: RunId): Promise<GenerationId | null>;
+  /** Deletes it with its children unless a slot or the saved briefing still references it (T4 §5). */
+  deleteIfUnreferenced(eventId: EventId, generationId: GenerationId): Promise<boolean>;
+}
+
+export interface IncomingSlot {
+  generationId: GenerationId;
+  trigger: GenerationTrigger;
+  inputCapturedAt: Date;
+}
+
+export interface PreviewSlotRepository {
+  incoming(eventId: EventId): Promise<IncomingSlot | null>;
+  /** Upserts preview_slots('incoming'). */
+  putIncoming(eventId: EventId, generationId: GenerationId, now: Date): Promise<void>;
+}
+
 export interface ReadScope {
   events: EventReadRepository;
   briefings: BriefingReadRepository;
@@ -67,6 +129,10 @@ export interface TransactionScope extends ReadScope {
    * before the lock was granted.
    */
   events: EventWriteRepository;
+  generations: GenerationWriteRepository;
+  slots: PreviewSlotRepository;
+  /** Narrows ReadScope.outcomes: a transaction may also record outcomes (TX5/TX6). */
+  outcomes: OutcomeWriteRepository;
   /** Runs only after COMMIT succeeds (cache flush, change notification). */
   afterCommit(effect: () => Promise<void>): void;
 }

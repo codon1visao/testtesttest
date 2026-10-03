@@ -95,7 +95,7 @@ describe("TypeOrmBriefingReadRepository", () => {
   });
 });
 
-describe("TypeOrmOutcomeReadRepository", () => {
+describe("TypeOrmOutcomeRepository", () => {
   it("returns the most recent outcome, with its code when it failed", async () => {
     expect(await uow.readSnapshot((scope) => scope.outcomes.latest(E101))).toBeNull();
     await insertOutcome(dataSource, {
