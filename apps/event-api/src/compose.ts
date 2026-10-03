@@ -5,6 +5,8 @@ import { createRedisClient, settleInitialConnection } from "./integrations/redis
 import { RedisEventViewCache } from "./integrations/redis-event-view-cache.js";
 import { RedisHealthProbe } from "./integrations/redis-health-probe.js";
 import { systemClock } from "./integrations/system-clock.js";
+import { TcpAiGatewayClient } from "./integrations/tcp-ai-gateway-client.js";
+import { uuidV7IdGenerator } from "./integrations/uuid-v7-id-generator.js";
 import { attendanceRoutes } from "./modules/attendance/attendance-controller.js";
 import { AttendanceService } from "./modules/attendance/attendance-service.js";
 import { CacheBypass } from "./modules/changes/cache-bypass.js";
@@ -12,12 +14,15 @@ import { EventChangePublisher } from "./modules/changes/event-change-publisher.j
 import { InProcessChangeNotifier } from "./modules/changes/in-process-change-notifier.js";
 import { eventRoutes } from "./modules/event/event-controller.js";
 import { EventViewService } from "./modules/event/event-view-service.js";
-import { noGenerationActivity } from "./modules/event/no-generation-activity.js";
+import { BriefingGenerationService } from "./modules/generation/briefing-generation-service.js";
+import { generationRoutes } from "./modules/generation/generation-controller.js";
+import { ManualGenerationCoordinator } from "./modules/generation/manual-generation-coordinator.js";
 import { healthRoutes } from "./modules/health/health-controller.js";
 import { createDataSource } from "./persistence/data-source.js";
 import { MysqlHealthProbe } from "./persistence/mysql-health-probe.js";
 import { bootstrapStore } from "./persistence/store-bootstrap.js";
 import type { Clock } from "./ports/clock.js";
+import type { IdGenerator } from "./ports/id-generator.js";
 import { TypeOrmUnitOfWork } from "./repositories/typeorm-unit-of-work.js";
 import type { Logger } from "./shared/logger.js";
 
@@ -30,6 +35,7 @@ export interface EventApi {
 export interface ComposeOptions {
   logger: Logger;
   clock?: Clock;
+  ids?: IdGenerator;
 }
 
 /**
@@ -38,7 +44,7 @@ export interface ComposeOptions {
  */
 export async function composeEventApi(
   config: AppConfig,
-  { logger, clock = systemClock }: ComposeOptions,
+  { logger, clock = systemClock, ids = uuidV7IdGenerator }: ComposeOptions,
 ): Promise<EventApi> {
   const queryTimeoutMs = config.mysqlQueryTimeoutMs;
   const dataSource = createDataSource(config.mysqlUrl, { queryTimeoutMs });
@@ -57,11 +63,26 @@ export async function composeEventApi(
   const bypass = new CacheBypass();
   const notifier = new InProcessChangeNotifier(logger);
   const changes = new EventChangePublisher(cache, bypass, notifier, logger);
+  const generation = new BriefingGenerationService({
+    uow,
+    gateway: new TcpAiGatewayClient(config.gateway, logger),
+    ids,
+    clock,
+    changes,
+    logger,
+  });
+  const manualGeneration = new ManualGenerationCoordinator({
+    generation,
+    ids,
+    clock,
+    changes,
+    timeoutMs: config.manualGenerationTimeoutMs,
+  });
   const eventViews = new EventViewService({
     uow,
     cache,
     bypass,
-    activity: noGenerationActivity,
+    activity: manualGeneration,
     clock,
     defaultTtlMs: config.eventViewCacheTtlMs,
     logger,
@@ -78,6 +99,7 @@ export async function composeEventApi(
       }),
       eventRoutes(eventViews),
       attendanceRoutes(attendance),
+      generationRoutes(manualGeneration),
     ],
   });
 

@@ -8,14 +8,17 @@ import {
 import { buildSeedEventView, FIXTURE_TIME } from "@event-desk/contracts/testing";
 import { describe, expect, it } from "vitest";
 import type { CachedEventView, EventViewCache } from "../../ports/event-view-cache.js";
+import type { GenerationActivity } from "../../ports/generation-activity.js";
 import type { ReadScope, TransactionScope, UnitOfWork } from "../../ports/unit-of-work.js";
 import { createLogger } from "../../shared/logger.js";
 import { CacheBypass } from "../changes/cache-bypass.js";
 import { EventViewService } from "./event-view-service.js";
-import { noGenerationActivity } from "./no-generation-activity.js";
 
 const E101 = SUPPLIED_EVENT.id;
 const NOW = new Date("2026-10-03T09:00:00.000Z");
+const idleActivity: GenerationActivity = {
+  current: () => Promise.resolve({ manual: null, batch: null, cooldownUntil: null }),
+};
 
 class FakeUnitOfWork implements UnitOfWork {
   snapshots = 0;
@@ -81,7 +84,7 @@ function setup(defaultTtlMs = 30_000) {
     uow,
     cache,
     bypass,
-    activity: noGenerationActivity,
+    activity: idleActivity,
     clock: { now: () => NOW },
     defaultTtlMs,
     logger: createLogger("silent"),
