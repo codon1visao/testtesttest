@@ -206,4 +206,14 @@ describe("HTTP policy", () => {
     );
     expect(replaced).toMatch(/^[0-9a-f-]{36}$/);
   });
+
+  it("logs the full request path, including /api, without the query string", async () => {
+    const { app, lines } = buildApp();
+    await request(app).get("/api/items/42?note=Secret%20feedback%20text");
+    const entry = lines
+      .map((line) => JSON.parse(line) as { msg?: string; path?: string })
+      .find((line) => line.msg === "request completed");
+    expect(entry?.path).toBe("/api/items/42");
+    expect(lines.join("")).not.toContain("Secret");
+  });
 });

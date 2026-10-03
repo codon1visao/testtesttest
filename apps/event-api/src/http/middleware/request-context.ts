@@ -12,6 +12,9 @@ export function requestContext(logger: Logger): RequestHandler {
     const requestId =
       incoming !== undefined && SAFE_REQUEST_ID.test(incoming) ? incoming : randomUUID();
     const log = logger.child({ requestId });
+    // originalUrl keeps the /api mount prefix (req.path is relative to the router that runs last);
+    // the query string is dropped because it may carry user input.
+    const [path] = req.originalUrl.split("?", 1);
     const startedAt = performance.now();
     requestLoggers.set(res, log);
     res.setHeader("X-Request-Id", requestId);
@@ -19,7 +22,7 @@ export function requestContext(logger: Logger): RequestHandler {
       log.info(
         {
           method: req.method,
-          path: req.path,
+          path,
           status: res.statusCode,
           durationMs: Math.round(performance.now() - startedAt),
         },
