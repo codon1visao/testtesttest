@@ -41,7 +41,10 @@ function EvidenceSection({
   );
 }
 
-/** A read-only briefing (F4): code-built overview, cited model text, rendered as plain text (S1). */
+/**
+ * A read-only briefing (F4): code-built overview, cited model text, rendered as plain text (S1).
+ * Section headings are the brief's four questions (docs/specs/README.md).
+ */
 export function BriefingPreview({ title, briefing }: { title: string; briefing: BriefingView }) {
   const { content, provenance } = briefing;
   return (
@@ -60,17 +63,17 @@ export function BriefingPreview({ title, briefing }: { title: string; briefing: 
           </VStack>
         </section>
         <EvidenceSection
-          title="Themes"
+          title="Which themes recur"
           items={content.themes}
           empty="No recurring themes identified."
         />
         <EvidenceSection
-          title="Conflicts"
+          title="Where people disagree"
           items={content.conflicts}
           empty="No conflicting views identified."
         />
         <EvidenceSection
-          title="Suggested follow-ups"
+          title="What might be worth following up"
           items={content.suggestions}
           empty="No follow-ups suggested."
         />

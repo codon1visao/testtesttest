@@ -32,6 +32,7 @@ export function GenerateBriefingControl({ eventId, view }: { eventId: EventId; v
     generation.mutate({ baseAttendanceRevision: view.attendanceRevision });
   };
   const press = () => {
+    if (busy || attendanceDirty) return;
     if (generation.isError && mayHaveBeenCharged(generation.error)) setConfirmingRetry(true);
     else start();
   };
@@ -39,11 +40,15 @@ export function GenerateBriefingControl({ eventId, view }: { eventId: EventId; v
   return (
     <VStack gap={2}>
       <div>
+        {/* While busy, Astryx renders aria-disabled (not native disabled) when a tooltip is set, so
+            the button keeps keyboard focus (README "Screen and interaction"); press() ignores it.
+            Unsaved attendance stays natively disabled: nothing was activated. */}
         <Button
           variant="primary"
           label={busy ? "Generating briefing…" : generation.isError ? "Retry" : "Generate briefing"}
           isLoading={busy}
-          isDisabled={busy || attendanceDirty}
+          isDisabled={attendanceDirty}
+          {...(busy ? { tooltip: "Wait for the current generation to finish." } : {})}
           onClick={press}
         />
       </div>
@@ -61,7 +66,11 @@ export function GenerateBriefingControl({ eventId, view }: { eventId: EventId; v
       {generation.isError && !busy ? (
         <Banner
           status="error"
-          title="Briefing was not generated"
+          title={
+            generation.error instanceof ApiError && generation.error.outcomeUnknown
+              ? "Could not confirm the generation"
+              : "Briefing was not generated"
+          }
           description={describeApiError(generation.error)}
         />
       ) : null}

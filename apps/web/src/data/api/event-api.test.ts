@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
 import { mswServer } from "../../testing/msw-server";
 import { ApiError } from "../http/api-error";
-import { fetchEvent, generateBriefing, saveAttendance } from "./event-api";
+import {
+  fetchEvent,
+  GENERATION_REQUEST_TIMEOUT_MS,
+  generateBriefing,
+  saveAttendance,
+} from "./event-api";
 
 const E101 = EventIdSchema.parse("E101");
 const signal = () => new AbortController().signal;
@@ -156,6 +161,10 @@ describe("saveAttendance", () => {
 });
 
 describe("generateBriefing", () => {
+  it("waits 90 s (T5 §2), past the event API's longest run deadline of 85 s", () => {
+    expect(GENERATION_REQUEST_TIMEOUT_MS).toBe(90_000);
+  });
+
   it("posts only the attendance baseline and returns the validated incoming preview", async () => {
     const { incomingPreview } = await generateBriefing(E101, { baseAttendanceRevision: 0 });
     expect(incomingPreview.trigger).toBe("manual");

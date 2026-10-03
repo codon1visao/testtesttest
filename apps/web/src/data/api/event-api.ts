@@ -39,8 +39,11 @@ export async function saveAttendance(
   return parseResponse(SaveAttendanceResponseSchema, response.data);
 }
 
-/** Longer than the server's 60 s run deadline (MANUAL_GENERATION_TIMEOUT_MS), so the server answers first. */
-export const GENERATION_REQUEST_TIMEOUT_MS = 75_000;
+/**
+ * T5 §2: 90 s. The event API caps MANUAL_GENERATION_TIMEOUT_MS (default 60 s) at 85 s, so the
+ * server always answers first; change both together.
+ */
+export const GENERATION_REQUEST_TIMEOUT_MS = 90_000;
 
 export async function generateBriefing(
   eventId: EventId,

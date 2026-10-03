@@ -1,6 +1,7 @@
 import { RunIdSchema } from "@event-desk/contracts";
 import { buildBriefingView } from "@event-desk/contracts/testing";
 import { screen, waitFor, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { FakeEventApi } from "../../testing/fake-event-api";
 import { mswServer } from "../../testing/msw-server";
@@ -37,11 +38,21 @@ describe("briefing panel", () => {
     expect(
       await region.findByText("Generating briefing… This can take up to a minute."),
     ).toBeTruthy();
-    expect(generateButton(region).disabled).toBe(true);
+    expect(generateButton(region).getAttribute("aria-disabled")).toBe("true");
 
     expect(
       await region.findByRole("heading", { name: "New preview (not yet reviewed)" }),
     ).toBeTruthy();
+    // The four questions of the brief (docs/specs/README.md).
+    for (const question of [
+      "What happened",
+      "Which themes recur",
+      "Where people disagree",
+      "What might be worth following up",
+    ]) {
+      expect(region.getByRole("heading", { name: question })).toBeTruthy();
+      expect(region.getByRole("region", { name: question })).toBeTruthy();
+    }
     expect(
       region.getByText(
         "4 registered members: 1 attended, 2 absent, 1 not recorded (attendance is incomplete).",
@@ -52,6 +63,30 @@ describe("briefing panel", () => {
     expect(region.getByText(/fixture-model · requested by you/)).toBeTruthy();
     expect(api.generationRequests).toEqual([{ baseAttendanceRevision: 0 }]);
     expect((await screen.findAllByText("Briefing generated")).length).toBeGreaterThan(0);
+  });
+
+  it("keeps keyboard focus on the button while generating and ignores a second activation", async () => {
+    api.generationReplies.push({ kind: "preview", delayMs: 300 });
+    const { user } = renderApp();
+    const region = await panel();
+    const button = generateButton(region);
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      await region.findByText("Generating briefing… This can take up to a minute."),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(generateButton(region));
+    // Natively disabled buttons lose focus in browsers (jsdom keeps it): busy must use aria-disabled.
+    expect(generateButton(region).disabled).toBe(false);
+    expect(generateButton(region).getAttribute("aria-disabled")).toBe("true");
+
+    await user.keyboard("{Enter}");
+    await user.click(generateButton(region));
+    expect(
+      await region.findByRole("heading", { name: "New preview (not yet reviewed)" }),
+    ).toBeTruthy();
+    expect(api.generationRequests).toHaveLength(1);
+    expect(document.activeElement).toBe(generateButton(region));
   });
 
   it("F4 step 1: is disabled while attendance has unsaved changes, and says why", async () => {
@@ -80,6 +115,8 @@ describe("briefing panel", () => {
         "The AI service is not reachable. Your saved work is unchanged; try again shortly.",
       ),
     ).toBeTruthy();
+    expect(region.getByText("Briefing was not generated")).toBeTruthy();
+    expect(region.queryByText("Could not confirm the generation")).toBeNull();
     await user.click(region.getByRole("button", { name: "Retry" }));
     await waitFor(() => {
       expect(api.generationRequests).toHaveLength(2);
@@ -93,7 +130,7 @@ describe("briefing panel", () => {
       status: 504,
       code: "AI_OUTCOME_UNKNOWN",
       message:
-        "The connection to the AI service was lost after the request was sent; the attempt may have been charged. Your saved work is unchanged.",
+        "The AI service did not confirm the result (the connection was lost or no answer arrived in time); the attempt may have been charged. Your saved work is unchanged.",
     });
     const { user } = renderApp();
     const region = await panel();
@@ -110,6 +147,35 @@ describe("briefing panel", () => {
     });
   });
 
+  it("F8: Retry after a DEADLINE_EXCEEDED 504 asks first too", async () => {
+    api.generationReplies.push({
+      kind: "error",
+      status: 504,
+      code: "DEADLINE_EXCEEDED",
+      message:
+        "The AI model did not finish in time; the attempt may have been charged. Your saved work is unchanged.",
+    });
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(generateButton(region));
+    await user.click(await region.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Generate again?")).toBeTruthy();
+    expect(api.generationRequests).toHaveLength(1);
+  });
+
+  it("titles a lost response as unconfirmed, not as a failure", async () => {
+    mswServer.use(
+      http.post("/api/events/:eventId/briefing-generations", () => HttpResponse.error()),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(generateButton(region));
+    expect(await region.findByText("Could not confirm the generation")).toBeTruthy();
+    expect(region.queryByText("Briefing was not generated")).toBeNull();
+    await user.click(region.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Generate again?")).toBeTruthy();
+  });
+
   it("shows a generation running in another tab and blocks a second one", async () => {
     api.view = {
       ...api.view,
@@ -121,10 +187,12 @@ describe("briefing panel", () => {
         },
       },
     };
-    renderApp();
+    const { user } = renderApp();
     const region = await panel();
     expect(await region.findByText("A briefing is being generated in another tab…")).toBeTruthy();
-    expect(generateButton(region).disabled).toBe(true);
+    expect(generateButton(region).getAttribute("aria-disabled")).toBe("true");
+    await user.click(generateButton(region));
+    expect(api.generationRequests).toHaveLength(0);
   });
 
   it("S1-03: renders model text inertly and says when no themes were found", async () => {
