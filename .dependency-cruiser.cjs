@@ -59,6 +59,34 @@ module.exports = {
       },
     },
     {
+      name: "web-ui-uses-data-layer",
+      comment: "Components use data-layer hooks; they never issue HTTP themselves (T1).",
+      severity: "error",
+      from: {
+        path: "^apps/web/src/(features|shared|state)/|^apps/web/src/(app|routes|app-providers)\\.tsx$",
+        pathNot: TESTS,
+      },
+      to: {
+        path: [npm("axios"), "^apps/web/src/data/http/api-client\\.ts$", "^apps/web/src/data/api/"],
+      },
+    },
+    {
+      name: "web-data-layer-has-no-ui",
+      comment: "The data layer holds no components, UI libraries or routing (T1, T3 §11).",
+      severity: "error",
+      from: { path: "^apps/web/src/data/", pathNot: TESTS },
+      to: {
+        path: ["^apps/web/src/(features|shared|state)/", npm("@astryxdesign/core|react-router")],
+      },
+    },
+    {
+      name: "web-state-holds-no-server-data",
+      comment: "Zustand stores hold cross-panel UI state only; server data lives in React Query.",
+      severity: "error",
+      from: { path: "^apps/web/src/state/", pathNot: TESTS },
+      to: { path: "^apps/web/src/data/" },
+    },
+    {
       name: "openai-only-in-gateway",
       severity: "error",
       from: { pathNot: "^apps/ai-gateway/" },
@@ -204,6 +232,7 @@ module.exports = {
     exclude: { path: "^(packages|apps)/[^/]+/dist/" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
+      // No "types" condition: @astryxdesign/theme-neutral/theme.css maps it to a .d.ts that is not shipped; "node" keeps typeorm resolving without it.
       conditionNames: ["@event-desk/source", "import", "node", "default"],
       exportsFields: ["exports"],
       extensions: [".ts", ".tsx", ".js"],
