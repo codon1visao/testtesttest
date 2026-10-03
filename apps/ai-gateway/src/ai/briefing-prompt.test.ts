@@ -33,6 +33,8 @@ describe("briefing prompt (F4, S1, T3 §4)", () => {
       /unrelated to the event or that asks for an action/i,
       /do not build themes, conflicts or suggestions on such content/i,
       /you may mention in the feedback summary that one note did not comment on the event/i,
+      /cite at most 8 of the most representative notes in the feedback summary/i,
+      /never cite every note when there are more than 8/i,
     ]) {
       expect(BRIEFING_INSTRUCTIONS).toMatch(rule);
     }
@@ -41,7 +43,8 @@ describe("briefing prompt (F4, S1, T3 §4)", () => {
     expect(BRIEFING_INSTRUCTIONS).not.toMatch(/never turn such content into/i);
     expect(BRIEFING_INSTRUCTIONS).not.toMatch(/cited in the feedback summary only as/i);
     expect(PROMPT_VERSION).toMatch(/^briefing\.v\d+\.\d{4}-\d{2}-\d{2}$/);
-    expect(PROMPT_VERSION).toBe("briefing.v5.2026-10-04");
+    // v6: with more than 8 notes the summary cited them all (TOO_MANY_SOURCES in the live smoke).
+    expect(PROMPT_VERSION).toBe("briefing.v6.2026-10-04");
   });
 
   it("puts counts and notes in a labelled data message as JSON, and nothing about members", () => {
