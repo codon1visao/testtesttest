@@ -1,4 +1,5 @@
 import { EventIdSchema, MemberIdSchema, type SaveAttendanceRequest } from "@event-desk/contracts";
+import { buildBriefingView } from "@event-desk/contracts/testing";
 import { delay, http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
@@ -9,6 +10,8 @@ import {
   GENERATION_REQUEST_TIMEOUT_MS,
   generateBriefing,
   saveAttendance,
+  saveBriefing,
+  selectPreview,
 } from "./event-api";
 
 const E101 = EventIdSchema.parse("E101");
@@ -183,5 +186,41 @@ describe("generateBriefing", () => {
       status: 504,
       code: "AI_OUTCOME_UNKNOWN",
     });
+  });
+});
+
+describe("selectPreview and saveBriefing", () => {
+  it("select returns the contract-validated selected preview", async () => {
+    const preview = buildBriefingView();
+    api.putIncoming(preview);
+    const response = await selectPreview(E101, {
+      generationId: preview.provenance.generationId,
+      expectedSelectedGenerationId: null,
+    });
+    expect(response.selectedPreview.provenance.generationId).toBe(preview.provenance.generationId);
+    expect(api.view.incomingPreview).toBeNull();
+  });
+
+  it("save returns the saved briefing and the next revision; a stale revision is BRIEFING_CONFLICT", async () => {
+    const preview = buildBriefingView();
+    api.view = { ...api.view, selectedPreview: preview };
+    const textEdits = {
+      attendanceOverview: preview.content.attendanceOverview,
+      feedbackSummary: "Edited summary.",
+      themes: preview.content.themes.map((item) => item.text),
+      conflicts: preview.content.conflicts.map((item) => item.text),
+      suggestions: preview.content.suggestions.map((item) => item.text),
+    };
+    const generationId = preview.provenance.generationId;
+    const saved = await saveBriefing(E101, { baseBriefingRevision: 0, generationId, textEdits });
+    expect(saved.briefingRevision).toBe(1);
+    expect(saved.savedBriefing.content.feedbackSummary).toEqual({
+      text: "Edited summary.",
+      sourceIds: preview.content.feedbackSummary.sourceIds,
+    });
+    const error = await failureOf(
+      saveBriefing(E101, { baseBriefingRevision: 0, generationId, textEdits }),
+    );
+    expect(error).toMatchObject({ kind: "http", status: 409, code: "BRIEFING_CONFLICT" });
   });
 });

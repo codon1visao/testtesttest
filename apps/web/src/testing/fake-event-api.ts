@@ -1,13 +1,17 @@
 import {
   type AttendanceStatus,
+  type BriefingContent,
   type BriefingView,
   deriveAttendanceCounts,
   GenerateBriefingRequestSchema,
   type HttpErrorCode,
   type EventView,
+  type EvidenceItem,
   type MemberId,
   SaveAttendanceRequestSchema,
   type SaveAttendanceResponse,
+  SaveBriefingRequestSchema,
+  SelectPreviewRequestSchema,
 } from "@event-desk/contracts";
 import { buildBriefingView, buildSeedEventView } from "@event-desk/contracts/testing";
 import { delay, http, HttpResponse } from "msw";
@@ -43,6 +47,8 @@ export class FakeEventApi {
   view: EventView = buildSeedEventView();
   readonly attendanceRequests: unknown[] = [];
   readonly generationRequests: unknown[] = [];
+  readonly selectRequests: unknown[] = [];
+  readonly saveRequests: unknown[] = [];
   /** Replies for upcoming generation calls, consumed in order; an empty queue yields a manual preview. */
   readonly generationReplies: GenerationReply[] = [];
 
@@ -55,6 +61,16 @@ export class FakeEventApi {
       counts: deriveAttendanceCounts(members),
       attendanceRevision: this.view.attendanceRevision + 1,
     };
+  }
+
+  /** Another tab saved the briefing: only the revision is visible to this tab's next save. */
+  saveBriefingElsewhere(): void {
+    this.view = { ...this.view, briefingRevision: this.view.briefingRevision + 1 };
+  }
+
+  /** A result from elsewhere (another tab, or a batch in Plan 5) lands in the incoming slot. */
+  putIncoming(preview: BriefingView): void {
+    this.view = { ...this.view, incomingPreview: preview };
   }
 
   handlers() {
@@ -142,6 +158,98 @@ export class FakeEventApi {
         const incomingPreview = reply.preview ?? buildBriefingView();
         this.view = { ...this.view, incomingPreview };
         return HttpResponse.json({ incomingPreview }, { status: 201 });
+      }),
+      http.post("/api/events/:eventId/briefing-preview/select", async ({ request }) => {
+        const body: unknown = await request.json();
+        this.selectRequests.push(body);
+        const parsed = SelectPreviewRequestSchema.safeParse(body);
+        if (!parsed.success)
+          return apiErrorResponse(400, "VALIDATION_FAILED", "Invalid select body.");
+        const incoming = this.view.incomingPreview;
+        const selectedId = this.view.selectedPreview?.provenance.generationId ?? null;
+        if (
+          incoming?.provenance.generationId !== parsed.data.generationId ||
+          selectedId !== parsed.data.expectedSelectedGenerationId
+        ) {
+          return apiErrorResponse(
+            409,
+            "PREVIEW_CONFLICT",
+            "This preview is no longer waiting for review. Reload to see the latest briefing.",
+          );
+        }
+        this.view = { ...this.view, selectedPreview: incoming, incomingPreview: null };
+        return HttpResponse.json({ selectedPreview: incoming });
+      }),
+      http.put("/api/events/:eventId/briefing", async ({ request }) => {
+        const body: unknown = await request.json();
+        this.saveRequests.push(body);
+        const parsed = SaveBriefingRequestSchema.safeParse(body);
+        if (!parsed.success)
+          return apiErrorResponse(400, "VALIDATION_FAILED", "Invalid briefing body.");
+        const { baseBriefingRevision, generationId, textEdits } = parsed.data;
+        if (baseBriefingRevision !== this.view.briefingRevision) {
+          return apiErrorResponse(
+            409,
+            "BRIEFING_CONFLICT",
+            "The briefing was saved elsewhere since you loaded it. Your text is kept; reload to see the saved briefing.",
+          );
+        }
+        const fromSelected = this.view.selectedPreview?.provenance.generationId === generationId;
+        const source = fromSelected
+          ? this.view.selectedPreview
+          : this.view.savedBriefing?.provenance.generationId === generationId
+            ? this.view.savedBriefing
+            : null;
+        if (source === null) {
+          return apiErrorResponse(
+            409,
+            "GENERATION_NOT_AVAILABLE",
+            "This briefing is no longer available to save. Reload to see the latest briefing.",
+          );
+        }
+        const sections = ["themes", "conflicts", "suggestions"] as const;
+        const wrong = sections.find(
+          (section) => textEdits[section].length !== source.content[section].length,
+        );
+        if (wrong !== undefined) {
+          return apiErrorResponse(
+            422,
+            "CONTENT_INVALID",
+            `Expected ${String(source.content[wrong].length)} items.`,
+            `textEdits.${wrong}`,
+          );
+        }
+        const retext = (items: readonly EvidenceItem[], texts: readonly string[]) =>
+          items.map((item, index) => ({
+            text: texts[index] ?? item.text,
+            sourceIds: item.sourceIds,
+          }));
+        const content: BriefingContent = {
+          attendanceOverview: textEdits.attendanceOverview,
+          feedbackSummary: {
+            text: textEdits.feedbackSummary,
+            sourceIds: source.content.feedbackSummary.sourceIds,
+          },
+          themes: retext(source.content.themes, textEdits.themes),
+          conflicts: retext(source.content.conflicts, textEdits.conflicts),
+          suggestions: retext(source.content.suggestions, textEdits.suggestions),
+        };
+        const savedBriefing: BriefingView = {
+          ...source,
+          content,
+          savedAt: new Date().toISOString(),
+        };
+        this.view = {
+          ...this.view,
+          savedBriefing,
+          selectedPreview: fromSelected ? null : this.view.selectedPreview,
+          briefingRevision: this.view.briefingRevision + 1,
+        };
+        return HttpResponse.json({
+          savedBriefing,
+          briefingRevision: this.view.briefingRevision,
+          selectedPreview: this.view.selectedPreview,
+        });
       }),
     ];
   }

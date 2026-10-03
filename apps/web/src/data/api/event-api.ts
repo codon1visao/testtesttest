@@ -8,6 +8,12 @@ import {
   type SaveAttendanceRequest,
   type SaveAttendanceResponse,
   SaveAttendanceResponseSchema,
+  type SaveBriefingRequest,
+  type SaveBriefingResponse,
+  SaveBriefingResponseSchema,
+  type SelectPreviewRequest,
+  type SelectPreviewResponse,
+  SelectPreviewResponseSchema,
 } from "@event-desk/contracts";
 import type { z } from "zod";
 import { apiClient } from "../http/api-client";
@@ -55,4 +61,23 @@ export async function generateBriefing(
     { timeout: GENERATION_REQUEST_TIMEOUT_MS },
   );
   return parseResponse(GenerateBriefingResponseSchema, response.data);
+}
+
+export async function selectPreview(
+  eventId: EventId,
+  body: SelectPreviewRequest,
+): Promise<SelectPreviewResponse> {
+  const response = await apiClient.post<unknown>(
+    `${eventPath(eventId)}/briefing-preview/select`,
+    body,
+  );
+  return parseResponse(SelectPreviewResponseSchema, response.data);
+}
+
+export async function saveBriefing(
+  eventId: EventId,
+  body: SaveBriefingRequest,
+): Promise<SaveBriefingResponse> {
+  const response = await apiClient.put<unknown>(`${eventPath(eventId)}/briefing`, body);
+  return parseResponse(SaveBriefingResponseSchema, response.data);
 }
