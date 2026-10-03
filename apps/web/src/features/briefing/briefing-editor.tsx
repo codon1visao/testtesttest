@@ -174,6 +174,14 @@ export function BriefingEditor({
     handledFocus.current = focusAfterClose;
     headingRef.current?.focus();
   }, [confirming, focusAfterClose]);
+  // F5: a save attempt that ended with a notice moves focus to it (field errors focus their field).
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const handledNoticeFocus = useRef(0);
+  useEffect(() => {
+    if (editor.noticeFocusRequest === handledNoticeFocus.current) return;
+    handledNoticeFocus.current = editor.noticeFocusRequest;
+    noticeRef.current?.focus();
+  }, [editor.noticeFocusRequest]);
   const requestFocusAfterClose = () => {
     setFocusAfterClose((count) => count + 1);
   };
@@ -223,7 +231,7 @@ export function BriefingEditor({
                 control={control}
                 name="attendanceOverview"
                 label="Attendance overview"
-                isDisabled={editor.isBusy}
+                isDisabled={editor.areFieldsLocked}
               />
               <VStack gap={0}>
                 <Text type="supporting">Check edited wording against the counts.</Text>
@@ -238,7 +246,7 @@ export function BriefingEditor({
                 control={control}
                 name="feedbackSummary"
                 label="Feedback summary"
-                isDisabled={editor.isBusy}
+                isDisabled={editor.areFieldsLocked}
               />
               <SourceReferences
                 sourceIds={content.feedbackSummary.sourceIds}
@@ -259,7 +267,7 @@ export function BriefingEditor({
                             control={control}
                             name={`${section}.${index}.text`}
                             label={`${SECTION_COPY[section].itemLabel} ${String(index + 1)}`}
-                            isDisabled={editor.isBusy}
+                            isDisabled={editor.areFieldsLocked}
                           />
                           <SourceReferences sourceIds={item.sourceIds} notes={view.feedback} />
                         </VStack>
@@ -277,19 +285,21 @@ export function BriefingEditor({
               ) : null}
             </div>
             {editor.notice === null ? null : (
-              <NoticeBanner
-                notice={editor.notice}
-                isBusy={editor.isBusy}
-                onReload={() => {
-                  setConfirming("reload");
-                }}
-                onRetry={() => {
-                  void editor.submit();
-                }}
-                onCheckAgain={() => {
-                  void editor.checkAgain();
-                }}
-              />
+              <div ref={noticeRef} tabIndex={-1}>
+                <NoticeBanner
+                  notice={editor.notice}
+                  isBusy={editor.isBusy}
+                  onReload={() => {
+                    setConfirming("reload");
+                  }}
+                  onRetry={() => {
+                    void editor.submit();
+                  }}
+                  onCheckAgain={() => {
+                    void editor.checkAgain();
+                  }}
+                />
+              </div>
             )}
             {(editor.notice?.kind === "conflict" || editor.notice?.kind === "unavailable") &&
             view.savedBriefing !== null ? (

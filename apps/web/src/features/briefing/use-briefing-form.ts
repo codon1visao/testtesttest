@@ -49,6 +49,13 @@ export function useBriefingForm(
   // The values of the last save attempt, for "Check again" after a failed re-read (F5).
   const lastSubmitted = useRef<BriefingFormOutput | null>(null);
   const [notice, setNotice] = useState<BriefingNotice | null>(null);
+  // Counts save attempts that ended with a notice: the editor moves focus to it each time, since
+  // the control that started the attempt was disabled or unmounted meanwhile.
+  const [noticeFocusRequest, setNoticeFocusRequest] = useState(0);
+  const showSaveNotice = (next: BriefingNotice) => {
+    setNotice(next);
+    setNoticeFocusRequest((count) => count + 1);
+  };
   const [checking, setChecking] = useState(false);
   const save = useSaveBriefing(eventId);
   const setBriefingDirty = useUiStore((state) => state.setBriefingDirty);
@@ -69,9 +76,9 @@ export function useBriefingForm(
     const message = describeApiError(error);
     const code = error instanceof ApiError ? error.code : undefined;
     if (code === "BRIEFING_CONFLICT" || code === "PREVIEW_CONFLICT") {
-      setNotice({ kind: "conflict", message });
+      showSaveNotice({ kind: "conflict", message });
     } else if (code === "GENERATION_NOT_AVAILABLE") {
-      setNotice({ kind: "unavailable", message });
+      showSaveNotice({ kind: "unavailable", message });
     } else if (
       code === "CONTENT_INVALID" ||
       code === "VALIDATION_FAILED" ||
@@ -83,10 +90,10 @@ export function useBriefingForm(
           : formFieldForApiField(error instanceof ApiError ? error.field : undefined);
       // A path with no rendered input (an item index the draft does not have) gets the banner.
       const current: unknown = path === null ? undefined : form.getValues(path);
-      if (path === null || current === undefined) setNotice({ kind: "invalid", message });
+      if (path === null || current === undefined) showSaveNotice({ kind: "invalid", message });
       else form.setError(path, { type: "server", message }, { shouldFocus: true });
     } else {
-      setNotice({ kind: "failed", message });
+      showSaveNotice({ kind: "failed", message });
     }
   };
 
@@ -96,12 +103,12 @@ export function useBriefingForm(
     try {
       const result = await refetch();
       if (result.isError || result.data === undefined) {
-        setNotice({ kind: "check-failed", message: describeApiError(result.error) });
+        showSaveNotice({ kind: "check-failed", message: describeApiError(result.error) });
       } else if (draftMatchesSaved(submitted, generationId, result.data.savedBriefing)) {
         form.reset(submitted);
         onSaved({ reconciled: true });
       } else {
-        setNotice({ kind: "unconfirmed" });
+        showSaveNotice({ kind: "unconfirmed" });
       }
     } finally {
       setChecking(false);
@@ -182,7 +189,11 @@ export function useBriefingForm(
     isDirty,
     isSaving,
     isBusy: isSaving,
+    // While the last save's outcome is unknown, typing on top of it is not meaningful: "Check again"
+    // may find it landed and reset to the submitted text. Check again and Discard stay available.
+    areFieldsLocked: isSaving || notice?.kind === "check-failed",
     notice,
+    noticeFocusRequest,
     submit,
     checkAgain,
     discard,

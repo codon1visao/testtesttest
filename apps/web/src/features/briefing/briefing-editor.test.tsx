@@ -49,6 +49,12 @@ const expectEditorHeadingFocused = async (title: RegExp) => {
   });
 };
 
+/** Disabled natively or through aria-disabled (Astryx keeps some controls focusable). */
+const isLocked = (element: HTMLElement) =>
+  (element instanceof HTMLTextAreaElement && element.disabled) ||
+  (element instanceof HTMLButtonElement && element.disabled) ||
+  element.getAttribute("aria-disabled") === "true";
+
 const panel = async () => within(await screen.findByRole("region", { name: "Briefing" }));
 const field = (region: Awaited<ReturnType<typeof panel>>, label: string) =>
   region.getByLabelText<HTMLTextAreaElement>(label);
@@ -112,6 +118,41 @@ describe("briefing editor", () => {
     expect(await region.findByText("The briefing changed elsewhere")).toBeTruthy();
     expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time. Mine.");
     expect(api.view.savedBriefing).toBeNull();
+  });
+
+  it("focus: a save that ends in a notice moves focus to the notice, never to <body>", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    api.saveBriefingElsewhere();
+    await user.type(field(region, "Theme 1"), " Mine.");
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    const title = await region.findByText("The briefing changed elsewhere");
+    await waitFor(() => {
+      expect(document.activeElement?.contains(title)).toBe(true);
+    });
+  });
+
+  it("focus: a Retry save that fails again keeps focus on the notice", async () => {
+    let attempts = 0;
+    mswServer.use(
+      http.put("/api/events/:eventId/briefing", () => {
+        attempts += 1;
+        return apiErrorResponse(503, "STORE_UNAVAILABLE", "The database is not reachable.");
+      }),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.type(field(region, "Theme 1"), " Again.");
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    // The Retry button unmounts while the retry is in flight; focus must come back to the notice.
+    await user.click(await region.findByRole("button", { name: "Retry save" }));
+    await waitFor(() => {
+      expect(attempts).toBe(2);
+      expect(region.queryByRole("button", { name: "Retry save" })).not.toBeNull();
+    });
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toContain("Briefing was not saved");
+    });
   });
 
   it("Spec 05 revision conflict: shows the latest saved briefing for review and keeps the draft", async () => {
@@ -226,6 +267,25 @@ describe("briefing editor", () => {
     await user.click(region.getByRole("button", { name: "Check again" }));
     expect(await region.findByText("Your briefing changes were saved.")).toBeTruthy();
     expect(region.getByRole("heading", { name: /^Saved briefing/ })).toBeTruthy();
+  });
+
+  it("F5 lost response: the fields are locked while the outcome is unknown, so Check again never drops newer text", async () => {
+    mswServer.use(saveThenLoseResponse());
+    const { user } = renderApp();
+    const region = await panel();
+    mswServer.use(http.get("/api/events/:eventId", () => HttpResponse.error(), { once: true }));
+    await user.type(field(region, "Theme 1"), " Landed.");
+    await user.click(region.getByRole("button", { name: "Save briefing" }));
+    expect(await region.findByText("Could not check the saved briefing")).toBeTruthy();
+    for (const label of ["Attendance overview", "Feedback summary", "Theme 1"]) {
+      expect(isLocked(field(region, label))).toBe(true);
+    }
+    expect(isLocked(region.getByRole("button", { name: "Check again" }))).toBe(false);
+    expect(isLocked(region.getByRole("button", { name: "Discard edits" }))).toBe(false);
+    await user.click(region.getByRole("button", { name: "Check again" }));
+    expect(await region.findByText("Your briefing changes were saved.")).toBeTruthy();
+    expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time. Landed.");
+    expect(isLocked(field(region, "Theme 1"))).toBe(false);
   });
 
   it("F5-10: Discard edits asks first; Cancel keeps the draft, Discard restores the text", async () => {
