@@ -17,9 +17,16 @@ function feedbackNumber(id: FeedbackId): number {
   return Number.parseInt(id.slice(1), 10);
 }
 
-/** Numeric order (F09 < F11 < F100); lexical order would put F100 before F11. */
+/**
+ * Numeric order (F09 < F11 < F100); lexical order would put F100 before F11. IDs with equal
+ * numbers (F01, F001) fall back to code-unit order so the result is a total order and the
+ * digest cannot depend on input order.
+ */
 export function compareFeedbackIds(a: FeedbackId, b: FeedbackId): number {
-  return feedbackNumber(a) - feedbackNumber(b);
+  const byNumber = feedbackNumber(a) - feedbackNumber(b);
+  if (byNumber !== 0) return byNumber;
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 /**
