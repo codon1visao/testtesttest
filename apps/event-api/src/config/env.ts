@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import { z } from "zod";
 import type { LogLevel } from "../shared/logger.js";
 
@@ -37,6 +39,12 @@ const EnvSchema = z.object({
   MYSQL_QUERY_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
   LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
 });
+
+/** The Gateway client settings the event API reads from Plan 3B on. */
+const GATEWAY_CLIENT_KEYS = ["GATEWAY_HOST", "GATEWAY_PORT", "GATEWAY_SERVICE_SECRET"] as const;
+
+/** Derived from the schema so the `.env` allowlist cannot drift from what the config reads. */
+const DOT_ENV_KEYS: readonly string[] = [...Object.keys(EnvSchema.shape), ...GATEWAY_CLIENT_KEYS];
 
 export interface AppConfig {
   host: string;
@@ -82,12 +90,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   };
 }
 
-/** Loads the repository's `.env` if it exists. Variables already set in the environment win. */
-export function loadDotEnv(path: URL): void {
+/**
+ * Loads the repository's `.env` if it exists, copying in only this app's own keys (S1-12): one
+ * shared file must not hand the OpenAI key (or any other service's secrets) to this process. Variables already set in the environment win.
+ */
+export function loadDotEnv(path: URL, env: NodeJS.ProcessEnv = process.env): void {
+  let content: string;
   try {
-    process.loadEnvFile(path);
+    content = readFileSync(path, "utf8");
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
     throw error;
+  }
+  const parsed = parseEnv(content);
+  for (const key of DOT_ENV_KEYS) {
+    const value = parsed[key];
+    if (value !== undefined && env[key] === undefined) env[key] = value;
   }
 }
