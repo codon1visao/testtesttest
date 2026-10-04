@@ -46,10 +46,6 @@ export function FeedbackPanel({
             Open feedback form (test)
           </Link>
         </HStack>
-        <Text type="supporting">
-          {notes.length} anonymous notes from the event feedback form. Read-only and not linked to
-          members.
-        </Text>
         {notes.length === 0 ? (
           <Text>No feedback notes yet.</Text>
         ) : (

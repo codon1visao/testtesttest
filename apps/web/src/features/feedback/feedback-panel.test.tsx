@@ -34,9 +34,12 @@ describe("feedback panel", () => {
     });
   });
 
-  it("says the notes are anonymous and read-only", async () => {
+  it("shows no supporting line about the notes above the table", async () => {
     renderApp();
-    expect((await panel()).getByText(/anonymous/i)).toBeTruthy();
+    const region = await panel();
+    expect(region.getByRole("table", { name: "Feedback notes" })).toBeTruthy();
+    expect(region.queryByText(/anonymous/i)).toBeNull();
+    expect(region.queryByText(/not linked to members/i)).toBeNull();
   });
 
   it("S1-13 / F3-07: renders markup in a note as inert text", async () => {

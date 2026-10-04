@@ -37,6 +37,14 @@ const toastShown = async (text: string) => {
     { timeout: 3_000 },
   );
 };
+/** A count tile's value, by its label: the <dd> beside that <dt> (F2 counts as stat tiles). */
+const tileValue = (region: Awaited<ReturnType<typeof panel>>, label: string) => {
+  const term = region.getAllByRole("term").find((element) => element.textContent === label);
+  if (term === undefined) throw new Error(`no ${label} tile`);
+  return term.parentElement?.querySelector("dd")?.textContent ?? null;
+};
+const tileValues = (region: Awaited<ReturnType<typeof panel>>) =>
+  ["Registered", "Attended", "Absent", "Not recorded"].map((label) => tileValue(region, label));
 const refocus = () => {
   act(() => {
     focusManager.setFocused(false);
@@ -50,12 +58,35 @@ describe("attendance panel", () => {
     const region = await panel();
     expect(select(region, "Alex").textContent).toBe("Attended");
     expect(select(region, "Chris").textContent).toBe("Not recorded");
-    expect(
-      region.getByText("Saved counts: 4 registered · 1 attended · 2 absent · 1 not recorded"),
-    ).toBeTruthy();
+    expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
     expect(
       region.getByRole<HTMLButtonElement>("button", { name: "Save attendance" }).disabled,
     ).toBe(true);
+  });
+
+  it("F2 counts: four labelled tiles; changed tiles show saved → draft under an Unsaved badge until Discard", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    const counts = region.getByLabelText("Attendance counts");
+    expect(counts.tagName).toBe("DL");
+    expect(
+      within(counts)
+        .getAllByRole("term")
+        .map((term) => term.textContent),
+    ).toEqual(["Registered", "Attended", "Absent", "Not recorded"]);
+    expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
+    expect(region.queryByText("Unsaved")).toBeNull();
+
+    await chooseOption(user, region, "Chris", "Attended");
+    expect(tileValue(region, "Attended")).toBe("1 → 2");
+    expect(tileValue(region, "Not recorded")).toBe("1 → 0");
+    expect(tileValue(region, "Registered")).toBe("4");
+    expect(tileValue(region, "Absent")).toBe("2");
+    expect(region.getByText("Unsaved")).toBeTruthy();
+
+    await user.click(region.getByRole("button", { name: "Discard attendance changes" }));
+    expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
+    expect(region.queryByText("Unsaved")).toBeNull();
   });
 
   it("offers exactly the three states, labelled Not recorded (not Absent)", async () => {
@@ -70,12 +101,9 @@ describe("attendance panel", () => {
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    expect(
-      region.getByText("Unsaved counts: 4 registered · 2 attended · 2 absent · 0 not recorded"),
-    ).toBeTruthy();
-    expect(
-      region.getByText("Saved counts: 4 registered · 1 attended · 2 absent · 1 not recorded"),
-    ).toBeTruthy();
+    // Changed tiles show saved → draft; unchanged tiles keep the plain saved value.
+    expect(tileValues(region)).toEqual(["4", "1 → 2", "2", "1 → 0"]);
+    expect(region.getByText("Unsaved")).toBeTruthy();
     expect(region.getByText(/unsaved attendance changes/i)).toBeTruthy();
     expect(useUiStore.getState().attendanceDirty).toBe(true);
   });
@@ -98,10 +126,9 @@ describe("attendance panel", () => {
       },
     ]);
     await waitFor(() => {
-      expect(
-        region.getByText("Saved counts: 4 registered · 2 attended · 2 absent · 0 not recorded"),
-      ).toBeTruthy();
+      expect(tileValues(region)).toEqual(["4", "2", "2", "0"]);
     });
+    expect(region.queryByText("Unsaved")).toBeNull();
     expect(region.queryByText(/unsaved attendance changes/i)).toBeNull();
     expect(useUiStore.getState().attendanceDirty).toBe(false);
   });
@@ -112,7 +139,8 @@ describe("attendance panel", () => {
     await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Discard attendance changes" }));
     expect(select(region, "Chris").textContent).toBe("Not recorded");
-    expect(region.queryByText(/unsaved counts/i)).toBeNull();
+    expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
+    expect(region.queryByText("Unsaved")).toBeNull();
   });
 
   it("moves focus to the Attendance heading after a keyboard Discard (the button unmounts)", async () => {
@@ -197,7 +225,9 @@ describe("attendance panel", () => {
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
     await waitFor(() => {
-      expect(region.getByText(/Saved counts: 4 registered · 2 attended/)).toBeTruthy();
+      // The saved counts moved on (Drew attended elsewhere) under the unchanged draft.
+      expect(tileValue(region, "Attended")).toBe("2");
+      expect(tileValue(region, "Absent")).toBe("1 → 2");
     });
     await chooseOption(user, region, "Chris", "Not recorded");
     await waitFor(() => {
@@ -213,7 +243,9 @@ describe("attendance panel", () => {
     api.saveElsewhere(M04, "attended");
     refocus();
     await waitFor(() => {
-      expect(region.getByText(/Saved counts: 4 registered · 2 attended/)).toBeTruthy();
+      // The saved counts moved on (Drew attended elsewhere) under the unchanged draft.
+      expect(tileValue(region, "Attended")).toBe("2");
+      expect(tileValue(region, "Absent")).toBe("1 → 2");
     });
     expect(select(region, "Chris").textContent).toBe("Attended");
     expect(select(region, "Drew").textContent).toBe("Absent");
@@ -239,7 +271,9 @@ describe("attendance panel", () => {
     api.saveElsewhere(M04, "attended");
     refocus();
     await waitFor(() => {
-      expect(region.getByText(/Saved counts: 4 registered · 2 attended/)).toBeTruthy();
+      // The saved counts moved on (Drew attended elsewhere) under the unchanged draft.
+      expect(tileValue(region, "Attended")).toBe("2");
+      expect(tileValue(region, "Absent")).toBe("1 → 2");
     });
     expect(select(region, "Drew").textContent).toBe("Absent");
     await chooseOption(user, region, "Chris", "Not recorded");
