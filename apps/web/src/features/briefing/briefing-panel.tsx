@@ -1,6 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { VStack } from "@astryxdesign/core/Layout";
+import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { BriefingView, EventId, EventView, GenerationId } from "@event-desk/contracts";
@@ -14,8 +14,9 @@ import type { EditableSlot } from "./active-briefing";
 import { BriefingEditor } from "./briefing-editor";
 import { type EditorBase, editorKey, toEditorBase } from "./briefing-form-model";
 import { BriefingPreview } from "./briefing-preview";
-import { GenerateBriefingControl } from "./generate-briefing-control";
+import { GenerateBriefingButton, GenerateBriefingStatus } from "./generate-briefing-control";
 import { IncomingPreviewNotice } from "./incoming-preview-notice";
+import { useGenerateControl } from "./use-generate-control";
 
 /** An explicit choice of editor base, adopted once the view shows it in that slot. */
 interface OpenedBase {
@@ -182,6 +183,7 @@ export function BriefingPanel({
     setAutoSelecting(preview.provenance.generationId);
     openPreview(preview.provenance.generationId, false);
   };
+  const generate = useGenerateControl(eventId, view, autoSelect);
 
   // Spec 05 "saved briefing stays available": with both a selected preview and a saved briefing,
   // the coordinator chooses which one the editor works on. Switching is an explicit choice: a
@@ -215,8 +217,11 @@ export function BriefingPanel({
   return (
     <section aria-label="Briefing">
       <VStack gap={3}>
-        <Heading level={2}>Briefing</Heading>
-        <GenerateBriefingControl eventId={eventId} view={view} onGenerated={autoSelect} />
+        <HStack gap={3} justify="between" align="center">
+          <Heading level={2}>Briefing</Heading>
+          <GenerateBriefingButton control={generate} />
+        </HStack>
+        <GenerateBriefingStatus control={generate} view={view} />
         {announced === null ? null : (
           <IncomingPreviewNotice
             key={announced.provenance.generationId}

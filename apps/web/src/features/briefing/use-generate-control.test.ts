@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../../data/http/api-error";
-import { mayHaveBeenCharged } from "./generate-briefing-control";
+import { mayHaveBeenCharged } from "./use-generate-control";
 
 describe("mayHaveBeenCharged (T3 §11: Retry asks first)", () => {
   it.each([

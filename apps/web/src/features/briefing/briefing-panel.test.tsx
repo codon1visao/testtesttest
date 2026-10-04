@@ -52,6 +52,15 @@ const generateButton = (region: Awaited<ReturnType<typeof panel>>) =>
   });
 
 describe("briefing panel", () => {
+  it("puts Generate briefing in the section header, beside the heading", async () => {
+    renderApp();
+    const region = await panel();
+    const heading = region.getByRole("heading", { level: 2, name: "Briefing" });
+    expect(heading.parentElement?.contains(generateButton(region))).toBe(true);
+    // The header row holds only the heading and the button, not the rest of the panel.
+    expect(heading.parentElement?.contains(region.getByText("No briefing yet"))).toBe(false);
+  });
+
   it("shows the empty state before any briefing exists", async () => {
     renderApp();
     const region = await panel();
