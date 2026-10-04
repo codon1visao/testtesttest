@@ -106,11 +106,12 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
 
   async schedule(eventId: EventId): Promise<void> {
     await this.connected();
-    await this.queue.add(
+    const jobId = this.options.ids.batchRunId();
+    const job = await this.queue.add(
       JOB_NAME,
       { eventId, dispatch: "idle" },
       {
-        jobId: this.options.ids.batchRunId(),
+        jobId,
         deduplication: { id: `briefing-batch-${eventId}`, ttl: this.options.windowMs },
         delay: this.options.windowMs,
         attempts: this.options.maxAttempts,
@@ -119,6 +120,15 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
         removeOnFail: { count: 50 },
       },
     );
+    // Inside an open window, deduplication answers with the window's existing job.
+    if (job.id === jobId) {
+      this.options.logger.info(
+        { runId: jobId, eventId, windowMs: this.options.windowMs },
+        "batch job enqueued",
+      );
+    } else {
+      this.options.logger.info({ runId: job.id, eventId }, "batch job joined open window");
+    }
   }
 
   async status(eventId: EventId): Promise<BatchJobStatus | null> {
@@ -157,7 +167,9 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
     });
     worker.on("completed", (job) => {
       const data = JobDataSchema.safeParse(job.data);
-      if (data.success) notify(data.data.eventId);
+      if (!data.success) return;
+      logger.info({ runId: job.id, eventId: data.data.eventId }, "batch job completed");
+      notify(data.data.eventId);
     });
     worker.on("failed", (job, error) => {
       if (job === undefined) return;
@@ -300,6 +312,16 @@ export class BullMqBriefingBatchQueue implements BriefingBatchQueue {
       },
       isShuttingDown: () => this.closing,
     };
+    this.options.logger.info(
+      {
+        runId: context.runId,
+        eventId: context.eventId,
+        attempt: context.attempt,
+        maxAttempts: context.maxAttempts,
+        interruptedWhileSending,
+      },
+      "batch job dequeued",
+    );
     let step: BatchStep;
     try {
       step = await handler.handle(context);

@@ -56,6 +56,23 @@ describe("EventChangePublisher", () => {
     ]);
   });
 
+  it("logs each published change with its event and view version", async () => {
+    const { lines, publisher } = setup();
+    await publisher.publish(E101);
+    const published = lines.filter((line) => line.includes("change published"));
+    expect(published.map((line) => JSON.parse(line) as unknown)).toEqual([
+      expect.objectContaining({ level: 30, eventId: "E101", version: 1 }),
+    ]);
+  });
+
+  it("logs a change published without a version when the flush failed", async () => {
+    const { cache, lines, publisher } = setup();
+    cache.failing = true;
+    await publisher.publish(E101);
+    const published = lines.find((line) => line.includes("change published")) ?? "{}";
+    expect(JSON.parse(published)).toMatchObject({ eventId: "E101", version: null });
+  });
+
   it("switches reads to MySQL when the flush fails, still notifies, never throws", async () => {
     const { cache, bypass, notified, lines, publisher } = setup();
     cache.failing = true;

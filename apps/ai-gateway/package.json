@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --conditions=@event-desk/source src/main.ts",
+    "dev": "tsx watch --conditions=@event-desk/source src/main.ts | pino-pretty --singleLine --ignore pid,hostname,service --messageFormat '[{service}] {msg}' --translateTime SYS:HH:MM:ss.l",
     "start": "node dist/main.js",
     "smoke:live": "tsx --conditions=@event-desk/source src/scripts/smoke-live.ts"
   },
@@ -16,5 +16,8 @@
     "openai": "7.27.0",
     "pino": "10.4.0",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "pino-pretty": "13.1.3"
   }
 }

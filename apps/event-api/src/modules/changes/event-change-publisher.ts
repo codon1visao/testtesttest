@@ -22,6 +22,8 @@ export class EventChangePublisher {
       // Readers re-read on their next request; a listener's failure must not fail the change.
       this.logger.warn({ err: error, eventId }, "change notification failed");
     }
+    // version is null when the flush failed (reads come from MySQL until the next one succeeds).
+    this.logger.info({ eventId, version }, "change published");
   }
 
   /** The new view version, or null when the flush failed. */

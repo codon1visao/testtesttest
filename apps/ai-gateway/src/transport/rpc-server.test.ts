@@ -19,7 +19,10 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
 
-async function start(result: BriefingGenerateV1Result) {
+async function start(
+  result: BriefingGenerateV1Result,
+  onCall: (lines: string[]) => void = () => undefined,
+) {
   const lines: string[] = [];
   const logger = createLogger(
     "info",
@@ -32,7 +35,10 @@ async function start(result: BriefingGenerateV1Result) {
   );
   const server = createGatewayRpcServer({
     secret: SECRET,
-    briefingGenerateV1: () => Promise.resolve(result),
+    briefingGenerateV1: () => {
+      onCall(lines);
+      return Promise.resolve(result);
+    },
     logger,
   });
   servers.push(server);
@@ -91,5 +97,26 @@ describe("Gateway RPC edge: success replies are validated before they leave (F8)
     expect(log).toContain("sections.themes.0.text");
     expect(log).not.toContain(LEAKED_TEXT.trim());
     expect(log).not.toContain('"outcome":"ok"');
+  });
+});
+
+describe("Gateway RPC edge: logging", () => {
+  it("logs the request's arrival before the operation runs, with metadata only", async () => {
+    let atCall = "";
+    const { lines } = await start(goodResult, (current) => {
+      atCall = current.join("");
+    });
+    expect(atCall).toContain("briefing request received");
+    const received = lines.find((line) => line.includes("briefing request received")) ?? "";
+    expect(JSON.parse(received)).toMatchObject({
+      level: 30,
+      requestId: "req-1",
+      runId: "run-1",
+      attemptId: "1",
+      operation: BRIEFING_GENERATE_V1,
+      lane: "interactive",
+      feedbackCount: briefingInput().feedback.length,
+    });
+    for (const note of briefingInput().feedback) expect(received).not.toContain(note.text);
   });
 });

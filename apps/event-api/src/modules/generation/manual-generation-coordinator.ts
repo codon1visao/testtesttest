@@ -43,6 +43,10 @@ export class ManualGenerationCoordinator {
       this.run(eventId, runId, deadlineAt, baseAttendanceRevision),
     );
     this.inFlight.set(eventId, { runId, startedAt, result });
+    this.deps.logger.info(
+      { eventId, runId, deadlineAt: deadlineAt.toISOString() },
+      "manual generation started",
+    );
     return result;
   }
 

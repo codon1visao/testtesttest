@@ -2,6 +2,7 @@ import type { EventId, FeedbackNote } from "@event-desk/contracts";
 import type { Clock } from "../../ports/clock.js";
 import type { UnitOfWork } from "../../ports/unit-of-work.js";
 import { AppError } from "../../shared/app-error.js";
+import type { Logger } from "../../shared/logger.js";
 import type { EventChangePublisher } from "../changes/event-change-publisher.js";
 import type { BatchScheduler } from "../generation/batch-scheduler.js";
 import { checkFeedbackLimits, feedbackIdFor } from "./domain/feedback-limits.js";
@@ -24,6 +25,7 @@ export interface FeedbackSubmissionDeps {
   clock: Clock;
   changes: Pick<EventChangePublisher, "publish">;
   maxNotesPerEvent: number;
+  logger: Logger;
 }
 
 /** TX9 (F3, T4): idempotent per submissionId; the batch is scheduled only after the commit. */
@@ -67,9 +69,16 @@ export class FeedbackSubmissionService {
         displayOrder: state.nextFeedbackNumber,
       });
       await tx.events.recordFeedbackReceived(eventId, now);
+      tx.afterCommit(() => {
+        this.deps.logger.info({ eventId, noteId: note.id }, "feedback accepted");
+        return Promise.resolve();
+      });
       tx.afterCommit(() => this.deps.changes.publish(eventId));
       return { created: true, note, pending: true };
     });
+    if (!saved.created) {
+      this.deps.logger.info({ eventId, noteId: saved.note.id }, "feedback replayed");
+    }
     const automaticBriefing = saved.pending
       ? await this.deps.scheduler.scheduleOrDefer(eventId)
       : "scheduled";

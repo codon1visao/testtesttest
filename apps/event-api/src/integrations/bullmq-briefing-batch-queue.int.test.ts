@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchJobContext, BatchJobHandler, BatchStep } from "../ports/briefing-batch-queue.js";
 import { startFreezableTcpProxy } from "../testing/freezable-tcp-proxy.js";
+import { createLogger } from "../shared/logger.js";
 import { clearApplicationKeys, openTestRedis } from "../testing/redis.js";
 import { silentLogger, testRedisUrl } from "../testing/test-config.js";
 import { BullMqBriefingBatchQueue } from "./bullmq-briefing-batch-queue.js";
@@ -374,5 +375,53 @@ describe("BullMqBriefingBatchQueue (T5 §3, spike S-1/S-3/S-4)", () => {
       await flaky.close();
       await proxy.close();
     }
+  });
+});
+
+describe("BullMqBriefingBatchQueue logging", () => {
+  type LogLine = Record<string, unknown> & { msg: string };
+  let lines: string[];
+  const logged = (msg: string) =>
+    lines.map((line) => JSON.parse(line) as LogLine).filter((line) => line.msg === msg);
+
+  beforeEach(async () => {
+    await queue.close();
+    lines = [];
+    queue = new BullMqBriefingBatchQueue({
+      redisUrl: testRedisUrl(),
+      windowMs: WINDOW_MS,
+      maxAttempts: 3,
+      ids: uuidV7IdGenerator,
+      clock: { now: () => new Date() },
+      logger: createLogger("info", { write: (chunk: string) => void lines.push(chunk) }),
+    });
+  });
+
+  it("logs the enqueue, each join of the open window, the dequeue and the completion", async () => {
+    const h = handler(() => Promise.resolve({ kind: "done" }));
+    await queue.schedule(E101);
+    await queue.schedule(E101);
+    const [enqueued] = logged("batch job enqueued");
+    expect(enqueued).toMatchObject({ level: 30, eventId: E101, windowMs: WINDOW_MS });
+    const runId = enqueued?.runId;
+    expect(typeof runId).toBe("string");
+    expect(logged("batch job joined open window")).toEqual([
+      expect.objectContaining({ eventId: E101, runId }),
+    ]);
+
+    queue.start(h.value);
+    await waitFor(() => logged("batch job completed").length === 1);
+    expect(logged("batch job dequeued")).toEqual([
+      expect.objectContaining({
+        runId,
+        eventId: E101,
+        attempt: 1,
+        maxAttempts: 3,
+        interruptedWhileSending: false,
+      }),
+    ]);
+    expect(logged("batch job completed")).toEqual([
+      expect.objectContaining({ runId, eventId: E101 }),
+    ]);
   });
 });

@@ -7,6 +7,7 @@ import type {
 import type { Clock } from "../../ports/clock.js";
 import type { UnitOfWork } from "../../ports/unit-of-work.js";
 import { AppError } from "../../shared/app-error.js";
+import type { Logger } from "../../shared/logger.js";
 import type { EventChangePublisher } from "../changes/event-change-publisher.js";
 import { loadBriefingViews } from "./briefing-views.js";
 import { applyTextEdits, sameAsSaved } from "./domain/apply-text-edits.js";
@@ -22,6 +23,7 @@ export interface BriefingSaveDeps {
   uow: UnitOfWork;
   clock: Clock;
   changes: Pick<EventChangePublisher, "publish">;
+  logger: Logger;
 }
 
 const notAvailable = () =>
@@ -73,6 +75,11 @@ export class BriefingSaveService {
         }
         await tx.events.bumpBriefingRevision(eventId);
         briefingRevision += 1;
+        const logged = { eventId, generationId, briefingRevision, fromPreview: fromSelected };
+        tx.afterCommit(() => {
+          this.deps.logger.info(logged, "briefing saved");
+          return Promise.resolve();
+        });
         tx.afterCommit(() => this.deps.changes.publish(eventId));
       }
 

@@ -105,6 +105,10 @@ export function createGatewayRpcServer(deps: GatewayRpcServerDeps): RpcServer {
     }
     const request = parsed.data;
     const durationMs = () => Math.round(performance.now() - started);
+    log.info(
+      { lane: request.lane, feedbackCount: request.input.feedback.length },
+      "briefing request received",
+    );
     try {
       const result = await deps.briefingGenerateV1(request);
       const reply = BriefingGenerateV1ResponseSchema.safeParse({

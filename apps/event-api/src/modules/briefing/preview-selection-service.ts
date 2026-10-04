@@ -2,6 +2,7 @@ import type { EventId, GenerationId, SelectPreviewResponse } from "@event-desk/c
 import type { Clock } from "../../ports/clock.js";
 import type { UnitOfWork } from "../../ports/unit-of-work.js";
 import { AppError } from "../../shared/app-error.js";
+import type { Logger } from "../../shared/logger.js";
 import type { EventChangePublisher } from "../changes/event-change-publisher.js";
 import { loadBriefingViews } from "./briefing-views.js";
 
@@ -15,6 +16,7 @@ export interface PreviewSelectionDeps {
   uow: UnitOfWork;
   clock: Clock;
   changes: Pick<EventChangePublisher, "publish">;
+  logger: Logger;
 }
 
 /**
@@ -49,6 +51,11 @@ export class PreviewSelectionService {
       await tx.slots.putSelected(eventId, generationId, this.deps.clock.now());
       if (selected !== null)
         await tx.generations.deleteIfUnreferenced(eventId, selected.generationId);
+      const replacedGenerationId = selected?.generationId ?? null;
+      tx.afterCommit(() => {
+        this.deps.logger.info({ eventId, generationId, replacedGenerationId }, "preview selected");
+        return Promise.resolve();
+      });
       tx.afterCommit(() => this.deps.changes.publish(eventId));
 
       const views = await loadBriefingViews(tx, eventId, aggregate.members, aggregate.feedback);

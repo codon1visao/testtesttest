@@ -5,6 +5,7 @@ import {
 } from "@event-desk/contracts";
 import type { UnitOfWork } from "../../ports/unit-of-work.js";
 import { AppError } from "../../shared/app-error.js";
+import type { Logger } from "../../shared/logger.js";
 import { freshnessSummary, loadBriefingViews } from "../briefing/briefing-views.js";
 import type { EventChangePublisher } from "../changes/event-change-publisher.js";
 import {
@@ -39,6 +40,7 @@ export class AttendanceService {
   constructor(
     private readonly uow: UnitOfWork,
     private readonly changes: Pick<EventChangePublisher, "publish">,
+    private readonly logger: Logger,
   ) {}
 
   save(command: SaveAttendanceCommand): Promise<SaveAttendanceResponse> {
@@ -59,6 +61,11 @@ export class AttendanceService {
         await tx.events.applyAttendanceChanges(command.eventId, diff.changes);
         members = applyAttendanceChanges(aggregate.members, diff.changes);
         attendanceRevision += 1;
+        const logged = { changedMembers: diff.changes.length, attendanceRevision };
+        tx.afterCommit(() => {
+          this.logger.info({ eventId: command.eventId, ...logged }, "attendance saved");
+          return Promise.resolve();
+        });
         tx.afterCommit(() => this.changes.publish(command.eventId));
       }
 

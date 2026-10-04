@@ -109,9 +109,9 @@ export async function composeEventApi(
     timeoutMs: config.manualGenerationTimeoutMs,
     logger,
   });
-  const attendance = new AttendanceService(uow, changes);
-  const selection = new PreviewSelectionService({ uow, clock, changes });
-  const briefingSave = new BriefingSaveService({ uow, clock, changes });
+  const attendance = new AttendanceService(uow, changes, logger);
+  const selection = new PreviewSelectionService({ uow, clock, changes, logger });
+  const briefingSave = new BriefingSaveService({ uow, clock, changes, logger });
   const batchQueue = new BullMqBriefingBatchQueue({
     redisUrl: config.redisUrl,
     windowMs: config.batchWindowMs,
@@ -142,6 +142,7 @@ export async function composeEventApi(
     clock,
     changes,
     maxNotesPerEvent: config.feedback.maxNotesPerEvent,
+    logger,
   });
   const processor = new BatchGenerationProcessor({
     generation,

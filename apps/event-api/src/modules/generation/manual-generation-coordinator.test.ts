@@ -59,6 +59,21 @@ function setup({ failPublishAt = [] as number[] } = {}) {
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("ManualGenerationCoordinator", () => {
+  it("logs one start line per run, not per joining request", () => {
+    const { coordinator, lines } = setup();
+    void coordinator.generate(E101, 0);
+    void coordinator.generate(E101, 0);
+    const started = lines.filter((line) => line.includes("manual generation started"));
+    expect(started.map((line) => JSON.parse(line) as unknown)).toEqual([
+      expect.objectContaining({
+        level: 30,
+        eventId: "E101",
+        runId: expect.stringMatching(/^manual:run-/) as unknown,
+        deadlineAt: "2026-10-04T10:01:00.000Z",
+      }),
+    ]);
+  });
+
   it("F4-07: concurrent requests join one run and get the same preview", async () => {
     const { coordinator, generation, pending } = setup();
     const first = coordinator.generate(E101, 0);
