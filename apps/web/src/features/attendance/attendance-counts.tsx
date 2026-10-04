@@ -9,23 +9,23 @@ export function formatAttendanceCounts(c: Counts): string {
   return `${c.registered} registered · ${c.attended} attended · ${c.absent} absent · ${c.notRecorded} not recorded`;
 }
 
+// Soft hyphens (U+00AD) let a label break between syllables, with a visible hyphen, in a narrow
+// tile; the browser's own hyphenation (`hyphens: auto`) is not available everywhere. They are not
+// read aloud.
 const TILES = [
-  { key: "registered", label: "Registered" },
-  { key: "attended", label: "Attended" },
-  { key: "absent", label: "Absent" },
-  { key: "notRecorded", label: "Not recorded" },
+  { key: "registered", label: "Reg\u00ADis\u00ADtered" },
+  { key: "attended", label: "At\u00ADtend\u00ADed" },
+  { key: "absent", label: "Ab\u00ADsent" },
+  { key: "notRecorded", label: "Not re\u00ADcord\u00ADed" },
 ] as const satisfies readonly { key: keyof Counts; label: string }[];
 
 const styles = stylex.create({
-  // The tile row's own width decides the layout: the attendance card may sit in a narrow column.
-  container: { containerType: "inline-size" },
+  // Always one row of four, also in the narrow side column: tight tiles, and a label that wraps
+  // (at its soft hyphens, else anywhere as a last resort) rather than be cut off or overflow.
   tiles: {
     display: "grid",
-    gridTemplateColumns: {
-      default: "repeat(4, minmax(0, 1fr))",
-      "@container (max-width: 360px)": "repeat(2, minmax(0, 1fr))",
-    },
-    gap: "0.5rem",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: spacingVars["--spacing-1"],
     margin: 0,
   },
   // The value reads first, the label below it; in the markup the <dt> still names its <dd>. A
@@ -33,56 +33,47 @@ const styles = stylex.create({
   tile: {
     display: "flex",
     flexDirection: "column-reverse",
-    gap: "0.25rem",
+    justifyContent: "flex-end",
+    gap: "0.125rem",
     minWidth: 0,
-    padding: spacingVars["--spacing-2"],
+    paddingBlock: spacingVars["--spacing-2"],
+    paddingInline: spacingVars["--spacing-1"],
     borderWidth: "1px",
     borderStyle: "solid",
     borderColor: colorVars["--color-border-emphasized"],
     borderRadius: radiusVars["--radius-element"],
     backgroundColor: colorVars["--color-background-muted"],
   },
-  term: { margin: 0 },
+  term: { margin: 0, minWidth: 0, overflowWrap: "break-word" },
   value: { margin: 0, overflowWrap: "anywhere" },
 });
 
 /**
- * F2 (amended 2026-10-04): the counts as four stat tiles. Saved counts are the factual baseline;
- * with unsaved changes a changed tile shows "saved → draft" and the tiles are marked Unsaved.
+ * F2 (amended 2026-10-04): the counts as four stat tiles in one row. They count the statuses the
+ * Selectors show, which equal the saved records except while a change is being saved.
  */
-export function AttendanceCounts({
-  saved,
-  draft,
-  isDirty,
-}: {
-  saved: Counts;
-  draft: Counts;
-  isDirty: boolean;
-}) {
+export function AttendanceCounts({ counts, isSaving }: { counts: Counts; isSaving: boolean }) {
   return (
-    <div aria-live="polite" aria-atomic="true" {...stylex.props(styles.container)}>
+    <div aria-live="polite" aria-atomic="true">
       <VStack gap={2}>
-        {isDirty ? (
+        {isSaving ? (
           <div>
-            <Badge variant="warning" label="Unsaved" />
+            <Badge label="Saving…" />
           </div>
         ) : null}
         <dl aria-label="Attendance counts" {...stylex.props(styles.tiles)}>
-          {TILES.map(({ key, label }) => {
-            const changed = isDirty && draft[key] !== saved[key];
-            return (
-              <div key={key} {...stylex.props(styles.tile)}>
-                <dt {...stylex.props(styles.term)}>
-                  <Text type="supporting">{label}</Text>
-                </dt>
-                <dd {...stylex.props(styles.value)}>
-                  <Text type="large" weight="bold" hasTabularNumbers>
-                    {changed ? `${String(saved[key])} → ${String(draft[key])}` : String(saved[key])}
-                  </Text>
-                </dd>
-              </div>
-            );
-          })}
+          {TILES.map(({ key, label }) => (
+            <div key={key} {...stylex.props(styles.tile)}>
+              <dt {...stylex.props(styles.term)}>
+                <Text type="supporting">{label}</Text>
+              </dt>
+              <dd {...stylex.props(styles.value)}>
+                <Text type="large" weight="bold" hasTabularNumbers>
+                  {String(counts[key])}
+                </Text>
+              </dd>
+            </div>
+          ))}
         </dl>
       </VStack>
     </div>

@@ -10,7 +10,7 @@ import { type Control, Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { useUiStore } from "../../state/ui-store";
 import { formatAttendanceCounts } from "../attendance/attendance-counts";
-import type { RefetchEvent } from "../attendance/use-attendance-form";
+import type { RefetchEvent } from "../attendance/use-attendance-autosave";
 import { SourceDisclosure } from "../feedback/source-disclosure";
 import { formatTimestamp, SECTION_COPY } from "./briefing-copy";
 import { BriefingContentView } from "./briefing-content-view";

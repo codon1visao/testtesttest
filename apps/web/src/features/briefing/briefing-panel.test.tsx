@@ -137,15 +137,27 @@ describe("briefing panel", () => {
     expect(document.activeElement).toBe(generateButton(region));
   });
 
-  it("F4 step 1: is disabled while attendance has unsaved changes, and says why", async () => {
+  it("F4 step 1: is disabled while an attendance change is saving, and says why", async () => {
+    const { promise: gate, resolve: release } = Promise.withResolvers<undefined>();
+    mswServer.use(
+      http.put("/api/events/:eventId/attendance", async () => {
+        await gate;
+        return undefined;
+      }),
+    );
     const { user } = renderApp();
     const attendance = within(await screen.findByRole("region", { name: "Attendance" }));
     await chooseOption(user, attendance, "Chris", "Attended");
     const region = await panel();
-    expect(generateButton(region).disabled).toBe(true);
-    expect(
-      region.getByText("Save or discard your attendance changes before generating."),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(generateButton(region).disabled).toBe(true);
+    });
+    expect(region.getByText("Wait for attendance to save before generating.")).toBeTruthy();
+    release(undefined);
+    await waitFor(() => {
+      expect(generateButton(region).disabled).toBe(false);
+    });
+    expect(region.queryByText("Wait for attendance to save before generating.")).toBeNull();
   });
 
   it("F4-06: explains a failure and retries straight away when the outcome is known", async () => {

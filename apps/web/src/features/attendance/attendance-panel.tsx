@@ -1,6 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { VStack } from "@astryxdesign/core/Layout";
 import { Selector } from "@astryxdesign/core/Selector";
 import {
   Table,
@@ -10,7 +10,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@astryxdesign/core/Table";
-import { Heading, Text } from "@astryxdesign/core/Text";
+import { Heading } from "@astryxdesign/core/Text";
 import {
   ATTENDANCE_LABELS,
   ATTENDANCE_STATUSES,
@@ -21,11 +21,13 @@ import {
   type EventView,
 } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
-import { useRef, useState } from "react";
-import { Controller } from "react-hook-form";
-import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
+import { useRef } from "react";
 import { AttendanceCounts } from "./attendance-counts";
-import { type AttendanceNotice, type RefetchEvent, useAttendanceForm } from "./use-attendance-form";
+import {
+  type AttendanceNotice,
+  type RefetchEvent,
+  useAttendanceAutosave,
+} from "./use-attendance-autosave";
 
 const styles = stylex.create({
   // The Actions cell is only as wide as its Selector, so the status label is never cut off; the
@@ -42,14 +44,23 @@ const ATTENDANCE_OPTIONS = ATTENDANCE_STATUSES.map((status) => ({
 
 function NoticeBanner({
   notice,
-  isBusy,
-  onReload,
+  isChecking,
+  onCheckAgain,
 }: {
   notice: AttendanceNotice;
-  isBusy: boolean;
-  onReload: () => void;
+  isChecking: boolean;
+  onCheckAgain: () => void;
 }) {
+  const notApplied = `Your change to ${notice.name} was not applied.`;
   switch (notice.kind) {
+    case "failed":
+      return (
+        <Banner
+          status="error"
+          title={`${notice.name} was not saved`}
+          description={notice.message}
+        />
+      );
     case "conflict":
       return (
         <Banner
@@ -57,41 +68,40 @@ function NoticeBanner({
           title="Attendance changed elsewhere"
           description={
             notice.reloadError === null
-              ? `${notice.message} Your selections are kept until you choose to reload.`
-              : `${notice.message} The latest saved attendance could not be loaded, so your selections are kept: ${notice.reloadError}`
-          }
-          endContent={
-            <Button
-              label="Reload saved attendance"
-              variant="secondary"
-              isDisabled={isBusy}
-              onClick={onReload}
-            />
+              ? `${notApplied} The latest saved attendance is shown.`
+              : `${notApplied} The latest saved attendance could not be loaded: ${notice.reloadError}`
           }
         />
       );
-    case "failed":
-      return (
-        <Banner status="error" title="Attendance was not saved" description={notice.message} />
-      );
+    case "confirmed":
+      return <Banner status="success" title={`${notice.name} was saved.`} />;
     case "unconfirmed":
       return (
         <Banner
           status="warning"
           title="Could not confirm the save"
-          description="The saved records do not match your selections. They are kept; check them and save again."
+          description={`${notApplied} The latest saved attendance is shown.`}
         />
       );
     case "check-failed":
       return (
         <Banner
           status="warning"
-          title="Could not check the saved records"
-          description={`It is not known whether your changes were saved. Your selections are kept; try again. ${notice.message}`}
+          title="Could not check the saved attendance"
+          description={`It is not known whether your change to ${notice.name} was saved. ${notice.message}`}
+          endContent={
+            // While checking it stays focusable (aria-disabled through the tooltip), so a check that
+            // fails again leaves keyboard focus where it was.
+            <Button
+              label="Check again"
+              variant="secondary"
+              isLoading={isChecking}
+              {...(isChecking ? { tooltip: "Checking the saved attendance…" } : {})}
+              onClick={onCheckAgain}
+            />
+          }
         />
       );
-    case "confirmed":
-      return <Banner status="success" title="Your attendance changes were saved." />;
     default:
       return assertNever(notice, "attendance notice");
   }
@@ -106,14 +116,15 @@ export function AttendancePanel({
   view: EventView;
   refetch: RefetchEvent;
 }) {
-  const attendance = useAttendanceForm(eventId, view, refetch);
-  const [confirmingReload, setConfirmingReload] = useState(false);
-  // Discard and a confirmed reload unmount the control that had focus; focus moves here instead of <body>.
+  const attendance = useAttendanceAutosave(eventId, view, refetch);
+  // A successful Check again unmounts its button; focus moves here instead of <body>.
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const focusHeading = () => {
-    headingRef.current?.focus();
-  };
   const names = new Map(view.members.map((m) => [m.id as string, m.name]));
+  // The trigger stays focusable while locked (aria-disabled with this reason), so the Selector that
+  // started a save keeps keyboard focus through it (F2-10).
+  const lockedReason = attendance.isSaving
+    ? "Wait for attendance to save."
+    : "Check the saved attendance first.";
 
   return (
     <section aria-label="Attendance">
@@ -121,112 +132,59 @@ export function AttendancePanel({
         <Heading level={2} ref={headingRef} tabIndex={-1}>
           Attendance
         </Heading>
-        <form
-          noValidate
-          onSubmit={(event) => {
-            void attendance.submit(event);
-          }}
-        >
-          <VStack gap={3}>
-            <AttendanceCounts
-              saved={view.counts}
-              draft={deriveAttendanceCounts(attendance.draft)}
-              isDirty={attendance.isDirty}
-            />
-            <Table aria-label="Member attendance" density="compact">
-              <TableHeader>
-                <TableRow isHeaderRow>
-                  <TableHeaderCell scope="col" xstyle={styles.nameColumn}>
-                    Name
-                  </TableHeaderCell>
-                  <TableHeaderCell scope="col" xstyle={styles.actionsColumn}>
-                    Actions
-                  </TableHeaderCell>
+        <AttendanceCounts
+          counts={deriveAttendanceCounts(attendance.members)}
+          isSaving={attendance.isSaving}
+        />
+        <Table aria-label="Member attendance" density="compact">
+          <TableHeader>
+            <TableRow isHeaderRow>
+              <TableHeaderCell scope="col" xstyle={styles.nameColumn}>
+                Name
+              </TableHeaderCell>
+              <TableHeaderCell scope="col" xstyle={styles.actionsColumn}>
+                Actions
+              </TableHeaderCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {attendance.members.map((member) => {
+              const name = names.get(member.id) ?? member.id;
+              return (
+                <TableRow key={member.id}>
+                  <TableCell xstyle={styles.nameColumn}>{name}</TableCell>
+                  <TableCell xstyle={styles.actionsColumn}>
+                    {/* The Name column shows the member visually; the label names the control. */}
+                    <Selector
+                      label={name}
+                      isLabelHidden
+                      options={ATTENDANCE_OPTIONS}
+                      value={member.attendance}
+                      isDisabled={attendance.isLocked}
+                      disabledMessage={lockedReason}
+                      onChange={(value) => {
+                        const status = AttendanceStatusSchema.safeParse(value);
+                        if (status.success) void attendance.change(member.id, name, status.data);
+                      }}
+                    />
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {attendance.draft.map((member, index) => {
-                  const name = names.get(member.id) ?? member.id;
-                  return (
-                    <TableRow key={member.id}>
-                      <TableCell xstyle={styles.nameColumn}>{name}</TableCell>
-                      <TableCell xstyle={styles.actionsColumn}>
-                        <Controller
-                          control={attendance.form.control}
-                          name={`members.${index}.attendance`}
-                          render={({ field }) => (
-                            // The Name column shows the member visually; the label names the control.
-                            <Selector
-                              label={name}
-                              isLabelHidden
-                              options={ATTENDANCE_OPTIONS}
-                              value={field.value}
-                              isDisabled={attendance.isBusy}
-                              onChange={(value) => {
-                                const status = AttendanceStatusSchema.safeParse(value);
-                                if (status.success) field.onChange(status.data);
-                              }}
-                            />
-                          )}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            {attendance.isDirty ? (
-              <Text>
-                Unsaved attendance changes. Save or discard them before generating a briefing.
-              </Text>
-            ) : null}
-            {attendance.notice ? (
-              <NoticeBanner
-                notice={attendance.notice}
-                isBusy={attendance.isBusy}
-                onReload={() => {
-                  setConfirmingReload(true);
-                }}
-              />
-            ) : null}
-            <HStack gap={2}>
-              <Button
-                type="submit"
-                variant="primary"
-                label="Save attendance"
-                isDisabled={!attendance.isDirty || attendance.isBusy}
-                isLoading={attendance.isSaving}
-              />
-              {attendance.isDirty ? (
-                <Button
-                  variant="secondary"
-                  label="Discard attendance changes"
-                  isDisabled={attendance.isBusy}
-                  onClick={() => {
-                    attendance.discard();
-                    focusHeading();
-                  }}
-                />
-              ) : null}
-            </HStack>
-          </VStack>
-        </form>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {attendance.notice ? (
+          <NoticeBanner
+            notice={attendance.notice}
+            isChecking={attendance.isChecking}
+            onCheckAgain={() => {
+              void attendance.checkAgain().then((settled) => {
+                if (settled) headingRef.current?.focus();
+              });
+            }}
+          />
+        ) : null}
       </VStack>
-      <ConfirmDialog
-        isOpen={confirmingReload}
-        title="Reload saved attendance?"
-        description="Your unsaved selections will be discarded and replaced by the latest saved attendance."
-        actionLabel="Discard and reload"
-        onCancel={() => {
-          setConfirmingReload(false);
-        }}
-        onConfirm={() => {
-          setConfirmingReload(false);
-          void attendance.reloadSaved().then((reloaded) => {
-            if (reloaded) focusHeading();
-          });
-        }}
-      />
     </section>
   );
 }

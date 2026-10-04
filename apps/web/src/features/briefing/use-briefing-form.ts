@@ -6,7 +6,7 @@ import { ApiError, describeApiError } from "../../data/http/api-error";
 import { useSaveBriefing } from "../../data/mutations/use-save-briefing";
 import { useBeforeUnloadWarning } from "../../shared/hooks/use-before-unload-warning";
 import { useUiStore } from "../../state/ui-store";
-import type { RefetchEvent } from "../attendance/use-attendance-form";
+import type { RefetchEvent } from "../attendance/use-attendance-autosave";
 import {
   type BriefingFieldPath,
   BriefingFormSchema,

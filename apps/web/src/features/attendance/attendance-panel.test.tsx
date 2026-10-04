@@ -11,6 +11,7 @@ import { chooseOption } from "../../testing/selector";
 
 const M03 = MemberIdSchema.parse("M03");
 const M04 = MemberIdSchema.parse("M04");
+const MEMBERS = ["Alex", "Bea", "Chris", "Drew"];
 let api: FakeEventApi;
 
 beforeEach(() => {
@@ -19,8 +20,17 @@ beforeEach(() => {
 });
 
 const panel = async () => within(await screen.findByRole("region", { name: "Attendance" }));
-const select = (region: Awaited<ReturnType<typeof panel>>, name: string) =>
+type Region = Awaited<ReturnType<typeof panel>>;
+const select = (region: Region, name: string) =>
   region.getByRole<HTMLButtonElement>("combobox", { name });
+/**
+ * Locked for input: Astryx keeps a Selector with a disabled message focusable through
+ * aria-disabled, so the trigger that started a save keeps keyboard focus (F2-10).
+ */
+const isLocked = (element: HTMLElement) =>
+  (element instanceof HTMLButtonElement && element.disabled) ||
+  element.getAttribute("aria-disabled") === "true";
+const lockedStates = (region: Region) => MEMBERS.map((name) => isLocked(select(region, name)));
 /**
  * The "Attendance saved" toast. Astryx also announces its text in a document-level live region, so
  * a plain findByText finds two elements whenever both are present at its first check (under load)
@@ -37,13 +47,15 @@ const toastShown = async (text: string) => {
     { timeout: 3_000 },
   );
 };
+/** A tile label as read: without the soft hyphens that let it wrap in a narrow tile. */
+const termText = (term: Element | null | undefined) => term?.textContent.replaceAll("\u00AD", "");
 /** A count tile's value, by its label: the <dd> beside that <dt> (F2 counts as stat tiles). */
-const tileValue = (region: Awaited<ReturnType<typeof panel>>, label: string) => {
-  const term = region.getAllByRole("term").find((element) => element.textContent === label);
+const tileValue = (region: Region, label: string) => {
+  const term = region.getAllByRole("term").find((element) => termText(element) === label);
   if (term === undefined) throw new Error(`no ${label} tile`);
   return term.parentElement?.querySelector("dd")?.textContent ?? null;
 };
-const tileValues = (region: Awaited<ReturnType<typeof panel>>) =>
+const tileValues = (region: Region) =>
   ["Registered", "Attended", "Absent", "Not recorded"].map((label) => tileValue(region, label));
 const refocus = () => {
   act(() => {
@@ -51,46 +63,53 @@ const refocus = () => {
     focusManager.setFocused(true);
   });
 };
+/** Holds every attendance PUT until released; the fake API then answers it as usual. */
+const holdSaves = () => {
+  const { promise: gate, resolve } = Promise.withResolvers<undefined>();
+  mswServer.use(
+    http.put("/api/events/:eventId/attendance", async () => {
+      await gate;
+      return undefined;
+    }),
+  );
+  return () => {
+    resolve(undefined);
+  };
+};
+const leavingIsWarned = () => {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+};
 
 describe("attendance panel", () => {
-  it("F2-01: shows each member's saved status and the saved counts", async () => {
+  it("F2-01: shows each member's saved status and the saved counts, with no Save button", async () => {
     renderApp();
     const region = await panel();
     expect(select(region, "Alex").textContent).toBe("Attended");
     expect(select(region, "Chris").textContent).toBe("Not recorded");
     expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
-    expect(
-      region.getByRole<HTMLButtonElement>("button", { name: "Save attendance" }).disabled,
-    ).toBe(true);
+    expect(region.queryByRole("button", { name: "Save attendance" })).toBeNull();
+    expect(region.queryByRole("button", { name: "Discard attendance changes" })).toBeNull();
   });
 
-  it("F2 counts: four labelled tiles; changed tiles show saved → draft under an Unsaved badge until Discard", async () => {
-    const { user } = renderApp();
+  it("F2 counts: four labelled tiles in one row, in order, announced as a whole", async () => {
+    renderApp();
     const region = await panel();
     const counts = region.getByLabelText("Attendance counts");
     expect(counts.tagName).toBe("DL");
-    // Announced as a whole: the badge and every label with its value, not a bare "1 → 2".
     const live = counts.closest("[aria-live]");
     expect(live?.getAttribute("aria-live")).toBe("polite");
     expect(live?.getAttribute("aria-atomic")).toBe("true");
-    expect(
-      within(counts)
-        .getAllByRole("term")
-        .map((term) => term.textContent),
-    ).toEqual(["Registered", "Attended", "Absent", "Not recorded"]);
+    // One tile per count, as direct children of the list, in reading order.
+    expect(Array.from(counts.children).map((tile) => termText(tile.querySelector("dt")))).toEqual([
+      "Registered",
+      "Attended",
+      "Absent",
+      "Not recorded",
+    ]);
     expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
-    expect(region.queryByText("Unsaved")).toBeNull();
-
-    await chooseOption(user, region, "Chris", "Attended");
-    expect(tileValue(region, "Attended")).toBe("1 → 2");
-    expect(tileValue(region, "Not recorded")).toBe("1 → 0");
-    expect(tileValue(region, "Registered")).toBe("4");
-    expect(tileValue(region, "Absent")).toBe("2");
-    expect(region.getByText("Unsaved")).toBeTruthy();
-
-    await user.click(region.getByRole("button", { name: "Discard attendance changes" }));
-    expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
-    expect(region.queryByText("Unsaved")).toBeNull();
+    expect(region.queryByText("Saving…")).toBeNull();
   });
 
   it("offers exactly the three states, labelled Not recorded (not Absent)", async () => {
@@ -101,22 +120,10 @@ describe("attendance panel", () => {
     expect(options).toEqual(["Attended", "Absent", "Not recorded"]);
   });
 
-  it("F2-02: previews unsaved counts while keeping the saved baseline", async () => {
+  it("F2-03: a choice saves at once: one PUT with all members and the saved revision", async () => {
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    // Changed tiles show saved → draft; unchanged tiles keep the plain saved value.
-    expect(tileValues(region)).toEqual(["4", "1 → 2", "2", "1 → 0"]);
-    expect(region.getByText("Unsaved")).toBeTruthy();
-    expect(region.getByText(/unsaved attendance changes/i)).toBeTruthy();
-    expect(useUiStore.getState().attendanceDirty).toBe(true);
-  });
-
-  it("F2-03: saves all members in one request with the draft's base revision", async () => {
-    const { user } = renderApp();
-    const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
     await toastShown("Attendance saved");
     expect(api.attendanceRequests).toEqual([
       {
@@ -129,164 +136,150 @@ describe("attendance panel", () => {
         ],
       },
     ]);
-    await waitFor(() => {
-      expect(tileValues(region)).toEqual(["4", "2", "2", "0"]);
-    });
-    expect(region.queryByText("Unsaved")).toBeNull();
-    expect(region.queryByText(/unsaved attendance changes/i)).toBeNull();
+    expect(tileValues(region)).toEqual(["4", "2", "2", "0"]);
+    expect(select(region, "Chris").textContent).toBe("Attended");
     expect(useUiStore.getState().attendanceDirty).toBe(false);
   });
 
-  it("discards back to the saved values without asking (explicit action)", async () => {
+  it("choosing the status a member already has sends nothing", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
-    await user.click(region.getByRole("button", { name: "Discard attendance changes" }));
-    expect(select(region, "Chris").textContent).toBe("Not recorded");
-    expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
-    expect(region.queryByText("Unsaved")).toBeNull();
+    await chooseOption(user, region, "Chris", "Not recorded");
+    await act(() => delay(50));
+    expect(api.attendanceRequests).toHaveLength(0);
+    expect(region.queryByText("Saving…")).toBeNull();
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
   });
 
-  it("moves focus to the Attendance heading after a keyboard Discard (the button unmounts)", async () => {
+  it("while saving: every Selector is locked, Saving… shows, the tiles show the choice, Generate waits", async () => {
+    const release = holdSaves();
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    act(() => {
-      region.getByRole("button", { name: "Discard attendance changes" }).focus();
+    expect(await region.findByText("Saving…")).toBeTruthy();
+    expect(lockedStates(region)).toEqual([true, true, true, true]);
+    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(tileValues(region)).toEqual(["4", "2", "2", "0"]);
+    expect(useUiStore.getState().attendanceDirty).toBe(true);
+    expect(leavingIsWarned()).toBe(true);
+
+    release();
+    await waitFor(() => {
+      expect(region.queryByText("Saving…")).toBeNull();
     });
-    await user.keyboard("{Enter}");
-    expect(select(region, "Chris").textContent).toBe("Not recorded");
-    expect(document.activeElement).toBe(region.getByRole("heading", { name: "Attendance" }));
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
+    expect(tileValues(region)).toEqual(["4", "2", "2", "0"]);
+    expect(useUiStore.getState().attendanceDirty).toBe(false);
+    expect(leavingIsWarned()).toBe(false);
   });
 
-  it("F2-08: keeps the selections and explains a failed save", async () => {
+  it("adopts the saved response: the next change carries the new revision", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    await chooseOption(user, region, "Chris", "Attended");
+    await waitFor(() => {
+      expect(isLocked(select(region, "Drew"))).toBe(false);
+    });
+    await chooseOption(user, region, "Drew", "Attended");
+    await waitFor(() => {
+      expect(api.attendanceRequests).toHaveLength(2);
+    });
+    expect(api.attendanceRequests[1]).toMatchObject({ baseAttendanceRevision: 1 });
+    await waitFor(() => {
+      expect(tileValues(region)).toEqual(["4", "3", "1", "0"]);
+    });
+    expect(api.view.attendanceRevision).toBe(2);
+  });
+
+  it("a second choice while a save is in flight sends nothing (one PUT)", async () => {
+    const release = holdSaves();
+    const { user } = renderApp();
+    const region = await panel();
+    await chooseOption(user, region, "Chris", "Attended");
+    await region.findByText("Saving…");
+    await user.click(select(region, "Drew"));
+    expect(region.queryByRole("listbox")).toBeNull();
+    release();
+    await toastShown("Attendance saved");
+    expect(api.attendanceRequests).toHaveLength(1);
+    expect(select(region, "Drew").textContent).toBe("Absent");
+  });
+
+  it("F2-08: a failed save reverts the choice and names the member; the next successful save clears it", async () => {
     mswServer.use(
-      http.put("/api/events/:eventId/attendance", () =>
-        apiErrorResponse(
-          503,
-          "STORE_UNAVAILABLE",
-          "The event store is unavailable. Try again shortly.",
-        ),
+      http.put(
+        "/api/events/:eventId/attendance",
+        () =>
+          apiErrorResponse(
+            503,
+            "STORE_UNAVAILABLE",
+            "The event store is unavailable. Try again shortly.",
+          ),
+        { once: true },
       ),
     );
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(
-      await region.findByText("The event store is unavailable. Try again shortly."),
-    ).toBeTruthy();
-    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(await region.findByText("Chris was not saved")).toBeTruthy();
+    expect(region.getByText("The event store is unavailable. Try again shortly.")).toBeTruthy();
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
+    expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
+    expect(useUiStore.getState().attendanceDirty).toBe(false);
     // The toast text is also announced through Astryx's screen-reader live region, so it occurs twice.
     expect(await screen.findAllByText(/^Attendance was not saved:/)).not.toHaveLength(0);
+
+    await chooseOption(user, region, "Drew", "Attended");
+    await waitFor(() => {
+      expect(region.queryByText("Chris was not saved")).toBeNull();
+    });
+    expect(select(region, "Drew").textContent).toBe("Attended");
   });
 
-  it("explains a conflict, keeps the draft, and reloads only after confirmation", async () => {
+  it("a conflict re-reads and shows the latest saved attendance with a warning", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
     api.saveElsewhere(M04, "attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
-    expect(select(region, "Chris").textContent).toBe("Attended");
-    await user.click(region.getByRole("button", { name: "Reload saved attendance" }));
-    await user.click(await screen.findByRole("button", { name: "Discard and reload" }));
-    await waitFor(() => {
-      expect(select(region, "Drew").textContent).toBe("Attended");
-    });
-    expect(select(region, "Chris").textContent).toBe("Not recorded");
-    expect(region.queryByText(/saved elsewhere/i)).toBeNull();
-    // The Reload button unmounted with the notice; focus lands on a stable target, not <body>.
-    await waitFor(() => {
-      expect(document.activeElement).toBe(region.getByRole("heading", { name: "Attendance" }));
-    });
-  });
-
-  it("keeps the draft and the conflict explanation when the confirmed reload fails", async () => {
-    const { user } = renderApp();
-    const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    api.saveElsewhere(M04, "attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
-    mswServer.use(http.get("/api/events/:eventId", () => HttpResponse.error()));
-    await user.click(region.getByRole("button", { name: "Reload saved attendance" }));
-    await user.click(await screen.findByRole("button", { name: "Discard and reload" }));
+    expect(await region.findByText("Attendance changed elsewhere")).toBeTruthy();
     expect(
-      await region.findByText(/the latest saved attendance could not be loaded/i),
+      region.getByText(
+        "Your change to Chris was not applied. The latest saved attendance is shown.",
+      ),
     ).toBeTruthy();
-    expect(region.getByText(/saved elsewhere/i)).toBeTruthy();
-    expect(select(region, "Chris").textContent).toBe("Attended");
-    expect(select(region, "Drew").textContent).toBe("Absent");
-    expect(region.getByRole("button", { name: "Reload saved attendance" })).toBeTruthy();
-  });
-
-  it("clears the conflict when the draft is reverted by hand and the form adopts the newer records", async () => {
-    const { user } = renderApp();
-    const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
-    api.saveElsewhere(M04, "attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
-    await waitFor(() => {
-      // The saved counts moved on (Drew attended elsewhere) under the unchanged draft.
-      expect(tileValue(region, "Attended")).toBe("2");
-      expect(tileValue(region, "Absent")).toBe("1 → 2");
-    });
-    await chooseOption(user, region, "Chris", "Not recorded");
-    await waitFor(() => {
-      expect(select(region, "Drew").textContent).toBe("Attended");
-    });
-    expect(region.queryByText(/saved elsewhere/i)).toBeNull();
-  });
-
-  it("a refetch never overwrites a dirty draft, and its save still conflicts", async () => {
-    const { user } = renderApp();
-    const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
-    api.saveElsewhere(M04, "attended");
-    refocus();
-    await waitFor(() => {
-      // The saved counts moved on (Drew attended elsewhere) under the unchanged draft.
-      expect(tileValue(region, "Attended")).toBe("2");
-      expect(tileValue(region, "Absent")).toBe("1 → 2");
-    });
-    expect(select(region, "Chris").textContent).toBe("Attended");
-    expect(select(region, "Drew").textContent).toBe("Absent");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
+    expect(select(region, "Drew").textContent).toBe("Attended");
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
+    expect(tileValues(region)).toEqual(["4", "2", "1", "1"]);
     expect(api.view.members.find((m) => m.id === M03)?.attendance).toBe("not_recorded");
-  });
 
-  it("a clean form follows newer saved records", async () => {
-    renderApp();
-    const region = await panel();
-    api.saveElsewhere(M04, "attended");
-    refocus();
+    // Choosing again starts from the latest revision, saves, and clears the warning.
+    await chooseOption(user, region, "Chris", "Attended");
     await waitFor(() => {
-      expect(select(region, "Drew").textContent).toBe("Attended");
+      expect(region.queryByText("Attendance changed elsewhere")).toBeNull();
     });
+    expect(api.attendanceRequests[1]).toMatchObject({ baseAttendanceRevision: 1 });
+    expect(select(region, "Chris").textContent).toBe("Attended");
   });
 
-  it("a draft reverted by hand follows the saved records that arrived while it was dirty", async () => {
+  it("a conflict whose re-read fails reverts to the last known saved values and says why", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
     api.saveElsewhere(M04, "attended");
-    refocus();
-    await waitFor(() => {
-      // The saved counts moved on (Drew attended elsewhere) under the unchanged draft.
-      expect(tileValue(region, "Attended")).toBe("2");
-      expect(tileValue(region, "Absent")).toBe("1 → 2");
-    });
+    mswServer.use(http.get("/api/events/:eventId", () => HttpResponse.error()));
+    await chooseOption(user, region, "Chris", "Attended");
+    expect(await region.findByText("Attendance changed elsewhere")).toBeTruthy();
+    expect(
+      region.getByText(
+        /^Your change to Chris was not applied\. The latest saved attendance could not be loaded: Could not reach the event API/,
+      ),
+    ).toBeTruthy();
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
     expect(select(region, "Drew").textContent).toBe("Absent");
-    await chooseOption(user, region, "Chris", "Not recorded");
-    await waitFor(() => {
-      expect(select(region, "Drew").textContent).toBe("Attended");
-    });
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
   });
 
-  it("reconciles a lost response that was in fact saved", async () => {
+  it("a lost response that was in fact saved is confirmed by one re-read", async () => {
     mswServer.use(
       http.put("/api/events/:eventId/attendance", () => {
         api.saveElsewhere(M03, "attended");
@@ -296,9 +289,11 @@ describe("attendance panel", () => {
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText("Your attendance changes were saved.")).toBeTruthy();
-    expect(region.queryByText(/unsaved attendance changes/i)).toBeNull();
+    expect(await region.findByText("Chris was saved.")).toBeTruthy();
+    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(tileValues(region)).toEqual(["4", "2", "2", "0"]);
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
+    expect(useUiStore.getState().attendanceDirty).toBe(false);
   });
 
   it("treats a 2xx save with a malformed body as unconfirmed and reconciles it", async () => {
@@ -311,29 +306,34 @@ describe("attendance panel", () => {
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText("Your attendance changes were saved.")).toBeTruthy();
+    expect(await region.findByText("Chris was saved.")).toBeTruthy();
     expect(screen.queryByText(/attendance was not saved/i)).toBeNull();
     expect(await screen.findAllByText(/could not confirm the attendance save/i)).not.toHaveLength(
       0,
     );
   });
 
-  it("keeps the draft when a lost response was not saved", async () => {
+  it("a lost response that was not saved shows the latest saved values and a warning", async () => {
     mswServer.use(http.put("/api/events/:eventId/attendance", () => HttpResponse.error()));
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText(/could not confirm the save/i)).toBeTruthy();
-    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(await region.findByText("Could not confirm the save")).toBeTruthy();
+    expect(
+      region.getByText(
+        "Your change to Chris was not applied. The latest saved attendance is shown.",
+      ),
+    ).toBeTruthy();
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
   });
 
-  it("says the check failed (not a mismatch) when the re-read after a lost response fails", async () => {
+  it("a failed re-read after a lost response keeps everything locked until Check again succeeds", async () => {
     let failReads = false;
     mswServer.use(
       http.get("/api/events/:eventId", () => (failReads ? HttpResponse.error() : undefined)),
       http.put("/api/events/:eventId/attendance", () => {
+        api.saveElsewhere(M03, "attended");
         failReads = true;
         return HttpResponse.error();
       }),
@@ -341,15 +341,27 @@ describe("attendance panel", () => {
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    await user.click(region.getByRole("button", { name: "Save attendance" }));
-    expect(await region.findByText("Could not check the saved records")).toBeTruthy();
-    expect(region.getByText(/your selections are kept/i)).toBeTruthy();
-    expect(region.queryByText(/do not match your selections/i)).toBeNull();
+    expect(await region.findByText("Could not check the saved attendance")).toBeTruthy();
+    expect(region.getByText(/Could not reach the event API/)).toBeTruthy();
+    expect(region.queryByText("Could not confirm the save")).toBeNull();
+    expect(lockedStates(region)).toEqual([true, true, true, true]);
+    expect(useUiStore.getState().attendanceDirty).toBe(true);
+    const briefing = within(screen.getByRole("region", { name: "Briefing" }));
+    expect(briefing.getByRole<HTMLButtonElement>("button", { name: "Generate" }).disabled).toBe(
+      true,
+    );
+
+    failReads = false;
+    await user.click(region.getByRole("button", { name: "Check again" }));
+    expect(await region.findByText("Chris was saved.")).toBeTruthy();
+    expect(region.queryByText("Could not check the saved attendance")).toBeNull();
     expect(select(region, "Chris").textContent).toBe("Attended");
-    expect(region.getByText(/unsaved attendance changes/i)).toBeTruthy();
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
+    expect(useUiStore.getState().attendanceDirty).toBe(false);
+    expect(api.attendanceRequests).toHaveLength(0);
   });
 
-  it("keeps inputs and Save locked during the lost-response check, with one re-read and one PUT", async () => {
+  it("keeps the Selectors locked during the lost-response check, with one re-read and one PUT", async () => {
     let checking = false;
     let reads = 0;
     let puts = 0;
@@ -369,43 +381,33 @@ describe("attendance panel", () => {
     const { user } = renderApp();
     const region = await panel();
     await chooseOption(user, region, "Chris", "Attended");
-    const save = region.getByRole<HTMLButtonElement>("button", { name: "Save attendance" });
-    await user.click(save);
     await waitFor(() => {
       expect(reads).toBe(1);
     });
-    // The PUT has failed; the re-read is in flight. Nothing may be edited or saved meanwhile.
+    // The PUT has failed; the re-read is in flight. Nothing may be changed meanwhile.
     await act(() => delay(50));
-    expect(select(region, "Alex").disabled).toBe(true);
-    expect(select(region, "Chris").disabled).toBe(true);
-    expect(save.disabled).toBe(true);
-    await user.click(save);
-    expect(await region.findByText(/could not confirm the save/i)).toBeTruthy();
-    expect(select(region, "Chris").disabled).toBe(false);
+    expect(lockedStates(region)).toEqual([true, true, true, true]);
+    expect(region.getByText("Saving…")).toBeTruthy();
     expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(await region.findByText("Could not confirm the save")).toBeTruthy();
+    expect(lockedStates(region)).toEqual([false, false, false, false]);
     expect(puts).toBe(1);
     expect(reads).toBe(1);
   });
 
-  it("locks inputs while saving and sends one request for a double-clicked Save", async () => {
-    mswServer.use(
-      http.put("/api/events/:eventId/attendance", async ({ request }) => {
-        await delay(150);
-        api.attendanceRequests.push(await request.json());
-        return apiErrorResponse(503, "STORE_UNAVAILABLE", "Busy.");
-      }),
-    );
-    const { user } = renderApp();
+  it("a newer saved view replaces what is shown when nothing is saving", async () => {
+    renderApp();
     const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
-    const save = region.getByRole("button", { name: "Save attendance" });
-    await user.dblClick(save);
-    expect(select(region, "Alex").disabled).toBe(true);
-    await region.findByText("Busy.");
-    expect(api.attendanceRequests).toHaveLength(1);
+    api.saveElsewhere(M04, "attended");
+    refocus();
+    await waitFor(() => {
+      expect(select(region, "Drew").textContent).toBe("Attended");
+    });
+    expect(tileValues(region)).toEqual(["4", "2", "1", "1"]);
   });
 
-  it("F2-10: every control is reachable and operable by keyboard", async () => {
+  it("F2-10: every Selector is reachable and operable by keyboard; focus stays on it through the save", async () => {
+    const release = holdSaves();
     const { user } = renderApp();
     const region = await panel();
     act(() => {
@@ -420,11 +422,18 @@ describe("attendance panel", () => {
     expect(await region.findByRole("listbox")).toBeTruthy();
     await user.keyboard("{ArrowUp}{Enter}");
     expect(select(region, "Drew").textContent).toBe("Attended");
+    await region.findByText("Saving…");
+    // Locked through aria-disabled, never the disabled attribute: browsers drop focus from a
+    // natively disabled button to <body> (jsdom keeps it, so the attribute itself is checked).
+    expect(select(region, "Drew").disabled).toBe(false);
+    expect(select(region, "Drew").getAttribute("aria-disabled")).toBe("true");
     expect(document.activeElement).toBe(select(region, "Drew"));
-    await user.tab();
-    expect(document.activeElement).toBe(region.getByRole("button", { name: "Save attendance" }));
-    await user.keyboard("{Enter}");
+    release();
     await toastShown("Attendance saved");
+    await waitFor(() => {
+      expect(isLocked(select(region, "Drew"))).toBe(false);
+    });
+    expect(document.activeElement).toBe(select(region, "Drew"));
   });
 
   it("shows the members as a table with Name and Actions columns", async () => {
@@ -439,20 +448,6 @@ describe("attendance panel", () => {
     const rows = within(table)
       .getAllByRole("row")
       .filter((row) => within(row).queryAllByRole("columnheader").length === 0);
-    expect(rows.map((row) => within(row).getAllByRole("cell")[0]?.textContent)).toEqual([
-      "Alex",
-      "Bea",
-      "Chris",
-      "Drew",
-    ]);
-  });
-
-  it("warns before leaving while attendance is unsaved", async () => {
-    const { user } = renderApp();
-    const region = await panel();
-    await chooseOption(user, region, "Chris", "Attended");
-    const event = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(true);
+    expect(rows.map((row) => within(row).getAllByRole("cell")[0]?.textContent)).toEqual(MEMBERS);
   });
 });
