@@ -3,6 +3,7 @@ import { Grid } from "@astryxdesign/core/Grid";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { ListSection } from "@event-desk/contracts";
+import { colorVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { type ReactNode, useId } from "react";
 import { SECTION_COPY } from "./briefing-copy";
@@ -14,7 +15,15 @@ const styles = stylex.create({
     padding: 0,
     display: "flex",
     flexDirection: "column",
-    gap: "0.75rem",
+    gap: spacingVars["--spacing-3"],
+  },
+  // A hairline between items, so multi-line items never read as one paragraph. Block spacing
+  // only: the item's own content keeps its inline position.
+  item: {
+    borderBlockStartWidth: { default: "1px", ":first-child": 0 },
+    borderBlockStartStyle: "solid",
+    borderBlockStartColor: colorVars["--color-border"],
+    paddingBlockStart: { default: spacingVars["--spacing-3"], ":first-child": 0 },
   },
 });
 
@@ -52,7 +61,9 @@ function BriefingSection({
       ) : (
         <ol aria-labelledby={headingId} {...stylex.props(styles.list)}>
           {items.map((item, index) => (
-            <li key={`${section}-${String(index)}`}>{item}</li>
+            <li key={`${section}-${String(index)}`} {...stylex.props(styles.item)}>
+              {item}
+            </li>
           ))}
         </ol>
       )}

@@ -69,6 +69,10 @@ describe("attendance panel", () => {
     const region = await panel();
     const counts = region.getByLabelText("Attendance counts");
     expect(counts.tagName).toBe("DL");
+    // Announced as a whole: the badge and every label with its value, not a bare "1 → 2".
+    const live = counts.closest("[aria-live]");
+    expect(live?.getAttribute("aria-live")).toBe("polite");
+    expect(live?.getAttribute("aria-atomic")).toBe("true");
     expect(
       within(counts)
         .getAllByRole("term")

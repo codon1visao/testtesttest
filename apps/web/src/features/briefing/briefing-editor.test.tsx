@@ -406,6 +406,9 @@ describe("briefing editor", () => {
     expectReadItem(region, "Themes", "Requests for more rest-break time.");
     await user.click(region.getByRole("button", { name: "Edit" }));
     expect(field(region, "Theme 1").value).toBe("Requests for more rest-break time.");
+    // Each item's text area is named by its section's item label and position.
+    expect(field(region, "Disagreement 2")).toBeTruthy();
+    expect(field(region, "Suggestion 1").value).toBe(preview.content.suggestions[0]?.text);
     await waitFor(() => {
       expect(document.activeElement).toBe(field(region, "Feedback summary"));
     });

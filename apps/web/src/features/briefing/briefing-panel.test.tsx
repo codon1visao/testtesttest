@@ -386,6 +386,24 @@ describe("briefing panel", () => {
     expect(region.queryByText("New briefing ready to review")).toBeNull();
   });
 
+  it("F4 step 7 / F6-09: this tab's own result never replaces a draft typed while it was generating", async () => {
+    const second = otherPreview(4, "Second preview theme.");
+    api.view = { ...api.view, selectedPreview: buildBriefingView() };
+    api.generationReplies.push({ kind: "preview", preview: second, delayMs: 150 });
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(generateButton(region));
+    // Edit stays available while the generation runs; the draft is dirty when the result lands.
+    await startEditing(user, region);
+    await user.type(region.getByLabelText<HTMLTextAreaElement>("Theme 1"), " Typed meanwhile.");
+    expect(await region.findByText("New briefing ready to review")).toBeTruthy();
+    expect(api.generationRequests).toHaveLength(1);
+    expect(api.selectRequests).toHaveLength(0);
+    expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
+      "Requests for more rest-break time. Typed meanwhile.",
+    );
+  });
+
   it("F4 step 7: an automatic select whose late response the view moved past unlocks the editor", async () => {
     const second = otherPreview(4, "Second preview theme.");
     const elsewhere = otherPreview(7, "Selected in another tab.");

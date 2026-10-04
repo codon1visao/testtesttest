@@ -1,7 +1,7 @@
 import { Badge } from "@astryxdesign/core/Badge";
-import { Card } from "@astryxdesign/core/Card";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
+import { colorVars, radiusVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import type { AttendanceCounts as Counts } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
 
@@ -28,8 +28,20 @@ const styles = stylex.create({
     gap: "0.5rem",
     margin: 0,
   },
-  // The value reads first, the label below it; in the markup the <dt> still names its <dd>.
-  tile: { display: "flex", flexDirection: "column-reverse", gap: "0.25rem", minWidth: 0 },
+  // The value reads first, the label below it; in the markup the <dt> still names its <dd>. A
+  // border gives the tile its own edge in both themes (the muted fill alone can match the card).
+  tile: {
+    display: "flex",
+    flexDirection: "column-reverse",
+    gap: "0.25rem",
+    minWidth: 0,
+    padding: spacingVars["--spacing-2"],
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: colorVars["--color-border-emphasized"],
+    borderRadius: radiusVars["--radius-element"],
+    backgroundColor: colorVars["--color-background-muted"],
+  },
   term: { margin: 0 },
   value: { margin: 0, overflowWrap: "anywhere" },
 });
@@ -48,7 +60,7 @@ export function AttendanceCounts({
   isDirty: boolean;
 }) {
   return (
-    <div aria-live="polite" {...stylex.props(styles.container)}>
+    <div aria-live="polite" aria-atomic="true" {...stylex.props(styles.container)}>
       <VStack gap={2}>
         {isDirty ? (
           <div>
@@ -59,7 +71,7 @@ export function AttendanceCounts({
           {TILES.map(({ key, label }) => {
             const changed = isDirty && draft[key] !== saved[key];
             return (
-              <Card key={key} variant="muted" padding={2} xstyle={styles.tile}>
+              <div key={key} {...stylex.props(styles.tile)}>
                 <dt {...stylex.props(styles.term)}>
                   <Text type="supporting">{label}</Text>
                 </dt>
@@ -68,7 +80,7 @@ export function AttendanceCounts({
                     {changed ? `${String(saved[key])} → ${String(draft[key])}` : String(saved[key])}
                   </Text>
                 </dd>
-              </Card>
+              </div>
             );
           })}
         </dl>
