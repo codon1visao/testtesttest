@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): a retry after a lost response keeps the draft's base revision. Three-state attendance, application-calculated counts, backend persistence, explicit batch saving and revision-based conflict checks.
+Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): a retry after a lost response keeps the draft's base revision. Amended 2026-10-04 (user-approved): attendance is a Name/Actions table with an Astryx Selector per member. Three-state attendance, application-calculated counts, backend persistence, explicit batch saving and revision-based conflict checks.
 
 ## Outcome and scope
 
@@ -21,7 +21,7 @@ Contribution to the [client goal](README.md#product-goal-solve-the-client-situat
 5. On success, replace the saved baseline with the response, clear the dirty state and update briefing freshness using [F6](06-freshness-and-regeneration.md).
 6. On failure, retain selections, show the failure and allow a deliberate retry.
 
-Use a labelled native select for each member as the compact interaction. The accessible name includes the member name. Show an explicit **Discard attendance changes** action that restores the last confirmed saved values. Do not autosave or discard another panel's changes as a side effect.
+Show the members in a table with **Name** and **Actions** columns; each Actions cell is a labelled Astryx Selector (Attended / Absent / Not recorded). The accessible name includes the member name. Show an explicit **Discard attendance changes** action that restores the last confirmed saved values. Do not autosave or discard another panel's changes as a side effect.
 
 If a generated or saved briefing already exists, a successful attendance change marks it out of date. If its editor is open, update the warning and current saved counts in place while preserving every unsaved text edit and fixed reference. Do not replace editor content with a refetched server copy or trigger generation automatically. A failed attendance save keeps the earlier saved baseline; the unsaved-attendance warning remains.
 

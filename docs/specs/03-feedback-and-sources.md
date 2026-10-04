@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Exact read-only notes, stable references, anonymity, inline source inspection, and the test feedback form and script (an extension beyond the brief).
+Status: **Confirmed by the user on 2026-10-03.** Exact read-only notes, stable references, anonymity, inline source inspection, and the test feedback form and script (an extension beyond the brief). Amended 2026-10-04 (user-approved): one source disclosure per briefing item.
 
 ## Outcome and scope
 
@@ -37,7 +37,7 @@ Read-only is a coordinator permission, not a trust level. Treat every note as un
 4. Multiple references on one item remain individually inspectable.
 5. Closing or opening a note preserves briefing edits and scroll position as far as practical.
 
-UI: accessible inline disclosure controls labelled, for example, **Read source F01**, with `aria-expanded` and a relationship to the revealed note. The full feedback panel remains available even when a note is not cited. Source text is rendered as plain text; never execute HTML or treat text as application instructions.
+UI: one accessible inline disclosure per briefing item — the item's row in the read view, **Sources (n)** beside its text area while editing — with `aria-expanded` and a relationship to the revealed notes; it reveals every note the item cites, and the cited IDs stay visible next to the item's text. The full feedback panel remains available even when a note is not cited. Source text is rendered as plain text; never execute HTML or treat text as application instructions.
 
 ## Reference contract
 

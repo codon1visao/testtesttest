@@ -30,17 +30,22 @@ test("F7-15 / F3-10: notes from the feedback form reach the open coordinator pag
     timeout: 15_000,
   });
 
-  // Nothing is being edited (after the walkthrough the saved briefing is open with Save disabled;
-  // run alone, no editor is open at all), so the automatic result is offered, not opened (F7),
-  // and reviewing it never asks to discard a draft.
+  // Nothing is being edited (after the walkthrough the saved briefing is open in its read view,
+  // which offers Edit briefing only; run alone, no editor is open at all), so the automatic result
+  // is offered, not opened (F7), and reviewing it never asks to discard a draft.
   await expect(
     briefing.getByRole("button", { name: "Save briefing", disabled: false }),
   ).toHaveCount(0);
 
   // One batch for the three notes: the result read all eleven notes on the background lane.
   await briefing.getByRole("button", { name: "Review new preview" }).click();
-  await expect(briefing.getByLabel("Theme 1")).toHaveValue(
-    "Requests for more rest-break time (background, 11 notes).",
-  );
+  await expect(
+    briefing
+      .getByRole("list", { name: "Which themes recur" })
+      .first()
+      .locator(":scope > li")
+      .first()
+      .getByText("Requests for more rest-break time (background, 11 notes).", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Discard and review" })).toHaveCount(0);
 });

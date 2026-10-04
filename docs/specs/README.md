@@ -199,7 +199,7 @@ First demonstrate the client success criteria above using the supplied records a
 | --- | --- |
 | Correct seed, one-time initialisation and explicit reset | F1: clean start, modified-data restart and documented stopped-server reset |
 | Accurate attendance and durable API saves | F2: three-state counts, invalid-write rejection and save/refresh/restart |
-| Separate, anonymous and inspectable notes | F3: all eight exact notes and every cited ID opening its own source |
+| Separate, anonymous and inspectable notes | F3: all eight exact notes and every cited note inspectable from its item's source disclosure |
 | Real model with grounded output | F4: live provider call, roster-derived counts and source-linked sections |
 | Opposing opinions and tentative follow-ups | F4: both meeting-point and start-time disagreements; no manufactured consensus or agreed plan |
 | Validate references and explain limits | F3/F4/F5: unknown ID rejection, source inspection and explicit distinction between valid IDs and supported claims |
