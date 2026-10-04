@@ -31,17 +31,16 @@ test("F7-15 / F3-10: notes from the feedback form reach the open coordinator pag
   });
 
   // Nothing is being edited (after the walkthrough the saved briefing is open in its read view,
-  // which offers Edit briefing only; run alone, no editor is open at all), so the automatic result
+  // which offers Edit and no Save; run alone, no editor is open at all), so the automatic result
   // is offered, not opened (F7), and reviewing it never asks to discard a draft.
-  await expect(
-    briefing.getByRole("button", { name: "Save briefing", disabled: false }),
-  ).toHaveCount(0);
+  await expect(briefing.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+  await expect(briefing.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
 
   // One batch for the three notes: the result read all eleven notes on the background lane.
   await briefing.getByRole("button", { name: "Review new preview" }).click();
   await expect(
     briefing
-      .getByRole("list", { name: "Which themes recur" })
+      .getByRole("list", { name: "Themes", exact: true })
       .first()
       .locator(":scope > li")
       .first()

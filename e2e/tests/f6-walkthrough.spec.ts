@@ -1,9 +1,13 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-// The supplied notes (packages/contracts/src/supplied-records.ts), hard-coded: Playwright does not
-// load workspace sources.
+// The supplied notes (packages/contracts/src/supplied-records.ts) and the evidence note
+// (apps/web/src/features/feedback/source-disclosure.tsx), hard-coded: Playwright does not load
+// workspace sources.
 const F05 = "A longer rest break halfway would help.";
 const F06 = "The rest stop felt rushed; a few more minutes would be good.";
+const EVIDENCE_NOTE =
+  "Sources show where wording came from; they don't prove it. Check before saving.";
+const OUT_OF_DATE = "Out of date — attendance changed since this briefing was generated";
 
 const regions = (page: Page) => ({
   attendance: page.getByRole("region", { name: "Attendance" }),
@@ -11,26 +15,51 @@ const regions = (page: Page) => ({
 });
 // Theme 1 in the editor (read or edit view): the first item of the list named by its heading.
 const themeItem = (briefing: Locator) =>
-  briefing.getByRole("list", { name: "Which themes recur" }).first().locator(":scope > li").first();
-const editBriefing = (briefing: Locator) =>
-  briefing.getByRole("button", { name: "Edit briefing" }).click();
+  briefing
+    .getByRole("list", { name: "Themes", exact: true })
+    .first()
+    .locator(":scope > li")
+    .first();
+// The briefing header's actions (spec 2026-10-04): Edit and Generate, or Cancel and Save.
+const action = (briefing: Locator, name: "Edit" | "Generate" | "Cancel" | "Save") =>
+  briefing.getByRole("button", { name, exact: true });
+const editBriefing = (briefing: Locator) => action(briefing, "Edit").click();
+// One attendance count tile's value (F2): the <dd> of the tile whose <dt> is the label.
+const tileValue = (attendance: Locator, label: string) =>
+  attendance
+    .getByLabel("Attendance counts")
+    .locator(":scope > div")
+    .filter({ has: attendance.page().locator("dt").getByText(label, { exact: true }) })
+    .locator("dd");
+const expectTiles = async (
+  attendance: Locator,
+  values: Record<"Registered" | "Attended" | "Absent" | "Not recorded", string>,
+) => {
+  for (const [label, value] of Object.entries(values)) {
+    await expect(tileValue(attendance, label)).toHaveText(value);
+  }
+};
 
 test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", async ({ page }) => {
   await page.goto("/events/E101");
   const { attendance, briefing } = regions(page);
 
   // 1. Generate from the saved seed counts; this tab's result opens in the clean editor (F4 step 7).
-  await expect(
-    attendance.getByText("Saved counts: 4 registered · 1 attended · 2 absent · 1 not recorded"),
-  ).toBeVisible();
-  await briefing.getByRole("button", { name: "Generate briefing" }).click();
+  await expectTiles(attendance, {
+    Registered: "4",
+    Attended: "1",
+    Absent: "2",
+    "Not recorded": "1",
+  });
+  await action(briefing, "Generate").click();
   await expect(
     briefing.getByRole("heading", { name: "Generated preview — not saved as briefing" }),
   ).toBeVisible();
-  await expect(briefing.getByText(/References identify the source notes/)).toBeVisible();
 
   // 2. Review Focus 5: inspect F05/F06 by keyboard while editing; the draft survives; save.
   await editBriefing(briefing);
+  // Save or cancel first: Generate is not offered while the briefing is being edited.
+  await expect(action(briefing, "Generate")).toHaveCount(0);
   const theme = briefing.getByLabel("Theme 1");
   await theme.fill("People asked for longer rest breaks.");
   const sources = themeItem(briefing).getByRole("button", { name: "Sources (2)" });
@@ -39,49 +68,64 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await expect(sources).toHaveAttribute("aria-expanded", "true");
   await expect(themeItem(briefing).getByText(F05)).toBeVisible();
   await expect(themeItem(briefing).getByText(F06)).toBeVisible();
+  // F3 evidence limits: at the bottom of the opened sources view.
+  await expect(themeItem(briefing).getByText(EVIDENCE_NOTE)).toBeVisible();
   await expect(theme).toHaveValue("People asked for longer rest breaks.");
-  await briefing.getByRole("button", { name: "Save briefing" }).click();
+  await action(briefing, "Save").click();
   await expect(
-    briefing.getByRole("heading", { name: /^Saved briefing · last saved / }),
+    briefing.getByRole("heading", { name: "Saved briefing", exact: true }),
   ).toBeVisible();
+  await expect(briefing.getByText(/^Last saved /)).toBeVisible();
 
   await page.reload(); // F5-02: the wording and its references survive a reload
   const savedRow = themeItem(briefing);
   await expect(
     savedRow.getByText("People asked for longer rest breaks.", { exact: true }),
   ).toBeVisible();
-  // The cited IDs are badges in the row's own button; the closed disclosure holds the notes' IDs too.
-  const savedRowButton = savedRow.getByRole("button").first();
-  await expect(savedRowButton.getByText("F05", { exact: true })).toBeVisible();
-  await expect(savedRowButton.getByText("F06", { exact: true })).toBeVisible();
+  // The row shows the wording only; activating it reveals the cited notes with their IDs.
+  const savedRowButton = savedRow.getByRole("button", {
+    name: "People asked for longer rest breaks.",
+    exact: true,
+  });
+  await savedRowButton.click();
+  await expect(savedRowButton).toHaveAttribute("aria-expanded", "true");
+  await expect(savedRow.getByText("F05", { exact: true })).toBeVisible();
+  await expect(savedRow.getByText("F06", { exact: true })).toBeVisible();
+  await expect(savedRow.getByText(F05)).toBeVisible();
+  await expect(savedRow.getByText(EVIDENCE_NOTE)).toBeVisible();
 
-  // 3. An unsaved attendance change shows unsaved counts and a warning, and does not touch the
-  // briefing.
+  // 3. An unsaved attendance change shows saved → draft on the changed tiles and a warning, and
+  // does not touch the briefing.
   const overview = briefing.getByText(/^4 registered members: /).first();
   const originalOverview = (await overview.textContent()) ?? "";
   await attendance.getByRole("combobox", { name: "Chris" }).click();
   await attendance.getByRole("option", { name: "Attended" }).click();
-  await expect(
-    attendance.getByText("Unsaved counts: 4 registered · 2 attended · 2 absent · 0 not recorded"),
-  ).toBeVisible();
+  await expect(attendance.getByText("Unsaved", { exact: true })).toBeVisible();
+  await expectTiles(attendance, {
+    Registered: "4",
+    Attended: "1 → 2",
+    Absent: "2",
+    "Not recorded": "1 → 0",
+  });
   await expect(
     attendance.getByText(
       "Unsaved attendance changes. Save or discard them before generating a briefing.",
     ),
   ).toBeVisible();
-  await expect(
-    briefing.getByText("Up to date with the saved attendance and feedback."),
-  ).toBeVisible();
+  // The briefing is still current: no freshness warning.
+  await expect(briefing.getByText(OUT_OF_DATE)).toHaveCount(0);
   await expect(overview).toHaveText(originalOverview);
 
   // 4. Saving attendance marks the saved briefing out of date; wording and references stay.
   await attendance.getByRole("button", { name: "Save attendance" }).click();
-  await expect(
-    attendance.getByText("Saved counts: 4 registered · 2 attended · 2 absent · 0 not recorded"),
-  ).toBeVisible();
-  await expect(
-    briefing.getByText("Out of date — attendance changed since this briefing was generated"),
-  ).toBeVisible();
+  await expectTiles(attendance, {
+    Registered: "4",
+    Attended: "2",
+    Absent: "2",
+    "Not recorded": "0",
+  });
+  await expect(attendance.getByText("Unsaved", { exact: true })).toHaveCount(0);
+  await expect(briefing.getByText(OUT_OF_DATE)).toBeVisible();
   await expect(briefing.getByText("Chris: Not recorded → Attended")).toBeVisible();
   await expect(
     themeItem(briefing).getByText("People asked for longer rest breaks.", { exact: true }),
@@ -96,30 +140,33 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
     (response) =>
       response.request().method() === "PUT" && response.url().endsWith("/api/events/E101/briefing"),
   );
-  await briefing.getByRole("button", { name: "Save briefing" }).click();
+  await action(briefing, "Save").click();
   expect((await saved).status()).toBe(200);
   await expect(briefing.getByText("Unsaved changes to the briefing text.")).toHaveCount(0);
   await page.reload();
   await expect(
     themeItem(briefing).getByText("Several people asked for longer rest breaks.", { exact: true }),
   ).toBeVisible();
+  await expect(briefing.getByText(OUT_OF_DATE)).toBeVisible();
+
+  // 6. F6 (amended 2026-10-04): Generate is not offered over unsaved text. Cancel (discarding the
+  // draft) brings it back, and the saved wording is untouched.
+  await editBriefing(briefing);
+  await briefing.getByLabel("Theme 1").fill("Draft to discard before generating.");
+  await expect(action(briefing, "Generate")).toHaveCount(0);
+  await action(briefing, "Cancel").click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Discard", exact: true }).click();
   await expect(
-    briefing.getByText("Out of date — attendance changed since this briefing was generated"),
+    themeItem(briefing).getByText("Several people asked for longer rest breaks.", { exact: true }),
   ).toBeVisible();
 
-  // 6. F6-09: Generate with unsaved text; the result waits as incoming and the draft is untouched.
-  await editBriefing(briefing);
-  await briefing.getByLabel("Theme 1").fill("Draft that must survive generation.");
-  await briefing.getByRole("button", { name: "Generate briefing" }).click();
-  await expect(briefing.getByText("New briefing ready to review")).toBeVisible();
-  await expect(briefing.getByLabel("Theme 1")).toHaveValue("Draft that must survive generation.");
-
-  // 7. Review it (explicitly discarding the draft), inspect its sources, then Save and replace.
-  await briefing.getByRole("button", { name: "Review new preview" }).click();
-  await page.getByRole("button", { name: "Discard and review" }).click();
+  // 7. Generate from the read view: the clean editor opens the new preview (F4 step 7). Inspect its
+  // sources, then Save from its edit view, which replaces the saved briefing.
+  await action(briefing, "Generate").click();
   await expect(
     briefing.getByRole("heading", { name: "Generated preview — not saved as briefing" }),
   ).toBeVisible();
+  await expect(briefing.getByText("New briefing ready to review")).toHaveCount(0);
   const previewTheme = "Requests for more rest-break time (interactive, 8 notes).";
   await expect(themeItem(briefing).getByText(previewTheme, { exact: true })).toBeVisible();
   // Spec 05: the saved briefing stays available beside the preview, through the switch; switching
@@ -130,7 +177,7 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await briefingToShow.getByRole("radio", { name: "Saved briefing" }).click();
   await page.getByRole("button", { name: "Discard and switch" }).click();
   await expect(
-    briefing.getByRole("heading", { name: /^Saved briefing · last saved / }),
+    briefing.getByRole("heading", { name: "Saved briefing", exact: true }),
   ).toBeFocused();
   await expect(
     themeItem(briefing).getByText("Several people asked for longer rest breaks.", { exact: true }),
@@ -143,12 +190,12 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   // Clicking the theme row reveals its notes (spec 2026-10-04).
   await themeItem(briefing).getByRole("button").first().click();
   await expect(themeItem(briefing).getByText(F05)).toBeVisible();
-  await briefing.getByRole("button", { name: "Save and replace briefing" }).click();
+  await editBriefing(briefing);
+  await action(briefing, "Save").click();
   await expect(
-    briefing.getByRole("heading", { name: /^Saved briefing · last saved / }),
+    briefing.getByRole("heading", { name: "Saved briefing", exact: true }),
   ).toBeVisible();
-  await expect(
-    briefing.getByText("Up to date with the saved attendance and feedback."),
-  ).toBeVisible();
+  // The new briefing is current: no freshness warning.
+  await expect(briefing.getByText(OUT_OF_DATE)).toHaveCount(0);
   await expect(themeItem(briefing).getByText(previewTheme, { exact: true })).toBeVisible();
 });
