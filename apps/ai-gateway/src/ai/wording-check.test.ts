@@ -82,4 +82,57 @@ describe("findWordingProblems (T3 §4 wording, live smoke aid)", () => {
       },
     ]);
   });
+
+  it.each([
+    [
+      "feedbackSummary",
+      { feedbackSummary: { text: "Notes (F01, F02) enjoyed it.", sourceIds: ids("F01", "F02") } },
+    ],
+    ["themes", { themes: [{ text: "Longer rest breaks (F05).", sourceIds: ids("F05", "F06") }] }],
+    [
+      "conflicts",
+      {
+        conflicts: [
+          { text: "F03 asks to start earlier; F04 disagrees.", sourceIds: ids("F03", "F04") },
+        ],
+      },
+    ],
+    [
+      "suggestions",
+      { suggestions: [{ text: "Consider checking the route (F07).", sourceIds: ids("F07") }] },
+    ],
+  ] as const)("flags a feedback ID written in the %s text", (section, overrides) => {
+    expect(findWordingProblems(sections(overrides))).toEqual([
+      { section, index: 0, problem: "writes a feedback ID in the text" },
+    ]);
+  });
+
+  it("does not flag text that only resembles an ID", () => {
+    expect(
+      findWordingProblems(
+        sections({
+          suggestions: [{ text: "Consider an F1 route map or a FAQ.", sourceIds: ids("F07") }],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a suggestion longer than 20 words, not one of exactly 20", () => {
+    const words = (n: number) =>
+      `Consider ${Array.from({ length: n - 1 }, () => "word").join(" ")}.`;
+    expect(
+      findWordingProblems(sections({ suggestions: [{ text: words(21), sourceIds: ids("F07") }] })),
+    ).toEqual([
+      { section: "suggestions", index: 0, problem: "suggestion is longer than 20 words" },
+    ]);
+    expect(
+      findWordingProblems(sections({ suggestions: [{ text: words(20), sourceIds: ids("F07") }] })),
+    ).toEqual([]);
+    // Only suggestions have the length rule.
+    expect(
+      findWordingProblems(
+        sections({ themes: [{ text: `Two notes: ${words(30)}`, sourceIds: ids("F05", "F06") }] }),
+      ),
+    ).toEqual([]);
+  });
 });

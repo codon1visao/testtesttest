@@ -21,6 +21,9 @@ export interface WordingFinding {
 const PEOPLE =
   /\bsome attendees\b|\bpeople\b|\bparticipants?\b|\beveryone\b|\bhalf the group\b|\b(members|attendees) (disagree|differ)/i;
 const VAGUE_TWO = /\b(several|many|multiple) notes\b/i;
+const FEEDBACK_ID = /\bF\d{2,}\b/;
+const SUGGESTION_MAX_WORDS = 20;
+const wordCount = (text: string) => text.split(/\s+/).filter((word) => word !== "").length;
 
 /**
  * A review aid for the manual live smoke test, not a production filter (S1): keyword stripping is
@@ -38,6 +41,12 @@ export function findWordingProblems(
       }
       if (new Set(item.sourceIds).size === 2 && VAGUE_TWO.test(item.text)) {
         findings.push({ section, index, problem: "says several/many/multiple for two notes" });
+      }
+      if (FEEDBACK_ID.test(item.text)) {
+        findings.push({ section, index, problem: "writes a feedback ID in the text" });
+      }
+      if (section === "suggestions" && wordCount(item.text) > SUGGESTION_MAX_WORDS) {
+        findings.push({ section, index, problem: "suggestion is longer than 20 words" });
       }
       if (
         section !== "feedbackSummary" &&
