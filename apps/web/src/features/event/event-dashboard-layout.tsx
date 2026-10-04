@@ -38,7 +38,9 @@ const styles = stylex.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacingVars["--spacing-3"],
-    width: "100cqi",
+    // Exactly the bar's content width. Without container-query units, the viewport less the bar's
+    // inline padding (2 × spacing-2 = 1rem): never wider than the screen.
+    width: stylex.firstThatWorks("100cqi", "calc(100vw - 1rem)"),
   },
   title: { flex: "1 1 auto", minWidth: 0 },
   end: {

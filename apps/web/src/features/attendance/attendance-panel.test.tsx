@@ -139,7 +139,7 @@ describe("attendance panel", () => {
     renderApp();
     const region = await panel();
     const row = commonAncestor(discardButton(region), saveButton(region));
-    expect(within(row as HTMLElement).getAllByRole("button")).toHaveLength(2);
+    expect(within(row).getAllByRole("button")).toHaveLength(2);
     const table = region.getByRole("table", { name: "Member attendance" });
     expect(row.contains(table)).toBe(false);
     expect(table.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

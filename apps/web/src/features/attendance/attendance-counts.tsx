@@ -54,11 +54,6 @@ const styles = stylex.create({
 });
 
 /**
- * F2 (amended 2026-10-04): the counts as a one-row stat strip. Saved counts are the factual
- * baseline; with unsaved changes a changed cell shows "saved → draft" (the Unsaved badge is in the
- * card's header, AttendanceStatusBadge). Announced as a whole when the counts change.
- */
-/**
  * The card header's draft state: Unsaved while there are changes, Saving… while a save runs. Its own
  * polite live region, so the state is announced apart from the counts.
  */
@@ -80,6 +75,11 @@ export function AttendanceStatusBadge({
   );
 }
 
+/**
+ * F2 (amended 2026-10-04): the counts as a one-row stat strip. Saved counts are the factual
+ * baseline; with unsaved changes a changed cell shows "saved → draft" (the Unsaved badge is in the
+ * card's header, AttendanceStatusBadge). Announced as a whole when the counts change.
+ */
 export function AttendanceCounts({
   saved,
   draft,

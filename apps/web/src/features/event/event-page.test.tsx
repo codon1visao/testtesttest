@@ -47,16 +47,16 @@ describe("event page", () => {
   it("top bar: name with Ended, club below; live status then theme switch on the right", async () => {
     renderApp();
     const title = await screen.findByRole("heading", { level: 1, name: "Saturday Walk" });
-    const bar = title.closest("[role='banner']");
+    const bar = title.closest<HTMLElement>("[role='banner']");
     if (bar === null) throw new Error("no top bar");
-    const ended = within(bar as HTMLElement).getByText("Ended");
-    const club = within(bar as HTMLElement).getByText("Harbour Community Club");
+    const ended = within(bar).getByText("Ended");
+    const club = within(bar).getByText("Harbour Community Club");
     // The name line holds the name and the badge; the club name is a line of its own below it.
     const nameLine = commonAncestor(title, ended);
     expect(nameLine.contains(club)).toBe(false);
     expect(nameLine.compareDocumentPosition(club) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const live = within(bar as HTMLElement).getByText("Polling for updates");
-    const toggle = within(bar as HTMLElement).getByRole("button", {
+    const live = within(bar).getByText("Polling for updates");
+    const toggle = within(bar).getByRole("button", {
       name: "Switch to dark theme",
     });
     // The right group: live status, then the switch, apart from the title block.

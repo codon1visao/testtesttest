@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Event Desk</title>
+    <script>
+      // The remembered theme before the first paint, as Astryx's Theme sets it on <html> once React
+      // mounts (data-theme="light" | "dark"; light unless "dark" is stored or storage is unreadable).
+      try {
+        document.documentElement.setAttribute(
+          "data-theme",
+          localStorage.getItem("event-desk:theme") === "dark" ? "dark" : "light",
+        );
+      } catch {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

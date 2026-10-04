@@ -23,9 +23,9 @@ const shownIcon = (button: HTMLElement) =>
 describe("theme mode", () => {
   it("starts light, not following the system setting", async () => {
     renderApp();
-    const button = await themeSwitch();
+    await themeSwitch();
     expect(appliedMode()).toBe("light");
-    expect(button.getAttribute("aria-label") ?? button.textContent).toMatch(/Switch to dark theme/);
+    const button = screen.getByRole("button", { name: "Switch to dark theme" });
     expect(shownIcon(button)).toBe("moon");
   });
 
