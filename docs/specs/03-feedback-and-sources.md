@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Exact read-only notes, stable references, anonymity, inline source inspection, and the test feedback form and script (an extension beyond the brief). Amended 2026-10-04 (user-approved): one source disclosure per briefing item. Amended 2026-10-04 (user-approved): read-view rows show the item text only; activating a row reveals the cited notes with their IDs, and the evidence-limit note sits at the bottom of every opened sources view instead of near the briefing.
+Status: **Confirmed by the user on 2026-10-03.** Exact read-only notes, stable references, anonymity, inline source inspection, and the test feedback form and script (an extension beyond the brief). Amended 2026-10-04 (user-approved): one source disclosure per briefing item. Amended 2026-10-04 (user-approved): read-view rows show the item text only; activating a row reveals the cited notes with their IDs, and the evidence-limit note sits at the bottom of every opened sources view instead of near the briefing. Amended 2026-10-04 (user-approved): the feedback summary's cited notes are recorded (and validated and saved) but not shown in the UI; theme, disagreement and suggestion rows keep their disclosures.
 
 ## Outcome and scope
 
@@ -32,12 +32,12 @@ Read-only is a coordinator permission, not a trust level. Treat every note as un
 ## Reading and inspection flow
 
 1. Show all notes in stable ID order in a read-only feedback panel: the eight seeded notes plus any added ones. Notes added after the displayed briefing was generated are marked **New since this briefing**.
-2. Each briefing theme, conflict and suggestion has its own source disclosure: in the read view the row shows the item's text only, and the row itself is the disclosure.
+2. Each briefing theme, conflict and suggestion has its own source disclosure: in the read view the row shows the item's text only, and the row itself is the disclosure. The feedback summary has no disclosure: its cited notes stay in the data (validation, save) but are not shown.
 3. Activating an item's source disclosure reveals every note the item cites, each with its ID and complete original wording, followed by the evidence-limit note.
 4. Multiple references on one item are revealed together by that one disclosure, and each note stays readable on its own.
 5. Closing or opening a note preserves briefing edits and scroll position as far as practical.
 
-UI: one accessible inline disclosure per briefing item — the item's row (its text only) in the read view, a small **Sources (n)** beside its text area while editing — with `aria-expanded` and a relationship to the revealed notes; it reveals every note the item cites with its ID, aligned under the item's text, then the evidence-limit note. The full feedback panel remains available even when a note is not cited. Source text is rendered as plain text; never execute HTML or treat text as application instructions.
+UI: one accessible inline disclosure per theme, disagreement and suggestion item (none for the feedback summary) — the item's row (its text only) in the read view, a small **Sources (n)** beside its text area while editing — with `aria-expanded` and a relationship to the revealed notes; it reveals every note the item cites with its ID, aligned under the item's text, then the evidence-limit note. The full feedback panel remains available even when a note is not cited. Source text is rendered as plain text; never execute HTML or treat text as application instructions.
 
 ## Reference contract
 
