@@ -3,7 +3,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
-import { assertNever, type EventId, type EventView, LIST_SECTIONS } from "@event-desk/contracts";
+import { assertNever, type EventId, type EventView } from "@event-desk/contracts";
 import { useEffect, useId, useRef, useState } from "react";
 import { type Control, Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
@@ -17,6 +17,7 @@ import type {
   BriefingFormValues,
   EditorBase,
 } from "./briefing-form-model";
+import { BriefingSectionsLayout, SummaryCard } from "./briefing-sections";
 import { BriefingPreview } from "./briefing-preview";
 import { FreshnessNotice } from "./freshness-notice";
 import { type BriefingNotice, useBriefingForm } from "./use-briefing-form";
@@ -229,63 +230,55 @@ export function BriefingEditor({
           }}
         >
           <VStack gap={4}>
-            <VStack gap={2}>
-              <Heading level={4}>What happened</Heading>
-              <TextField
-                control={control}
-                name="attendanceOverview"
-                label="Attendance overview"
-                isDisabled={fieldsDisabled}
-              />
-              <VStack gap={0}>
-                <Text type="supporting">Check edited wording against the counts.</Text>
-                <Text type="supporting">
-                  Generated from: {formatAttendanceCounts(briefing.provenance.input.counts)}
-                </Text>
-                <Text type="supporting">
-                  Saved records now: {formatAttendanceCounts(view.counts)}
-                </Text>
-              </VStack>
-              <TextField
-                control={control}
-                name="feedbackSummary"
-                label="Feedback summary"
-                isDisabled={fieldsDisabled}
-              />
-              <SourceDisclosure
-                sourceIds={content.feedbackSummary.sourceIds}
-                notes={view.feedback}
-                disclosureScope={`${briefing.provenance.generationId}:feedbackSummary`}
-              />
-            </VStack>
-            {LIST_SECTIONS.map((section) => (
-              <VStack key={section} gap={2}>
-                <Heading level={4}>{SECTION_COPY[section].title}</Heading>
-                {content[section].length === 0 ? (
-                  <Text type="supporting">{SECTION_COPY[section].empty}</Text>
-                ) : (
-                  <ol>
-                    {content[section].map((item, index) => (
-                      <li key={`${section}-${String(index)}`}>
-                        <VStack gap={1}>
-                          <TextField
-                            control={control}
-                            name={`${section}.${index}.text`}
-                            label={`${SECTION_COPY[section].itemLabel} ${String(index + 1)}`}
-                            isDisabled={fieldsDisabled}
-                          />
-                          <SourceDisclosure
-                            sourceIds={item.sourceIds}
-                            notes={view.feedback}
-                            disclosureScope={`${briefing.provenance.generationId}:${section}.${String(index)}`}
-                          />
-                        </VStack>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </VStack>
-            ))}
+            <BriefingSectionsLayout
+              summary={
+                <SummaryCard>
+                  <TextField
+                    control={control}
+                    name="feedbackSummary"
+                    label="Feedback summary"
+                    isDisabled={fieldsDisabled}
+                  />
+                  <SourceDisclosure
+                    sourceIds={content.feedbackSummary.sourceIds}
+                    notes={view.feedback}
+                    disclosureScope={`${briefing.provenance.generationId}:feedbackSummary`}
+                  />
+                  <TextField
+                    control={control}
+                    name="attendanceOverview"
+                    label="Attendance overview"
+                    isDisabled={fieldsDisabled}
+                  />
+                  <VStack gap={0}>
+                    <Text type="supporting">Check edited wording against the counts.</Text>
+                    <Text type="supporting">
+                      Generated from: {formatAttendanceCounts(briefing.provenance.input.counts)}
+                    </Text>
+                    <Text type="supporting">
+                      Saved records now: {formatAttendanceCounts(view.counts)}
+                    </Text>
+                  </VStack>
+                </SummaryCard>
+              }
+              renderItems={(section) =>
+                content[section].map((item, index) => (
+                  <VStack gap={1}>
+                    <TextField
+                      control={control}
+                      name={`${section}.${index}.text`}
+                      label={`${SECTION_COPY[section].itemLabel} ${String(index + 1)}`}
+                      isDisabled={fieldsDisabled}
+                    />
+                    <SourceDisclosure
+                      sourceIds={item.sourceIds}
+                      notes={view.feedback}
+                      disclosureScope={`${briefing.provenance.generationId}:${section}.${String(index)}`}
+                    />
+                  </VStack>
+                ))
+              }
+            />
             <div role="status" aria-live="polite">
               {editor.isSaving ? (
                 <Text>Saving briefing…</Text>
