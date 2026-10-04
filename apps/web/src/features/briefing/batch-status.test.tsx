@@ -2,6 +2,7 @@ import { FeedbackIdSchema, GenerationIdSchema, RunIdSchema } from "@event-desk/c
 import { buildBriefingView, FIXTURE_TIME } from "@event-desk/contracts/testing";
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
+import { startEditing } from "../../testing/briefing-queries";
 import { FakeEventApi } from "../../testing/fake-event-api";
 import { FakeEventSource } from "../../testing/fake-event-source";
 import { mswServer } from "../../testing/msw-server";
@@ -96,11 +97,11 @@ describe("batch status (F7 'Generation state in the UI')", () => {
     };
     renderApp();
     const region = await panel();
-    await region.findByRole("button", { name: "Generate briefing" });
+    await region.findByRole("button", { name: "Generate" });
     expect(region.queryByText(/New feedback received/)).toBeNull();
   });
 
-  it("F7 Failed: explains a failed batch, keeps saved work, and offers Generate briefing", async () => {
+  it("F7 Failed: explains a failed batch, keeps saved work, and offers Generate now", async () => {
     api.view = {
       ...api.view,
       generation: generation({
@@ -120,12 +121,38 @@ describe("batch status (F7 'Generation state in the UI')", () => {
         "Automatic briefing failed: AI service unavailable. Your saved briefing is unchanged.",
       ),
     ).toBeTruthy();
-    const target = region.getAllByRole("button", { name: "Generate briefing" }).at(-1); // the banner's button
-    if (target === undefined) throw new Error("no Generate briefing button");
-    await user.click(target);
+    // The banner's own button, named apart from the header's Generate.
+    await user.click(region.getByRole("button", { name: "Generate now" }));
     await waitFor(() => {
       expect(api.generationRequests).toHaveLength(1);
     });
+  });
+
+  it("F6: Generate now is unavailable while the briefing is being edited", async () => {
+    api.view = {
+      ...api.view,
+      selectedPreview: buildBriefingView(),
+      generation: generation({
+        lastOutcome: {
+          runId: RunIdSchema.parse("batch_a"),
+          trigger: "feedback_batch",
+          status: "failed",
+          code: "GATEWAY_UNAVAILABLE",
+          finishedAt: FIXTURE_TIME,
+        },
+      }),
+    };
+    const { user } = renderApp();
+    const region = await panel();
+    const generateNow = () =>
+      region.getByRole<HTMLButtonElement>("button", { name: "Generate now" });
+    expect(generateNow().disabled).toBe(false);
+    await startEditing(user, region);
+    expect(generateNow().disabled).toBe(true);
+    await user.click(generateNow());
+    expect(api.generationRequests).toHaveLength(0);
+    await user.click(region.getByRole("button", { name: "Cancel" }));
+    expect(generateNow().disabled).toBe(false);
   });
 
   it("F8: during a provider cooldown Generate waits and says until when", async () => {
@@ -140,9 +167,7 @@ describe("batch status (F7 'Generation state in the UI')", () => {
         /^The AI provider is limiting requests\. Generate is available again at /,
       ),
     ).toBeTruthy();
-    expect(
-      region.getByRole<HTMLButtonElement>("button", { name: "Generate briefing" }).disabled,
-    ).toBe(true);
+    expect(region.getByRole<HTMLButtonElement>("button", { name: "Generate" }).disabled).toBe(true);
   });
 
   it("F7-14: an automatic result is announced once as ready, by its own title", async () => {
@@ -232,7 +257,7 @@ describe("batch status (F7 'Generation state in the UI')", () => {
     });
     const { user } = renderApp();
     const region = await panel();
-    await user.click(region.getByRole("button", { name: "Generate briefing" }));
+    await user.click(region.getByRole("button", { name: "Generate" }));
     expect(await region.findByRole("button", { name: "Retry" })).toBeTruthy();
     addNote("Read after the failure.");
     await pushChange(); // the same incoming preview comes back
@@ -252,7 +277,7 @@ describe("batch status (F7 'Generation state in the UI')", () => {
     });
     const { user } = renderApp();
     const region = await panel();
-    await user.click(region.getByRole("button", { name: "Generate briefing" }));
+    await user.click(region.getByRole("button", { name: "Generate" }));
     await waitFor(() => {
       expect(api.generationRequests).toHaveLength(1);
     });
@@ -281,7 +306,7 @@ describe("batch status (F7 'Generation state in the UI')", () => {
     });
     const { user } = renderApp();
     const region = await panel();
-    await user.click(region.getByRole("button", { name: "Generate briefing" }));
+    await user.click(region.getByRole("button", { name: "Generate" }));
     expect(await region.findByRole("button", { name: "Retry" })).toBeTruthy();
     api.view = { ...api.view, incomingPreview: buildBriefingView({ trigger: "feedback_batch" }) };
     await pushChange();

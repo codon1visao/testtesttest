@@ -17,9 +17,10 @@ export function mayHaveBeenCharged(error: unknown): boolean {
 }
 
 /**
- * Generate and Retry are the same synchronous call (A6); attendance must be saved first (F4), and a
- * provider cooldown (F8) holds it until the server says it ends. One state for the header button
- * and the status shown below it.
+ * Generate and Retry are the same synchronous call (A6); attendance must be saved first (F4), an open
+ * briefing editor must be saved or cancelled first (F6, amended 2026-10-04), and a provider cooldown
+ * (F8) holds it until the server says it ends. One state for the header button and the status shown
+ * below it.
  */
 export function useGenerateControl(
   eventId: EventId,
@@ -29,6 +30,7 @@ export function useGenerateControl(
 ) {
   const generation = useGenerateBriefing(eventId);
   const attendanceDirty = useUiStore((state) => state.attendanceDirty);
+  const briefingEditing = useUiStore((state) => state.briefingEditing);
   const [confirmingRetry, setConfirmingRetry] = useState(false);
   useOutcomeAnnouncements(view.generation.lastOutcome);
 
@@ -61,7 +63,7 @@ export function useGenerateControl(
     );
   };
   const press = () => {
-    if (busy || attendanceDirty || cooling) return;
+    if (busy || attendanceDirty || cooling || briefingEditing) return;
     if (generation.isError && mayHaveBeenCharged(generation.error)) setConfirmingRetry(true);
     else start();
   };
@@ -73,7 +75,7 @@ export function useGenerateControl(
     /** A generation started in another tab is running. */
     elsewhere,
     cooldownUntil,
-    canGenerate: !busy && !attendanceDirty && !cooling,
+    canGenerate: !busy && !attendanceDirty && !cooling && !briefingEditing,
     press,
     confirmingRetry,
     confirmRetry: () => {

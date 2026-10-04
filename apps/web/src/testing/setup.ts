@@ -54,6 +54,7 @@ afterEach(() => {
   useUiStore.setState({
     attendanceDirty: false,
     briefingDirty: false,
+    briefingEditing: false,
     activeView: "preview",
     openSources: {},
   });

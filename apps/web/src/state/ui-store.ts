@@ -9,6 +9,9 @@ interface UiState {
   setAttendanceDirty: (dirty: boolean) => void;
   briefingDirty: boolean;
   setBriefingDirty: (dirty: boolean) => void;
+  /** The briefing editor shows its text areas: the header offers Cancel and Save, not Generate. */
+  briefingEditing: boolean;
+  setBriefingEditing: (editing: boolean) => void;
   activeView: ActiveView;
   setActiveView: (view: ActiveView) => void;
   /** Open source disclosures, by item scope (`${generationId}:themes.0`); they survive editor remounts. */
@@ -24,6 +27,10 @@ export const useUiStore = create<UiState>()((set) => ({
   briefingDirty: false,
   setBriefingDirty: (briefingDirty) => {
     set({ briefingDirty });
+  },
+  briefingEditing: false,
+  setBriefingEditing: (briefingEditing) => {
+    set({ briefingEditing });
   },
   activeView: "preview",
   setActiveView: (activeView) => {

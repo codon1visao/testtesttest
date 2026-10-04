@@ -9,7 +9,7 @@ import { BatchStatus } from "./batch-status";
 import { formatClock } from "./batch-status-text";
 import type { GenerateControl } from "./use-generate-control";
 
-/** Generate briefing (or Retry), on the right of the Briefing section's header. */
+/** Generate (or Retry), on the right of the Briefing section's header; hidden while editing. */
 export function GenerateBriefingButton({ control }: { control: GenerateControl }) {
   const { busy, generation, attendanceDirty, cooldownUntil, press } = control;
   return (
@@ -19,7 +19,7 @@ export function GenerateBriefingButton({ control }: { control: GenerateControl }
           Unsaved attendance stays natively disabled: nothing was activated. */}
       <Button
         variant="primary"
-        label={busy ? "Generating briefing…" : generation.isError ? "Retry" : "Generate briefing"}
+        label={busy ? "Generating…" : generation.isError ? "Retry" : "Generate"}
         isLoading={busy}
         isDisabled={attendanceDirty || cooldownUntil !== null}
         {...(busy ? { tooltip: "Wait for the current generation to finish." } : {})}

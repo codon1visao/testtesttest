@@ -18,15 +18,15 @@ const styles = stylex.create({
   },
 });
 
-/** Side by side on wide screens (spec 2026-10-04); follow-ups take the full width below them. */
+/** Side by side on wide screens (spec 2026-10-04); suggestions take the full width below them. */
 const COLUMN_SECTIONS = ["themes", "conflicts"] as const satisfies readonly ListSection[];
 
-/** "What happened", highlighted and first: the feedback summary leads the briefing. */
+/** "Summary", highlighted and first: the feedback summary leads the briefing. */
 export function SummaryCard({ children }: { children: ReactNode }) {
   return (
     <Card variant="blue" padding={4}>
       <VStack gap={2}>
-        <Heading level={4}>What happened</Heading>
+        <Heading level={4}>Summary</Heading>
         {children}
       </VStack>
     </Card>

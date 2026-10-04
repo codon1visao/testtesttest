@@ -1,4 +1,4 @@
-import { type BoundFunctions, type queries, within } from "@testing-library/react";
+import { type BoundFunctions, type queries, screen, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 import { expect } from "vitest";
 
@@ -24,8 +24,23 @@ export function expectReadItem(scope: Queries, section: string, text: string, in
   expect(item.getByText(text)).toBeTruthy();
 }
 
-/** The briefing opens read-only (spec 2026-10-04): Edit briefing opens its text areas. */
+/** What a disclosure trigger reveals: the element its aria-controls names. */
+export function disclosedBy(trigger: HTMLElement): HTMLElement {
+  const panel = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+  if (panel === null) throw new Error("the trigger controls no element");
+  return panel;
+}
+
+/**
+ * The open confirmation dialog. Its Cancel shares a name with the briefing header's Cancel, so
+ * dialog buttons are always looked up inside it.
+ */
+export async function confirmDialog(): Promise<Queries> {
+  return within(await screen.findByRole("alertdialog"));
+}
+
+/** The briefing opens read-only (spec 2026-10-04): Edit in the header opens its text areas. */
 export async function startEditing(user: UserEvent, scope: Queries): Promise<void> {
-  await user.click(scope.getByRole("button", { name: "Edit briefing" }));
-  await scope.findByRole("button", { name: "Cancel edit" });
+  await user.click(scope.getByRole("button", { name: "Edit" }));
+  await scope.findByRole("button", { name: "Cancel" });
 }

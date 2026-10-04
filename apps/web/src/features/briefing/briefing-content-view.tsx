@@ -1,24 +1,18 @@
-import { Badge } from "@astryxdesign/core/Badge";
 import { Text } from "@astryxdesign/core/Text";
 import type { BriefingContent, EvidenceItem, FeedbackNote } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
 import { SourceDisclosure } from "../feedback/source-disclosure";
 import { BriefingSectionsLayout, SummaryCard } from "./briefing-sections";
 
-// Spans only: the row sits inside the disclosure's <button>, which allows phrasing content alone.
+// A span: the row sits inside the disclosure's <button>, which allows phrasing content alone.
 const styles = stylex.create({
-  row: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.25rem",
-    textAlign: "start",
-    minWidth: 0,
-    overflowWrap: "anywhere",
-  },
-  ids: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.25rem" },
+  row: { display: "block", textAlign: "start", minWidth: 0, overflowWrap: "anywhere" },
 });
 
-/** F3: the item's wording with its cited IDs beside it; activating the row reveals the notes. */
+/**
+ * F3 (amended 2026-10-04): the row shows the item's wording only; activating it reveals the cited
+ * notes with their IDs, and the evidence note.
+ */
 function EvidenceRow({
   item,
   notes,
@@ -36,12 +30,6 @@ function EvidenceRow({
       trigger={
         <span {...stylex.props(styles.row)}>
           <Text>{item.text}</Text>
-          <span {...stylex.props(styles.ids)}>
-            <Text type="supporting">Sources</Text>
-            {item.sourceIds.map((id) => (
-              <Badge key={id} variant="neutral" label={id} />
-            ))}
-          </span>
         </span>
       }
     />
@@ -50,7 +38,7 @@ function EvidenceRow({
 
 /**
  * A briefing's content, read-only (spec 2026-10-04): the feedback summary first and highlighted,
- * then the recurring themes and disagreements side by side, then follow-ups. Model and human text
+ * then the recurring themes and disagreements side by side, then suggestions. Model and human text
  * is rendered as plain text (S1).
  */
 export function BriefingContentView({

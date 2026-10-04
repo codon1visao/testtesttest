@@ -5,7 +5,10 @@ import type { AttendanceCounts, BriefingView, Member } from "@event-desk/contrac
 import { formatAttendanceCounts } from "../attendance/attendance-counts";
 import { attendanceChangeLines, freshnessTitle, newNotesLine } from "./freshness-text";
 
-/** Freshness comes only from the server (D5); this states it in words, with both sets of counts. */
+/**
+ * Freshness comes only from the server (D5); an out-of-date briefing says so in words, with both sets
+ * of counts. A current briefing shows nothing (amended 2026-10-04).
+ */
 export function FreshnessNotice({
   briefing,
   members,
@@ -16,9 +19,7 @@ export function FreshnessNotice({
   counts: AttendanceCounts;
 }) {
   const title = freshnessTitle(briefing.freshness);
-  if (title === null) {
-    return <Text type="supporting">Up to date with the saved attendance and feedback.</Text>;
-  }
+  if (title === null) return null;
   const notes = newNotesLine(briefing.freshness);
   return (
     <Banner

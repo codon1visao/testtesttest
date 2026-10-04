@@ -1,7 +1,7 @@
 import { VStack } from "@astryxdesign/core/Layout";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { BriefingView, EventView } from "@event-desk/contracts";
-import { EVIDENCE_LIMIT_NOTICE, formatTimestamp } from "./briefing-copy";
+import { formatTimestamp } from "./briefing-copy";
 import { BriefingContentView } from "./briefing-content-view";
 import { FreshnessNotice } from "./freshness-notice";
 
@@ -28,7 +28,6 @@ export function BriefingPreview({
           {briefing.trigger === "manual" ? "requested by you" : "automatic"}
         </Text>
         <FreshnessNotice briefing={briefing} members={view.members} counts={view.counts} />
-        <Text type="supporting">{EVIDENCE_LIMIT_NOTICE}</Text>
         {/* Its own disclosure state: a read-only copy never opens or closes the editor's sources. */}
         <BriefingContentView
           content={content}

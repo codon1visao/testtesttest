@@ -29,7 +29,7 @@ export function BatchStatus({
           title={batchFailureText(lastOutcome.code)}
           endContent={
             <Button
-              label="Generate briefing"
+              label="Generate now"
               variant="secondary"
               isDisabled={!canGenerate}
               onClick={onGenerate}

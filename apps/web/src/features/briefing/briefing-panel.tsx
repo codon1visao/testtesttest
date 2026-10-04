@@ -4,6 +4,7 @@ import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { BriefingView, EventId, EventView, GenerationId } from "@event-desk/contracts";
+import * as stylex from "@stylexjs/stylex";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsSavingBriefing } from "../../data/mutations/use-save-briefing";
 import { useSelectPreview } from "../../data/mutations/use-select-preview";
@@ -26,6 +27,11 @@ interface OpenedBase {
 
 const VIEW_OF_SLOT: Record<EditableSlot, ActiveView> = { selected: "preview", saved: "saved" };
 
+const styles = stylex.create({
+  // The editor's buttons render into this element; they take part in the actions group's gap.
+  actionsSlot: { display: "contents" },
+});
+
 function isActiveView(value: string): value is ActiveView {
   return value === "preview" || value === "saved";
 }
@@ -33,6 +39,8 @@ function isActiveView(value: string): value is ActiveView {
 /**
  * The briefing workspace (F4–F7): Generate, the incoming candidate, and one editor for the
  * selected preview or the saved briefing. Nothing replaces unsaved text without an explicit choice.
+ * The header holds the actions (spec 2026-10-04): Edit and Generate in the read view, Cancel and
+ * Save while editing; Generate is not offered on top of an open editor.
  */
 export function BriefingPanel({
   eventId,
@@ -44,6 +52,9 @@ export function BriefingPanel({
   refetch: RefetchEvent;
 }) {
   const briefingDirty = useUiStore((state) => state.briefingDirty);
+  const briefingEditing = useUiStore((state) => state.briefingEditing);
+  // The header element the editor renders its Edit / Cancel / Save buttons into.
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
   const activeView = useUiStore((state) => state.activeView);
   const setActiveView = useUiStore((state) => state.setActiveView);
   const latest = toEditorBase(view, activeView);
@@ -219,7 +230,10 @@ export function BriefingPanel({
       <VStack gap={3}>
         <HStack gap={3} justify="between" align="center">
           <Heading level={2}>Briefing</Heading>
-          <GenerateBriefingButton control={generate} />
+          <HStack gap={2} align="center">
+            <div ref={setActionsSlot} {...stylex.props(styles.actionsSlot)} />
+            {briefingEditing ? null : <GenerateBriefingButton control={generate} />}
+          </HStack>
         </HStack>
         <GenerateBriefingStatus control={generate} view={view} />
         {announced === null ? null : (
@@ -284,6 +298,7 @@ export function BriefingPanel({
             onReset={onReset}
             consumePendingFocus={consumePendingFocus}
             isLocked={autoSelecting !== null}
+            actionsSlot={actionsSlot}
           />
         ) : incoming !== null ? (
           <BriefingPreview title="New preview (not yet reviewed)" briefing={incoming} view={view} />
@@ -292,7 +307,7 @@ export function BriefingPanel({
             isCompact
             headingLevel={3}
             title="No briefing yet"
-            description="Press Generate briefing to create one from the saved records."
+            description="Press Generate to create one from the saved records."
           />
         )}
       </VStack>

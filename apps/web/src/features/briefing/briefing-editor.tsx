@@ -5,19 +5,20 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { assertNever, type EventId, type EventView } from "@event-desk/contracts";
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { type Control, Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
+import { useUiStore } from "../../state/ui-store";
 import { formatAttendanceCounts } from "../attendance/attendance-counts";
 import type { RefetchEvent } from "../attendance/use-attendance-form";
 import { SourceDisclosure } from "../feedback/source-disclosure";
-import { EVIDENCE_LIMIT_NOTICE, formatTimestamp, SECTION_COPY } from "./briefing-copy";
+import { formatTimestamp, SECTION_COPY } from "./briefing-copy";
 import { BriefingContentView } from "./briefing-content-view";
-import {
-  type BriefingFieldPath,
-  type BriefingFormOutput,
-  type BriefingFormValues,
-  type EditorBase,
-  firstErrorField,
+import type {
+  BriefingFieldPath,
+  BriefingFormOutput,
+  BriefingFormValues,
+  EditorBase,
 } from "./briefing-form-model";
 import { BriefingSectionsLayout, SummaryCard } from "./briefing-sections";
 import { BriefingPreview } from "./briefing-preview";
@@ -151,6 +152,7 @@ export function BriefingEditor({
   onReset,
   consumePendingFocus,
   isLocked = false,
+  actionsSlot = null,
 }: {
   eventId: EventId;
   view: EventView;
@@ -158,6 +160,8 @@ export function BriefingEditor({
   refetch: RefetchEvent;
   /** The panel is replacing this base (an automatic select in flight): no new text meanwhile. */
   isLocked?: boolean;
+  /** The panel header's actions group: Edit, or Cancel and Save, render there (spec 2026-10-04). */
+  actionsSlot?: HTMLElement | null;
   onSaved: (outcome: { reconciled: boolean }) => void;
   /** Just before an explicit discard or reload drops the draft: a remounted editor takes focus. */
   onReset: () => void;
@@ -165,10 +169,21 @@ export function BriefingEditor({
 }) {
   const editor = useBriefingForm(eventId, base, refetch, onSaved, onReset);
   const [confirming, setConfirming] = useState<"discard" | "reload" | null>(null);
-  // The briefing opens read-only (spec 2026-10-04); Edit briefing opens the text areas. Local state:
-  // a remount (after a save, or a clean editor following the view) returns to the read view, and a
+  // The briefing opens read-only (spec 2026-10-04); Edit opens the text areas. Local state: a
+  // remount (after a save, or a clean editor following the view) returns to the read view, and a
   // dirty draft never remounts, so typed text is never hidden or replaced without a choice.
   const [isEditing, setIsEditing] = useState(false);
+  // Mirrored for the panel, which offers Generate only while the text areas are closed.
+  const setBriefingEditing = useUiStore((state) => state.setBriefingEditing);
+  useEffect(() => {
+    setBriefingEditing(isEditing);
+  }, [isEditing, setBriefingEditing]);
+  useEffect(
+    () => () => {
+      setBriefingEditing(false);
+    },
+    [setBriefingEditing],
+  );
   // The dialog is a native modal: while it is open the page is inert, and on close the browser
   // returns focus to the trigger, which a reset unmounts. Focus moves only once it has closed.
   // A request counter (not a boolean cleared in the effect): each request is handled once.
@@ -195,8 +210,8 @@ export function BriefingEditor({
   const requestFocusAfterClose = () => {
     setFocusAfterClose((count) => count + 1);
   };
-  // A field to focus once the text areas are on screen: the first after Edit briefing, the failing
-  // one after a field error. A request counter, like the others.
+  // A field to focus once the text areas are on screen: the first, after Edit. A request counter,
+  // like the others.
   const [fieldFocus, setFieldFocus] = useState<{ path: BriefingFieldPath; request: number } | null>(
     null,
   );
@@ -209,18 +224,20 @@ export function BriefingEditor({
   const requestFieldFocus = (path: BriefingFieldPath) => {
     setFieldFocus((current) => ({ path, request: (current?.request ?? 0) + 1 }));
   };
-  // A field error needs its field: a save started from the read view opens the editor on it.
-  // Adjusted during render, React's pattern for state derived from form state.
-  const errorField = firstErrorField(editor.form.formState.errors, editor.form.getValues());
-  if (errorField !== null && !isEditing) {
-    setIsEditing(true);
-    requestFieldFocus(errorField);
-  }
+  const fieldsDisabled = editor.areFieldsLocked || isLocked;
+  // F5-04: a server field error focuses its field, once the save that raised it has unlocked it.
+  const handledErrorFocus = useRef(0);
+  useEffect(() => {
+    const request = editor.fieldErrorFocus;
+    if (request === null || request.request === handledErrorFocus.current || fieldsDisabled) return;
+    handledErrorFocus.current = request.request;
+    editor.form.setFocus(request.path);
+  }, [editor.fieldErrorFocus, editor.form, fieldsDisabled]);
   const startEditing = () => {
     setIsEditing(true);
     requestFieldFocus("feedbackSummary");
   };
-  // Without changes Cancel edit just closes the text areas; with changes it asks first (F5-10).
+  // Without changes Cancel just closes the text areas; with changes it asks first (F5-10).
   const cancelEditing = () => {
     if (editor.isDirty) {
       setConfirming("discard");
@@ -240,40 +257,48 @@ export function BriefingEditor({
       (candidate) => candidate?.provenance.generationId === briefing.provenance.generationId,
     ) ?? briefing;
   const title =
-    base.slot === "selected"
-      ? "Generated preview — not saved as briefing"
-      : briefing.savedAt === undefined
-        ? "Saved briefing"
-        : `Saved briefing · last saved ${formatTimestamp(briefing.savedAt)}`;
-  const saveLabel =
-    base.slot === "selected" && view.savedBriefing !== null
-      ? "Save and replace briefing"
-      : "Save briefing";
+    base.slot === "selected" ? "Generated preview — not saved as briefing" : "Saved briefing";
+  // A selected preview can be saved as it is; Save replaces any saved briefing (F5-09).
   const canSave = base.slot === "selected" || editor.isDirty;
   const control = editor.form.control;
-  const fieldsDisabled = editor.areFieldsLocked || isLocked;
-  const saveButton = (
-    <Button
-      type="submit"
-      variant="primary"
-      label={saveLabel}
-      isDisabled={!canSave || editor.isBusy}
-      isLoading={editor.isSaving}
-    />
+  // In the panel header, outside the <form>: Save submits through the form's own handler.
+  const actions = isEditing ? (
+    <>
+      <Button
+        variant="secondary"
+        label="Cancel"
+        isDisabled={editor.isBusy}
+        onClick={cancelEditing}
+      />
+      <Button
+        variant="primary"
+        label="Save"
+        isDisabled={!canSave || editor.isBusy}
+        isLoading={editor.isSaving}
+        onClick={() => void editor.submit()}
+      />
+    </>
+  ) : (
+    <Button variant="secondary" label="Edit" isDisabled={fieldsDisabled} onClick={startEditing} />
   );
 
   return (
     <article aria-labelledby={headingId}>
+      {actionsSlot === null ? null : createPortal(actions, actionsSlot)}
       <VStack gap={3}>
-        <Heading level={3} id={headingId} ref={headingRef} tabIndex={-1}>
-          {title}
-        </Heading>
+        <HStack gap={2} align="center" wrap="wrap">
+          <Heading level={3} id={headingId} ref={headingRef} tabIndex={-1}>
+            {title}
+          </Heading>
+          {base.slot !== "saved" || briefing.savedAt === undefined ? null : (
+            <Text type="supporting">Last saved {formatTimestamp(briefing.savedAt)}</Text>
+          )}
+        </HStack>
         <Text type="supporting">
           Generated {formatTimestamp(briefing.provenance.generatedAt)} · {briefing.provenance.model}{" "}
           · {briefing.trigger === "manual" ? "requested by you" : "automatic"}
         </Text>
         <FreshnessNotice briefing={live} members={view.members} counts={view.counts} />
-        <Text type="supporting">{EVIDENCE_LIMIT_NOTICE}</Text>
         <form
           noValidate
           onSubmit={(event) => {
@@ -371,30 +396,6 @@ export function BriefingEditor({
                 view={view}
               />
             ) : null}
-            <HStack gap={2}>
-              {isEditing ? (
-                <>
-                  {saveButton}
-                  <Button
-                    variant="secondary"
-                    label="Cancel edit"
-                    isDisabled={editor.isBusy}
-                    onClick={cancelEditing}
-                  />
-                </>
-              ) : (
-                <>
-                  {/* A selected preview can be saved as it is (spec 2026-10-04). */}
-                  {base.slot === "selected" ? saveButton : null}
-                  <Button
-                    variant={base.slot === "selected" ? "secondary" : "primary"}
-                    label="Edit briefing"
-                    isDisabled={fieldsDisabled}
-                    onClick={startEditing}
-                  />
-                </>
-              )}
-            </HStack>
           </VStack>
         </form>
       </VStack>

@@ -8,6 +8,7 @@ import { useBeforeUnloadWarning } from "../../shared/hooks/use-before-unload-war
 import { useUiStore } from "../../state/ui-store";
 import type { RefetchEvent } from "../attendance/use-attendance-form";
 import {
+  type BriefingFieldPath,
   BriefingFormSchema,
   type BriefingFormOutput,
   type BriefingFormValues,
@@ -56,6 +57,12 @@ export function useBriefingForm(
     setNotice(next);
     setNoticeFocusRequest((count) => count + 1);
   };
+  // A server error on one field: the editor focuses it once the text areas unlock. They are locked
+  // while the save is in flight, and a disabled field cannot take focus. A request counter.
+  const [fieldErrorFocus, setFieldErrorFocus] = useState<{
+    path: BriefingFieldPath;
+    request: number;
+  } | null>(null);
   const [checking, setChecking] = useState(false);
   const save = useSaveBriefing(eventId);
   const setBriefingDirty = useUiStore((state) => state.setBriefingDirty);
@@ -91,7 +98,10 @@ export function useBriefingForm(
       // A path with no rendered input (an item index the draft does not have) gets the banner.
       const current: unknown = path === null ? undefined : form.getValues(path);
       if (path === null || current === undefined) showSaveNotice({ kind: "invalid", message });
-      else form.setError(path, { type: "server", message }, { shouldFocus: true });
+      else {
+        form.setError(path, { type: "server", message });
+        setFieldErrorFocus((previous) => ({ path, request: (previous?.request ?? 0) + 1 }));
+      }
     } else {
       showSaveNotice({ kind: "failed", message });
     }
@@ -194,6 +204,7 @@ export function useBriefingForm(
     areFieldsLocked: isSaving || notice?.kind === "check-failed",
     notice,
     noticeFocusRequest,
+    fieldErrorFocus,
     submit,
     checkAgain,
     discard,

@@ -7,7 +7,8 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { useUiStore } from "../../state/ui-store";
-import { SourceDisclosure } from "./source-disclosure";
+import { disclosedBy } from "../../testing/briefing-queries";
+import { EVIDENCE_NOTE, SourceDisclosure } from "./source-disclosure";
 
 const NOTES = SUPPLIED_FEEDBACK.map((note) => ({ ...note, receivedAt: FIXTURE_TIME }));
 const ids = (...raw: string[]) => raw.map((id) => FeedbackIdSchema.parse(id));
@@ -36,6 +37,8 @@ describe("SourceDisclosure (F3 inspection, amended 2026-10-04)", () => {
     const controlled = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
     expect(controlled?.textContent).toContain(NOTES[4]?.text);
     expect(controlled?.textContent).toContain(NOTES[5]?.text);
+    // F3 evidence limits: every opened sources view ends with the reminder.
+    expect(controlled?.textContent.endsWith(EVIDENCE_NOTE)).toBe(true);
     // T3 §11: the open state lives in the UI store under the item's scope.
     expect(useUiStore.getState().openSources["g1:themes.0"]).toBe(true);
     expect(document.activeElement).toBe(toggle); // inspection never moves focus
@@ -50,6 +53,15 @@ describe("SourceDisclosure (F3 inspection, amended 2026-10-04)", () => {
     const row = screen.getByRole("button", { name: /^Requests for more rest-break time\./ });
     await user.click(row);
     expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(disclosedBy(row).textContent).toContain(NOTES[4]?.text);
+  });
+
+  it("shows the default trigger as small supporting text, named Sources (n)", () => {
+    renderDisclosure(["F05", "F06"]);
+    const toggle = screen.getByRole("button", { name: "Sources (2)" });
+    const label = screen.getByText("Sources (2)");
+    expect(toggle.contains(label)).toBe(true);
+    expect(label.className).toContain("supporting");
   });
 
   it("Review Focus 4 / F3: a missing ID is an error shown without opening anything", () => {
