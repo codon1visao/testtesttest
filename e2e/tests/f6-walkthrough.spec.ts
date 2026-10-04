@@ -103,15 +103,10 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await expect(savedRow.getByText(F05)).toBeVisible();
   await expect(savedRow.getByText(EVIDENCE_NOTE)).toBeVisible();
 
-  // 3. Attendance saves on each change (F2, amended 2026-10-04): choosing Attended for Chris by
-  // keyboard sends it at once. The saved briefing becomes out of date; wording and references stay.
+  // 3. An unsaved attendance change (by keyboard) shows saved → draft under an Unsaved badge and
+  // does not touch the briefing: it stays up to date, with its wording.
   await expect(briefing.getByText(OUT_OF_DATE)).toHaveCount(0);
   const chris = attendance.getByRole("combobox", { name: "Chris" });
-  const attendanceSaved = page.waitForResponse(
-    (response) =>
-      response.request().method() === "PUT" &&
-      response.url().endsWith("/api/events/E101/attendance"),
-  );
   // Chris is Not recorded: Enter opens the list on it, ArrowUp twice moves to Attended, Enter picks it.
   await chris.focus();
   await page.keyboard.press("Enter");
@@ -119,6 +114,27 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Enter");
+  await expect(chris).toHaveText("Attended");
+  await expect(attendance.getByText("Unsaved", { exact: true })).toBeVisible();
+  await expectTiles(attendance, {
+    Registered: "4",
+    Attended: "1 → 2",
+    Absent: "2",
+    "Not recorded": "1 → 0",
+  });
+  await expect(briefing.getByText(OUT_OF_DATE)).toHaveCount(0);
+  await expect(
+    themeItem(briefing).getByText("People asked for longer rest breaks.", { exact: true }),
+  ).toBeVisible();
+
+  // 4. Save changes stores it: the saved counts update, the saved briefing becomes out of date,
+  // and its wording and references stay.
+  const attendanceSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PUT" &&
+      response.url().endsWith("/api/events/E101/attendance"),
+  );
+  await attendance.getByRole("button", { name: "Save changes", exact: true }).click();
   expect((await attendanceSaved).status()).toBe(200);
   await expectTiles(attendance, {
     Registered: "4",
@@ -126,17 +142,16 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
     Absent: "2",
     "Not recorded": "0",
   });
-  await expect(chris).toHaveText("Attended");
-  await expect(attendance.getByText("Saving…", { exact: true })).toHaveCount(0);
-  // The Selector that made the change keeps keyboard focus through the save (F2-10).
-  await expect(chris).toBeFocused();
+  await expect(attendance.getByText("Unsaved", { exact: true })).toHaveCount(0);
+  // Save changes is disabled once clean: focus moves to the Attendance heading, not <body>.
+  await expect(attendance.getByRole("heading", { name: "Attendance" })).toBeFocused();
   await expect(briefing.getByText(OUT_OF_DATE)).toBeVisible();
   await expect(briefing.getByText("Chris: Not recorded → Attended")).toBeVisible();
   await expect(
     themeItem(briefing).getByText("People asked for longer rest breaks.", { exact: true }),
   ).toBeVisible();
 
-  // 4. F6-12: saving edited wording keeps the stale flag, also after a reload.
+  // 5. F6-12: saving edited wording keeps the stale flag, also after a reload.
   await editBriefing(briefing);
   await briefing.getByLabel("Theme 1").fill("Several people asked for longer rest breaks.");
   const saved = page.waitForResponse(
@@ -152,7 +167,7 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   ).toBeVisible();
   await expect(briefing.getByText(OUT_OF_DATE)).toBeVisible();
 
-  // 5. F6 (amended 2026-10-04): Generate is not offered over unsaved text. Cancel (discarding the
+  // 6. F6 (amended 2026-10-04): Generate is not offered over unsaved text. Cancel (discarding the
   // draft) brings it back, and the saved wording is untouched.
   await editBriefing(briefing);
   await briefing.getByLabel("Theme 1").fill("Draft to discard before generating.");
@@ -163,7 +178,7 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
     themeItem(briefing).getByText("Several people asked for longer rest breaks.", { exact: true }),
   ).toBeVisible();
 
-  // 6. Generate from the saved briefing's read view: the clean editor opens the new preview (F4
+  // 7. Generate from the saved briefing's read view: the clean editor opens the new preview (F4
   // step 7). Inspect its sources, then Accept preview, which replaces the saved briefing.
   await action(briefing, "Generate").click();
   await expect(editorTitle(briefing, PREVIEW_TITLE)).toBeAttached();
