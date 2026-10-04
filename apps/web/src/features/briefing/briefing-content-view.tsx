@@ -38,7 +38,8 @@ function EvidenceRow({
 
 /**
  * A briefing's content, read-only (spec 2026-10-04): the feedback summary first and highlighted,
- * then the recurring themes and disagreements side by side, then suggestions. The attendance
+ * then the recurring themes and disagreements side by side, then suggestions (as separate cards
+ * when a `sectionsSlot` is given). The attendance
  * overview is stored and saved but not shown (spec 05, amended 2026-10-04). Model and human text
  * is rendered as plain text (S1).
  */
@@ -46,14 +47,18 @@ export function BriefingContentView({
   content,
   notes,
   disclosureScope,
+  sectionsSlot,
 }: {
   content: BriefingContent;
   notes: readonly FeedbackNote[];
   /** Prefix of each item's disclosure key, e.g. a generation ID. */
   disclosureScope: string;
+  /** Where the section cards render (see BriefingSectionsLayout); omitted: inline. */
+  sectionsSlot?: HTMLElement | null | undefined;
 }) {
   return (
     <BriefingSectionsLayout
+      sectionsSlot={sectionsSlot}
       summary={
         <SummaryCard>
           {/* Its cited notes stay in the data, not on screen (spec 03, amended 2026-10-04). */}

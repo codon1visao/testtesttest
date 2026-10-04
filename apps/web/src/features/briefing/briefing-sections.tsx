@@ -6,9 +6,11 @@ import type { ListSection } from "@event-desk/contracts";
 import { colorVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { type ReactNode, useId } from "react";
+import { createPortal } from "react-dom";
 import { SECTION_COPY } from "./briefing-copy";
 
 const styles = stylex.create({
+  fillRow: { height: "100%", boxSizing: "border-box" },
   list: {
     listStyle: "none",
     margin: 0,
@@ -71,14 +73,70 @@ function BriefingSection({
   );
 }
 
-/** The briefing's arrangement, shared by the read view and the edit view so they cannot drift. */
+/** One section as its own card below the Briefing card (spec 05, amended 2026-10-04). */
+function SectionCard({
+  section,
+  items,
+  fillsRow = false,
+}: {
+  section: ListSection;
+  items: readonly ReactNode[];
+  /** Side by side: as tall as its neighbour, so the two cards line up. */
+  fillsRow?: boolean;
+}) {
+  return (
+    <Card padding={4} data-briefing-card={section} xstyle={fillsRow ? styles.fillRow : undefined}>
+      <BriefingSection section={section} items={items} />
+    </Card>
+  );
+}
+
+/**
+ * Themes and Disagreements side by side, Suggestions for you full width below, each its own card;
+ * they stack on narrow widths. Spaced like the dashboard's other cards.
+ */
+export function BriefingSectionCards({
+  renderItems,
+}: {
+  renderItems: (section: ListSection) => readonly ReactNode[];
+}) {
+  return (
+    <VStack gap={6}>
+      <Grid columns={{ minWidth: 280, max: 2 }} gap={6}>
+        {COLUMN_SECTIONS.map((section) => (
+          <SectionCard key={section} section={section} items={renderItems(section)} fillsRow />
+        ))}
+      </Grid>
+      <SectionCard section="suggestions" items={renderItems("suggestions")} />
+    </VStack>
+  );
+}
+
+/**
+ * The briefing's arrangement, shared by the read view and the edit view so they cannot drift.
+ * With `sectionsSlot` the summary stays here and the sections render as cards in that element (the
+ * panel's slot below the Briefing card; nothing until it exists). Without it, everything is inline:
+ * the compact arrangement of the latest saved briefing shown beside a conflicting draft.
+ */
 export function BriefingSectionsLayout({
   summary,
   renderItems,
+  sectionsSlot,
 }: {
   summary: ReactNode;
   renderItems: (section: ListSection) => readonly ReactNode[];
+  sectionsSlot?: HTMLElement | null | undefined;
 }) {
+  if (sectionsSlot !== undefined) {
+    return (
+      <>
+        {summary}
+        {sectionsSlot === null
+          ? null
+          : createPortal(<BriefingSectionCards renderItems={renderItems} />, sectionsSlot)}
+      </>
+    );
+  }
   return (
     <VStack gap={4}>
       {summary}

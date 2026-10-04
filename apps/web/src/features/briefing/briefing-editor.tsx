@@ -160,6 +160,7 @@ export function BriefingEditor({
   consumePendingFocus,
   isLocked = false,
   actionsSlot = null,
+  sectionsSlot,
 }: {
   eventId: EventId;
   view: EventView;
@@ -169,6 +170,12 @@ export function BriefingEditor({
   isLocked?: boolean;
   /** The panel header's actions group: Edit, or Cancel and Save, render there (spec 2026-10-04). */
   actionsSlot?: HTMLElement | null;
+  /**
+   * The panel's slot below the Briefing card: the Themes, Disagreements and Suggestions cards render
+   * there in both views (spec 05, amended 2026-10-04). Omitted: inline. Their text areas stay
+   * outside the <form> element; Save is the header button, which submits through the hook.
+   */
+  sectionsSlot?: HTMLElement | null | undefined;
   onSaved: (outcome: { reconciled: boolean }) => void;
   /** Just before an explicit discard or reload drops the draft: a remounted editor takes focus. */
   onReset: () => void;
@@ -325,6 +332,7 @@ export function BriefingEditor({
           <VStack gap={4}>
             {isEditing ? (
               <BriefingSectionsLayout
+                sectionsSlot={sectionsSlot}
                 summary={
                   <SummaryCard>
                     <TextField
@@ -358,6 +366,7 @@ export function BriefingEditor({
                 content={content}
                 notes={view.feedback}
                 disclosureScope={scope}
+                sectionsSlot={sectionsSlot}
               />
             )}
             <div role="status" aria-live="polite">

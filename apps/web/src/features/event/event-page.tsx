@@ -77,11 +77,10 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
         ) : null}
         <DashboardGrid
           main={
-            <Card padding={4}>
-              <PanelErrorBoundary name="Briefing">
-                <BriefingPanel eventId={eventId} view={view} refetch={query.refetch} />
-              </PanelErrorBoundary>
-            </Card>
+            // The panel renders its own cards: the Briefing card and the section cards below it.
+            <PanelErrorBoundary name="Briefing">
+              <BriefingPanel eventId={eventId} view={view} refetch={query.refetch} />
+            </PanelErrorBoundary>
           }
           side={
             <>

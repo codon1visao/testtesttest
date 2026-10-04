@@ -1,5 +1,6 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Banner } from "@astryxdesign/core/Banner";
+import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
@@ -31,6 +32,9 @@ const VIEW_OF_SLOT: Record<EditableSlot, ActiveView> = { selected: "preview", sa
 const styles = stylex.create({
   // The editor's buttons render into this element; they take part in the actions group's gap.
   actionsSlot: { display: "contents" },
+  // The editor's (or a read-only preview's) section cards render into this element; it takes no
+  // space of its own, so the cards space like the dashboard's other cards.
+  sectionsSlot: { display: "contents" },
   // The actions group sits at the end of the header row; the heading and its badge at the start.
   headerActions: { marginInlineStart: "auto" },
 });
@@ -60,6 +64,9 @@ export function BriefingPanel({
   const briefingEditing = useUiStore((state) => state.briefingEditing);
   // The header element the editor renders its Edit / Cancel / Save buttons into.
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  // Below the Briefing card: the Themes, Disagreements and Suggestions cards (spec 05, amended
+  // 2026-10-04).
+  const [sectionsSlot, setSectionsSlot] = useState<HTMLElement | null>(null);
   const activeView = useUiStore((state) => state.activeView);
   const setActiveView = useUiStore((state) => state.setActiveView);
   const latest = toEditorBase(view, activeView);
@@ -249,92 +256,105 @@ export function BriefingPanel({
 
   return (
     <section aria-label="Briefing">
-      <VStack gap={3}>
-        <HStack gap={2} align="center">
-          <Heading level={2}>Briefing</Heading>
-          {/* Spec 05 (amended 2026-10-04): marks a generated preview in the editor, whose own title
+      <VStack gap={6}>
+        <Card padding={4} data-briefing-card="briefing">
+          <VStack gap={3}>
+            <HStack gap={2} align="center">
+              <Heading level={2}>Briefing</Heading>
+              {/* Spec 05 (amended 2026-10-04): marks a generated preview in the editor, whose own title
               is visually hidden. */}
-          {isPreviewShown ? <Badge variant="warning" label="Unsaved preview" /> : null}
-          <HStack gap={2} align="center" xstyle={styles.headerActions}>
-            <div ref={setActionsSlot} {...stylex.props(styles.actionsSlot)} />
-            {briefingEditing || isPreviewShown ? null : (
-              <GenerateBriefingButton control={generate} ref={generateButtonRef} />
+              {isPreviewShown ? <Badge variant="warning" label="Unsaved preview" /> : null}
+              <HStack gap={2} align="center" xstyle={styles.headerActions}>
+                <div ref={setActionsSlot} {...stylex.props(styles.actionsSlot)} />
+                {briefingEditing || isPreviewShown ? null : (
+                  <GenerateBriefingButton control={generate} ref={generateButtonRef} />
+                )}
+              </HStack>
+            </HStack>
+            <GenerateBriefingStatus control={generate} view={view} />
+            {announced === null ? null : (
+              <IncomingPreviewNotice
+                key={announced.provenance.generationId}
+                preview={announced}
+                isDirty={briefingDirty}
+                isOpening={announcedIsIncoming && select.isPending}
+                onReview={() => {
+                  const generationId = announced.provenance.generationId;
+                  if (announcedIsIncoming) openPreview(generationId, true);
+                  else adoptSelected(generationId);
+                }}
+              />
             )}
-          </HStack>
-        </HStack>
-        <GenerateBriefingStatus control={generate} view={view} />
-        {announced === null ? null : (
-          <IncomingPreviewNotice
-            key={announced.provenance.generationId}
-            preview={announced}
-            isDirty={briefingDirty}
-            isOpening={announcedIsIncoming && select.isPending}
-            onReview={() => {
-              const generationId = announced.provenance.generationId;
-              if (announcedIsIncoming) openPreview(generationId, true);
-              else adoptSelected(generationId);
-            }}
-          />
-        )}
-        {reconciled ? <Banner status="success" title="Your briefing changes were saved." /> : null}
-        {canSwitch ? (
-          <div>
-            {/* No visible caption (amended 2026-10-04): the label names the switch for assistive
+            {reconciled ? (
+              <Banner status="success" title="Your briefing changes were saved." />
+            ) : null}
+            {canSwitch ? (
+              <div>
+                {/* No visible caption (amended 2026-10-04): the label names the switch for assistive
                 technology; its two options say what they show. */}
-            <SegmentedControl
-              label="Briefing to show"
-              value={VIEW_OF_SLOT[base.slot]}
-              isDisabled={autoSelecting !== null || select.isPending || isSavingBriefing}
-              onChange={(value) => {
-                if (!isActiveView(value)) return;
-                if (briefingDirty) setConfirmingSwitch(value);
-                else switchTo(value);
-              }}
-            >
-              <SegmentedControlItem value="preview" label="Generated preview" />
-              <SegmentedControlItem value="saved" label="Saved briefing" />
-            </SegmentedControl>
-          </div>
-        ) : null}
-        {/* Before the editor: the dialog returns focus to its trigger as it closes, and the
+                <SegmentedControl
+                  label="Briefing to show"
+                  value={VIEW_OF_SLOT[base.slot]}
+                  isDisabled={autoSelecting !== null || select.isPending || isSavingBriefing}
+                  onChange={(value) => {
+                    if (!isActiveView(value)) return;
+                    if (briefingDirty) setConfirmingSwitch(value);
+                    else switchTo(value);
+                  }}
+                >
+                  <SegmentedControlItem value="preview" label="Generated preview" />
+                  <SegmentedControlItem value="saved" label="Saved briefing" />
+                </SegmentedControl>
+              </div>
+            ) : null}
+            {/* Before the editor: the dialog returns focus to its trigger as it closes, and the
             remounted editor's heading must take focus after that. */}
-        <ConfirmDialog
-          isOpen={confirmingSwitch !== null}
-          title="Discard your edits and switch?"
-          description="Your unsaved wording will be lost. Cancel to keep editing; you can save it first."
-          actionLabel="Discard and switch"
-          onCancel={() => {
-            setConfirmingSwitch(null);
-          }}
-          onConfirm={() => {
-            const target = confirmingSwitch;
-            setConfirmingSwitch(null);
-            if (target !== null) switchTo(target);
-          }}
-        />
-        {base !== null ? (
-          <BriefingEditor
-            key={editorKey(base)}
-            eventId={eventId}
-            view={view}
-            base={base}
-            refetch={refetch}
-            onSaved={onSaved}
-            onReset={onReset}
-            consumePendingFocus={consumePendingFocus}
-            isLocked={autoSelecting !== null}
-            actionsSlot={actionsSlot}
-          />
-        ) : incoming !== null ? (
-          <BriefingPreview title="New preview (not yet reviewed)" briefing={incoming} view={view} />
-        ) : (
-          <EmptyState
-            isCompact
-            headingLevel={3}
-            title="No briefing yet"
-            description="Press Generate to create one from the saved records."
-          />
-        )}
+            <ConfirmDialog
+              isOpen={confirmingSwitch !== null}
+              title="Discard your edits and switch?"
+              description="Your unsaved wording will be lost. Cancel to keep editing; you can save it first."
+              actionLabel="Discard and switch"
+              onCancel={() => {
+                setConfirmingSwitch(null);
+              }}
+              onConfirm={() => {
+                const target = confirmingSwitch;
+                setConfirmingSwitch(null);
+                if (target !== null) switchTo(target);
+              }}
+            />
+            {base !== null ? (
+              <BriefingEditor
+                key={editorKey(base)}
+                eventId={eventId}
+                view={view}
+                base={base}
+                refetch={refetch}
+                onSaved={onSaved}
+                onReset={onReset}
+                consumePendingFocus={consumePendingFocus}
+                isLocked={autoSelecting !== null}
+                actionsSlot={actionsSlot}
+                sectionsSlot={sectionsSlot}
+              />
+            ) : incoming !== null ? (
+              <BriefingPreview
+                title="New preview (not yet reviewed)"
+                briefing={incoming}
+                view={view}
+                sectionsSlot={sectionsSlot}
+              />
+            ) : (
+              <EmptyState
+                isCompact
+                headingLevel={3}
+                title="No briefing yet"
+                description="Press Generate to create one from the saved records."
+              />
+            )}
+          </VStack>
+        </Card>
+        <div ref={setSectionsSlot} {...stylex.props(styles.sectionsSlot)} />
       </VStack>
     </section>
   );

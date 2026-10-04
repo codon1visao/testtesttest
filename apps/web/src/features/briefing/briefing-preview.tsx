@@ -12,10 +12,13 @@ export function BriefingPreview({
   title,
   briefing,
   view,
+  sectionsSlot,
 }: {
   title: string;
   briefing: BriefingView;
   view: EventView;
+  /** The panel's section-card slot when this is the only briefing shown; omitted: inline. */
+  sectionsSlot?: HTMLElement | null | undefined;
 }) {
   const { content, provenance } = briefing;
   return (
@@ -28,6 +31,7 @@ export function BriefingPreview({
           content={content}
           notes={view.feedback}
           disclosureScope={`${provenance.generationId}:readonly`}
+          sectionsSlot={sectionsSlot}
         />
       </VStack>
     </article>
