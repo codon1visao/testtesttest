@@ -231,6 +231,59 @@ describe("attendance panel", () => {
     expect(lockedStates(region)).toEqual([false, false, false, false]);
   });
 
+  it("after a save, focus stays where the user moved it outside Attendance", async () => {
+    const release = holdSaves();
+    const { user } = renderApp();
+    const region = await panel();
+    await chooseOption(user, region, "Chris", "Attended");
+    await user.click(saveButton(region));
+    await region.findByText("Saving…");
+    const elsewhere = within(screen.getByRole("region", { name: "Feedback" })).getByRole("link", {
+      name: /Open feedback form/,
+    });
+    act(() => {
+      elsewhere.focus();
+    });
+    release();
+    await toastShown("Attendance saved");
+    await waitFor(() => {
+      expect(saveButton(region).disabled).toBe(true);
+    });
+    await act(() => delay(50));
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it("Save changes stays focusable while saving, ignores repeated keys, and keeps focus after a failure", async () => {
+    const { promise: gate, resolve: release } = Promise.withResolvers<undefined>();
+    let puts = 0;
+    mswServer.use(
+      http.put("/api/events/:eventId/attendance", async () => {
+        puts += 1;
+        await gate;
+        return apiErrorResponse(503, "STORE_UNAVAILABLE", "Busy.");
+      }),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await chooseOption(user, region, "Chris", "Attended");
+    act(() => {
+      saveButton(region).focus();
+    });
+    await user.keyboard("{Enter}");
+    await region.findByText("Saving…");
+    // aria-disabled, never the disabled attribute: browsers drop focus from a natively disabled
+    // button to <body> (jsdom keeps it, so the attribute itself is checked).
+    expect(saveButton(region).disabled).toBe(false);
+    expect(saveButton(region).getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(saveButton(region));
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    release(undefined);
+    expect(await region.findByText("Busy.")).toBeTruthy();
+    expect(puts).toBe(1);
+    expect(document.activeElement).toBe(saveButton(region));
+  });
+
   it("a locked Selector keeps focus and ignores the keyboard while a save is in flight", async () => {
     const release = holdSaves();
     const { user } = renderApp();

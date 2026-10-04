@@ -116,16 +116,22 @@ export function AttendancePanel({
   const focusHeading = () => {
     headingRef.current?.focus();
   };
+  // Only while focus is still here (or already lost): a coordinator who moved on during a slow save
+  // keeps their place, and their keystrokes.
+  const sectionRef = useRef<HTMLElement>(null);
   const handledSavedFocus = useRef(0);
   useEffect(() => {
     if (attendance.savedFocusRequest === handledSavedFocus.current) return;
     handledSavedFocus.current = attendance.savedFocusRequest;
-    headingRef.current?.focus();
+    const active = document.activeElement;
+    if (active === null || active === document.body || sectionRef.current?.contains(active)) {
+      headingRef.current?.focus();
+    }
   }, [attendance.savedFocusRequest]);
   const names = new Map(view.members.map((m) => [m.id as string, m.name]));
 
   return (
-    <section aria-label="Attendance">
+    <section aria-label="Attendance" ref={sectionRef}>
       <VStack gap={3}>
         <Heading level={2} ref={headingRef} tabIndex={-1}>
           Attendance
