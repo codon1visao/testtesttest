@@ -47,11 +47,9 @@ const toastShown = async (text: string) => {
     { timeout: 3_000 },
   );
 };
-/** A tile label as read: without the soft hyphens that let it wrap in a narrow tile. */
-const termText = (term: Element | null | undefined) => term?.textContent.replaceAll("\u00AD", "");
 /** A count tile's value, by its label: the <dd> beside that <dt> (F2 counts as stat tiles). */
 const tileValue = (region: Region, label: string) => {
-  const term = region.getAllByRole("term").find((element) => termText(element) === label);
+  const term = region.getAllByRole("term").find((element) => element.textContent === label);
   if (term === undefined) throw new Error(`no ${label} tile`);
   return term.parentElement?.querySelector("dd")?.textContent ?? null;
 };
@@ -102,12 +100,9 @@ describe("attendance panel", () => {
     expect(live?.getAttribute("aria-live")).toBe("polite");
     expect(live?.getAttribute("aria-atomic")).toBe("true");
     // One tile per count, as direct children of the list, in reading order.
-    expect(Array.from(counts.children).map((tile) => termText(tile.querySelector("dt")))).toEqual([
-      "Registered",
-      "Attended",
-      "Absent",
-      "Not recorded",
-    ]);
+    expect(
+      Array.from(counts.children).map((tile) => tile.querySelector("dt")?.textContent),
+    ).toEqual(["Registered", "Attended", "Absent", "Not recorded"]);
     expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
     expect(region.queryByText("Saving…")).toBeNull();
   });
@@ -203,6 +198,54 @@ describe("attendance panel", () => {
     await toastShown("Attendance saved");
     expect(api.attendanceRequests).toHaveLength(1);
     expect(select(region, "Drew").textContent).toBe("Absent");
+  });
+
+  it("a locked trigger ignores the keyboard while a save is in flight", async () => {
+    const release = holdSaves();
+    const { user } = renderApp();
+    const region = await panel();
+    await chooseOption(user, region, "Chris", "Attended");
+    await region.findByText("Saving…");
+    act(() => {
+      select(region, "Chris").focus();
+    });
+    await user.keyboard("{Enter}");
+    await user.keyboard("N");
+    expect(region.queryByRole("listbox")).toBeNull();
+    expect(select(region, "Chris").textContent).toBe("Attended");
+    release();
+    await toastShown("Attendance saved");
+    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(api.attendanceRequests).toHaveLength(1);
+  });
+
+  it("a refetch during a save keeps the choice shown; the save then meets the conflict", async () => {
+    let reads = 0;
+    mswServer.use(
+      http.get("/api/events/:eventId", () => {
+        reads += 1;
+        return undefined;
+      }),
+    );
+    const release = holdSaves();
+    const { user } = renderApp();
+    const region = await panel();
+    await chooseOption(user, region, "Chris", "Attended");
+    await region.findByText("Saving…");
+    api.saveElsewhere(M04, "attended");
+    const before = reads;
+    refocus();
+    await waitFor(() => {
+      expect(reads).toBeGreaterThan(before);
+    });
+    await act(() => delay(50));
+    // The newer saved view does not replace the change being saved.
+    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(select(region, "Drew").textContent).toBe("Absent");
+    release();
+    expect(await region.findByText("Attendance changed elsewhere")).toBeTruthy();
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
+    expect(select(region, "Drew").textContent).toBe("Attended");
   });
 
   it("F2-08: a failed save reverts the choice and names the member; the next successful save clears it", async () => {
@@ -359,6 +402,10 @@ describe("attendance panel", () => {
     expect(lockedStates(region)).toEqual([false, false, false, false]);
     expect(useUiStore.getState().attendanceDirty).toBe(false);
     expect(api.attendanceRequests).toHaveLength(0);
+    // Check again unmounted with its banner: focus lands on a stable target, not <body>.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(region.getByRole("heading", { name: "Attendance" }));
+    });
   });
 
   it("keeps the Selectors locked during the lost-response check, with one re-read and one PUT", async () => {

@@ -48,6 +48,10 @@ export function useAttendanceAutosave(eventId: EventId, view: EventView, refetch
   // A save's response (or a re-read) can arrive before the view shows it: the newer revision wins,
   // so the Selectors never flash back to the previous records.
   const [adopted, setAdopted] = useState<SavedAttendance | null>(null);
+  // Once the view has caught up, the view is the source again. Adjusted during render (React's
+  // pattern for state derived from props), so a revision that later goes backwards (a database
+  // reset with the page open) is never hidden behind an old adopted copy.
+  if (adopted !== null && view.attendanceRevision >= adopted.revision) setAdopted(null);
   const saved: SavedAttendance =
     adopted !== null && adopted.revision > view.attendanceRevision
       ? adopted
@@ -104,7 +108,9 @@ export function useAttendanceAutosave(eventId: EventId, view: EventView, refetch
     }
   };
 
-  // Conflict: show the latest saved records; if they cannot be read, the last known ones.
+  // Conflict: show the latest saved records; if they cannot be read, the last known ones. The
+  // mutation's own invalidation has already re-read once; this explicit read is the one whose
+  // result is known (kept so use-save-attendance stays untouched).
   const reloadAfterConflict = async (name: string) => {
     setChecking(true);
     try {

@@ -1,7 +1,7 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
-import { colorVars, radiusVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
+import { colorVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import type { AttendanceCounts as Counts } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
 
@@ -9,43 +9,49 @@ export function formatAttendanceCounts(c: Counts): string {
   return `${c.registered} registered · ${c.attended} attended · ${c.absent} absent · ${c.notRecorded} not recorded`;
 }
 
-// Soft hyphens (U+00AD) let a label break between syllables, with a visible hyphen, in a narrow
-// tile; the browser's own hyphenation (`hyphens: auto`) is not available everywhere. They are not
-// read aloud.
 const TILES = [
-  { key: "registered", label: "Reg\u00ADis\u00ADtered" },
-  { key: "attended", label: "At\u00ADtend\u00ADed" },
-  { key: "absent", label: "Ab\u00ADsent" },
-  { key: "notRecorded", label: "Not re\u00ADcord\u00ADed" },
+  { key: "registered", label: "Registered" },
+  { key: "attended", label: "Attended" },
+  { key: "absent", label: "Absent" },
+  { key: "notRecorded", label: "Not recorded" },
 ] as const satisfies readonly { key: keyof Counts; label: string }[];
 
 const styles = stylex.create({
-  // Always one row of four, also in the narrow side column: tight tiles, and a label that wraps
-  // (at its soft hyphens, else anywhere as a last resort) rather than be cut off or overflow.
+  // A stat strip: always one row of four equal cells, also in the narrow side column. The strip's
+  // own width sizes the labels (container units), so no label word ever breaks.
   tiles: {
     display: "grid",
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: spacingVars["--spacing-1"],
     margin: 0,
+    containerType: "inline-size",
   },
-  // The value reads first, the label below it; in the markup the <dt> still names its <dd>. A
-  // border gives the tile its own edge in both themes (the muted fill alone can match the card).
+  // The value reads first, the label below it, both centred; in the markup the <dt> still names its
+  // <dd>. A thin divider separates each cell from the one before it.
   tile: {
     display: "flex",
     flexDirection: "column-reverse",
     justifyContent: "flex-end",
+    alignItems: "center",
     gap: "0.125rem",
     minWidth: 0,
-    paddingBlock: spacingVars["--spacing-2"],
-    paddingInline: spacingVars["--spacing-1"],
-    borderWidth: "1px",
-    borderStyle: "solid",
-    borderColor: colorVars["--color-border-emphasized"],
-    borderRadius: radiusVars["--radius-element"],
-    backgroundColor: colorVars["--color-background-muted"],
+    paddingBlock: spacingVars["--spacing-1"],
+    paddingInline: "2px",
+    textAlign: "center",
+    borderInlineStartWidth: { default: "1px", ":first-child": 0 },
+    borderInlineStartStyle: "solid",
+    borderInlineStartColor: colorVars["--color-border"],
   },
-  term: { margin: 0, minWidth: 0, overflowWrap: "break-word" },
-  value: { margin: 0, overflowWrap: "anywhere" },
+  term: { margin: 0 },
+  // Smaller than the supporting size, and smaller still in a narrow strip: "Registered" fits a
+  // quarter of a 240 px strip. Words wrap only at spaces ("Not recorded" may take two lines).
+  label: {
+    display: "block",
+    fontSize: "clamp(10px, 4.2cqi, 11px)",
+    lineHeight: 1.25,
+    overflowWrap: "normal",
+    wordBreak: "normal",
+  },
+  value: { margin: 0 },
 });
 
 /**
@@ -65,7 +71,9 @@ export function AttendanceCounts({ counts, isSaving }: { counts: Counts; isSavin
           {TILES.map(({ key, label }) => (
             <div key={key} {...stylex.props(styles.tile)}>
               <dt {...stylex.props(styles.term)}>
-                <Text type="supporting">{label}</Text>
+                <Text type="supporting" xstyle={styles.label}>
+                  {label}
+                </Text>
               </dt>
               <dd {...stylex.props(styles.value)}>
                 <Text type="large" weight="bold" hasTabularNumbers>

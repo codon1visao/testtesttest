@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): a retry after a lost response keeps the draft's base revision. Amended 2026-10-04 (user-approved): attendance is a Name/Actions table with an Astryx Selector per member. Amended 2026-10-04 (user-approved): the counts are four stat tiles; unsaved changes show "saved → draft" on the changed tiles with an "Unsaved" badge. Amended 2026-10-04 (user-approved): attendance saves on each change; tiles in one row. Three-state attendance, application-calculated counts, backend persistence, a full-roster save on each change and revision-based conflict checks.
+Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): a retry after a lost response keeps the draft's base revision. Amended 2026-10-04 (user-approved): attendance is a Name/Actions table with an Astryx Selector per member. Amended 2026-10-04 (user-approved): the counts are four stat tiles; unsaved changes show "saved → draft" on the changed tiles with an "Unsaved" badge (superseded below). Amended 2026-10-04 (user-approved): attendance saves on each change; tiles in one row. Three-state attendance, application-calculated counts, backend persistence, a full-roster save on each change and revision-based conflict checks.
 
 ## Outcome and scope
 
@@ -20,7 +20,7 @@ Contribution to the [client goal](README.md#product-goal-solve-the-client-situat
 4. On success, adopt the response as the saved records and update briefing freshness using [F6](06-freshness-and-regeneration.md); an "Attendance saved" toast confirms it.
 5. On failure, revert the control to the saved status and show an error naming the member ("Chris was not saved") with the reason. The next successful save clears it.
 
-Show the counts as four stat tiles in one row — **Registered**, **Attended**, **Absent** and **Not recorded** — each with its value above its label. They count the statuses the controls show, which equal the saved records except while a save is in flight.
+Show the counts as a stat strip: four equal cells in one row — **Registered**, **Attended**, **Absent** and **Not recorded** — separated by thin dividers, each with its value centred above its label. Labels never break inside a word. They count the statuses the controls show, which equal the saved records except while a save is in flight.
 
 Show the members in a table with **Name** and **Actions** columns; each Actions cell is a labelled Astryx Selector (Attended / Absent / Not recorded). The accessible name includes the member name. After a choice, keyboard focus stays on that member's control: it is locked through `aria-disabled` while the save is in flight, so focus never falls to the page. A save never changes another panel's work as a side effect.
 

@@ -175,6 +175,16 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await page.getByRole("button", { name: "Discard and switch" }).click();
   await expect(editorTitle(briefing, "Saved briefing")).toBeFocused();
   await expect(unsavedPreviewBadge(briefing)).toHaveCount(0);
+  // The hidden title sits inside its briefing (the article is positioned), so focusing it keeps
+  // the briefing in view instead of scrolling the page to its top.
+  const titleBox = await editorTitle(briefing, "Saved briefing").boundingBox();
+  const articleBox = await briefing.getByRole("article", { name: "Saved briefing" }).boundingBox();
+  expect(titleBox).not.toBeNull();
+  expect(articleBox).not.toBeNull();
+  if (titleBox !== null && articleBox !== null) {
+    expect(titleBox.y).toBeGreaterThanOrEqual(articleBox.y - 1);
+    expect(titleBox.x).toBeGreaterThanOrEqual(articleBox.x - 1);
+  }
   await expect(
     themeItem(briefing).getByText("Several people asked for longer rest breaks.", { exact: true }),
   ).toBeVisible();

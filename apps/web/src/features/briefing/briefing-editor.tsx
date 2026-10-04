@@ -5,6 +5,7 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { assertNever, type EventId, type EventView } from "@event-desk/contracts";
+import * as stylex from "@stylexjs/stylex";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type Control, Controller } from "react-hook-form";
@@ -24,6 +25,12 @@ import { BriefingSectionsLayout, SummaryCard } from "./briefing-sections";
 import { BriefingPreview } from "./briefing-preview";
 import { FreshnessNotice } from "./freshness-notice";
 import { type BriefingNotice, useBriefingForm } from "./use-briefing-form";
+
+const styles = stylex.create({
+  // The visually hidden title is absolutely positioned: anchored here, focusing it keeps the
+  // briefing in view instead of scrolling the page to its top.
+  article: { position: "relative" },
+});
 
 function TextField({
   control,
@@ -283,13 +290,13 @@ export function BriefingEditor({
   );
 
   return (
-    <article aria-labelledby={headingId}>
+    <article aria-labelledby={headingId} {...stylex.props(styles.article)}>
       {actionsSlot === null ? null : createPortal(actions, actionsSlot)}
       <VStack gap={3}>
         {/* Spec 05 (amended 2026-10-04): visually hidden. It still names the article and takes
             focus after cancel, discard, reload, save and switch; the panel header's Unsaved preview
             badge marks a generated preview for sighted users. */}
-        <VisuallyHidden as="div">
+        <VisuallyHidden as="div" data-editor-title="">
           <Heading level={3} id={headingId} ref={headingRef} tabIndex={-1}>
             {title}
           </Heading>

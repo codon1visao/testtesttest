@@ -453,8 +453,8 @@ describe("briefing editor", () => {
     renderApp();
     const region = await panel();
     const heading = await region.findByRole("heading", { level: 3, name: "Saved briefing" });
-    // StyleX's dev class names identify Astryx VisuallyHidden's clip block.
-    expect(heading.closest("[class*='VisuallyHidden']")).not.toBeNull();
+    // Inside the Astryx VisuallyHidden wrapper, which carries this marker.
+    expect(heading.closest("[data-editor-title]")).not.toBeNull();
     expect(region.getByRole("article", { name: "Saved briefing" })).toBeTruthy();
     expect(region.queryByText(/^Last saved /)).toBeNull();
     expect(region.queryByText(/^Generated /)).toBeNull();
