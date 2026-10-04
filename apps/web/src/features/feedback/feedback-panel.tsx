@@ -1,6 +1,14 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Link } from "@astryxdesign/core/Link";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+} from "@astryxdesign/core/Table";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { FeedbackId, FeedbackNote } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
@@ -30,34 +38,48 @@ export function FeedbackPanel({
   return (
     <section aria-label="Feedback">
       <VStack gap={2}>
-        <Heading level={2}>Feedback</Heading>
+        <HStack gap={2} justify="between" align="center">
+          <Heading level={2}>Feedback</Heading>
+          <Link href={`/events/${EVENT_ID}/feedback`} isExternalLink>
+            Open feedback form (test)
+          </Link>
+        </HStack>
         <Text type="supporting">
           {notes.length} anonymous notes from the event feedback form. Read-only and not linked to
           members.
         </Text>
-        <Link href={`/events/${EVENT_ID}/feedback`} isExternalLink>
-          Open feedback form (test)
-        </Link>
         {notes.length === 0 ? (
           <Text>No feedback notes yet.</Text>
         ) : (
-          <ol>
-            {notes.map((note) => (
-              <li key={note.id}>
-                <HStack gap={2}>
-                  <span {...stylex.props(styles.noteId)}>
-                    <Badge variant="neutral" label={note.id} />
-                    {newSinceBriefing.has(note.id) ? (
-                      <Badge variant="info" label="New since this briefing" />
-                    ) : null}
-                  </span>
-                  <div {...stylex.props(styles.noteText)}>
-                    <Text>{note.text}</Text>
-                  </div>
-                </HStack>
-              </li>
-            ))}
-          </ol>
+          <Table aria-label="Feedback notes" density="compact" verticalAlign="top">
+            <TableHeader>
+              <TableRow isHeaderRow>
+                <TableHeaderCell scope="col">ID</TableHeaderCell>
+                <TableHeaderCell scope="col">Note</TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {notes.map((note) => (
+                <TableRow key={note.id}>
+                  <TableCell>
+                    <VStack gap={1}>
+                      <span {...stylex.props(styles.noteId)}>
+                        <Badge variant="neutral" label={note.id} />
+                      </span>
+                      {newSinceBriefing.has(note.id) ? (
+                        <Badge variant="info" label="New since this briefing" />
+                      ) : null}
+                    </VStack>
+                  </TableCell>
+                  <TableCell>
+                    <div {...stylex.props(styles.noteText)}>
+                      <Text>{note.text}</Text>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </VStack>
     </section>

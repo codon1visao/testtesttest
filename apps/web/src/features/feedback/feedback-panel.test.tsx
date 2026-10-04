@@ -15,10 +15,16 @@ beforeEach(() => {
 
 const panel = async () => within(await screen.findByRole("region", { name: "Feedback" }));
 
+/** Body rows of the notes table, in display order (the header row holds the column headers). */
+const noteRows = (region: Awaited<ReturnType<typeof panel>>) =>
+  region
+    .getAllByRole("row")
+    .filter((row) => within(row).queryAllByRole("columnheader").length === 0);
+
 describe("feedback panel", () => {
   it("F3-01: lists the eight supplied notes, in ID order, with exact text", async () => {
     renderApp();
-    const items = (await panel()).getAllByRole("listitem");
+    const items = noteRows(await panel());
     expect(items.map((item) => within(item).getByText(/^F\d{2}$/).textContent)).toEqual(
       SUPPLIED_FEEDBACK.map((note) => note.id),
     );
@@ -62,9 +68,19 @@ describe("feedback panel", () => {
     });
     api.view = { ...api.view, savedBriefing: briefing };
     renderApp();
-    const items = (await panel()).getAllByRole("listitem");
+    const items = noteRows(await panel());
     expect(within(items[7] ?? document.body).getByText("New since this briefing")).toBeTruthy();
     expect(within(items[0] ?? document.body).queryByText("New since this briefing")).toBeNull();
+  });
+
+  it("shows the notes as a table with ID and Note columns", async () => {
+    renderApp();
+    const table = (await panel()).getByRole("table", { name: "Feedback notes" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["ID", "Note"]);
   });
 
   it("links to the test feedback form in a new tab", async () => {
