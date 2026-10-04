@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Snapshot-comparison freshness (D5), separate previews (D1) and protection of saved human edits. Amended 2026-10-04 (user-approved): Generate is not offered while the briefing is being edited (save or cancel first); a result arriving from elsewhere while editing is still held as an incoming preview (F6-09); nothing is shown when the briefing is current. Amended 2026-10-04 (user-approved): attendance saves on each change ([F2](02-attendance.md)), so there is no unsaved attendance draft; Generate waits while an attendance save is in flight. The freshness logic is unchanged.
+Status: **Confirmed by the user on 2026-10-03.** Snapshot-comparison freshness (D5), separate previews (D1) and protection of saved human edits. Amended 2026-10-04 (user-approved): Generate is not offered while the briefing is being edited (save or cancel first); a result arriving from elsewhere while editing is still held as an incoming preview (F6-09); nothing is shown when the briefing is current. Amended 2026-10-04 (user-approved): attendance saves on each change ([F2](02-attendance.md)), so there is no unsaved attendance draft; Generate waits while an attendance save is in flight. The freshness logic is unchanged. Amended 2026-10-04 (user-approved): Generate is not offered while a generated preview is shown in the read view or while the briefing is being edited — accept the preview (or switch to the saved briefing) to generate again; the batch banner's **Generate now** follows the same rule.
 
 ## Outcome and scope
 
@@ -44,8 +44,8 @@ isStale = attendanceChangedSinceGeneration || feedbackChangedSinceGeneration
 2. Inspect F05/F06, edit the text of their generated rest-break item and Save. Its original references remain F05/F06, and the human wording survives refresh/restart.
 3. Change Chris from Not recorded to Attended; the change saves at once. Saved counts become 4/2/2/0, and the existing briefing is marked out of date. Saved human wording, F05/F06 associations and the original overview stay intact. Any open editor also keeps its unsaved text.
 4. The coordinator may keep the stale briefing, or continue text editing and save it with the stale flag retained. Saving wording is not regeneration.
-5. If the coordinator chooses Generate, a separate preview is generated synchronously from the updated saved attendance. Generate is offered only while the briefing is not being edited: any open edit is saved or cancelled first, so no typed text is caught under the result. The old saved human briefing remains available. A failed generation changes neither saved wording nor references.
-6. Inspect the new preview's sources, optionally edit its text, then explicitly Save it from its edit view. Only this action replaces the saved human briefing; the replacement is current only if attendance has not changed again.
+5. If the coordinator chooses Generate, a separate preview is generated synchronously from the updated saved attendance. Generate is offered only while the briefing is not being edited and no generated preview is shown: any open edit is saved or cancelled first, and a shown preview is accepted (or the saved briefing switched to), so no typed text or unreviewed preview is caught under the result. The old saved human briefing remains available. A failed generation changes neither saved wording nor references.
+6. Inspect the new preview's sources, then explicitly keep it: **Accept preview** in the read view saves it unchanged, or edit its text and Save it from its edit view. Only these actions replace the saved human briefing; the replacement is current only if attendance has not changed again.
 
 This is the connection between the brief's **Inspect and edit** and **Keep work trustworthy** outcomes. Attendance changes trigger a warning, not an automatic rewrite or forced replacement.
 
@@ -58,7 +58,7 @@ Maintain one saved briefing, one selected generated preview and one incoming can
 | No saved content or preview | Generate an incoming candidate; select it for review | Remains empty until explicit Save |
 | Saved briefing, editor clean | Generate a separate incoming candidate | Existing saved text/references unchanged |
 | Saved briefing being edited | Generate is not offered while the text areas are open; save or cancel first. A result arriving from elsewhere (another tab, or an automatic batch) goes to the incoming slot and **Review new preview** appears. Switching to it requires Save, explicit Discard or Cancel. | Saved and local content preserved |
-| Selected preview already exists | New result goes to incoming slot; explicit selection replaces the selected preview | Saved briefing unchanged |
+| Selected preview already exists | Generate is not offered while the preview is shown: **Accept preview** saves it, or the switch shows the saved briefing, where Generate is offered. A new result (from there or from elsewhere) goes to the incoming slot; explicit selection replaces the selected preview | Saved briefing unchanged until Accept preview or Save |
 | Selected preview has unsaved text; new feedback triggers a batch | Batch reads saved inputs; do not replace or lock the editor; announce the ready candidate | Selected base and local text stay saveable |
 | Model or result-save failure | Keep prior selected/incoming candidates and saved briefing | Unchanged |
 

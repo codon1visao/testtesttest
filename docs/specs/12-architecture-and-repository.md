@@ -359,7 +359,7 @@ apps/web/src/
 | `attendanceDirty`, `briefingDirty`, active view, open source disclosures | Zustand |
 | Already-announced job outcomes | `sessionStorage`, once per `jobId` |
 
-Generate and Retry both use `use-generate-briefing` (a synchronous mutation; the button shows **Generating…**, and is not offered while the briefing is being edited). Retry shows a confirmation dialog first when the code is `AI_OUTCOME_UNKNOWN`. On success the result is auto-selected if the briefing form is clean. Batch progress comes from `generation.batch` in the event query, kept current by the change stream.
+Generate and Retry both use `use-generate-briefing` (a synchronous mutation; the button shows **Generating…**, and is not offered while the briefing is being edited or a generated preview is shown, where **Accept preview** takes its place). Retry shows a confirmation dialog first when the code is `AI_OUTCOME_UNKNOWN`. On success the result is auto-selected if the briefing form is clean. Batch progress comes from `generation.batch` in the event query, kept current by the change stream.
 
 ## 12. Testing
 
