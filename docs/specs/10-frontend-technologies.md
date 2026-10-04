@@ -32,7 +32,7 @@ The official [React versions page](https://react.dev/versions) lists 19.3 as the
 - **Data layer:** shared Axios client, endpoint functions, React Query queries/mutations and reusable contracts/validation. UI components consume this layer rather than issuing Axios requests directly. Reuse functions, APIs, schemas and hooks instead of duplicating them.
 - **UI layer:** React components, Astryx controls, form bindings and presentation. Multiple related components in one file are allowed; kebab-case applies to file/folder names, while React component identifiers retain PascalCase.
 - **React Query:** owns fetched server state and request status. **React Hook Form + Zod:** own editable form drafts and their validation. **Zustand:** owns shared client/UI state; do not duplicate server caches or form drafts in it.
-- Background refreshes and incoming generated previews must preserve a dirty briefing form, the selected generation and its fixed source references. Reset form baselines only through the explicit save, discard or selection flows in [F5](05-briefing-editor.md) and [F7](07-generation-queue.md). Attendance has no draft (it saves on each change, [F2](02-attendance.md)); a refresh never replaces a change while its save is in flight.
+- Background refreshes and incoming generated previews must preserve dirty attendance/briefing forms, the selected generation and its fixed source references. Reset form baselines only through the explicit save, discard or selection flows in [F2](02-attendance.md), [F5](05-briefing-editor.md) and [F7](07-generation-queue.md).
 
 ## Mutation feedback
 

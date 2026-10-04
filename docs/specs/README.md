@@ -54,7 +54,7 @@ The [What the coordinator should be able to do](../project-brief.md#what-the-coo
 
 | Outcome from the brief | Coordinator flow and resulting state | Specifications |
 | --- | --- | --- |
-| Record attendance | Open the seeded event and change member attendance; each change saves through the backend at once and the counts recalculate. Refresh/restart restores the saved records. | F1, F2 |
+| Record attendance | Open the seeded event, change member attendance, see recalculated counts labelled unsaved, then save through the backend (Save changes, or Discard). Refresh/restart restores the saved records. | F1, F2 |
 | Review feedback | Read each supplied note and its stable ID. Notes remain read-only and separate from the roster. | F3 |
 | Generate an AI briefing | Press Generate: the event API calls the AI Gateway over TCP synchronously (no queue) and returns the candidate, which opens for review when the editor is clean. New feedback (form/script) is batched: one automatic generation per fixed 3-second window, reading all notes at run time, with its progress shown in the briefing panel. The coordinator's generation always takes priority. Show what happened (feedback summary, with the counts in the attendance tiles; the code-built attendance overview is stored but not shown since 2026-10-04), themes, conflicts and suggestions with inspectable sources. | F3, F4, F7, F8 |
 | Inspect and edit | Open referenced notes, edit only the generated wording, then Save. Keep the generated section/item structure and reference associations unchanged; persist wording and references together. The saved briefing can subsequently be reopened for text edits. | F3, F5 |
@@ -79,7 +79,7 @@ Confirmed decisions are listed below, including the AI Gateway boundary. Design 
 
 ### Screen and interaction
 
-Use one event page with the event title and ended status, an attendance panel, a feedback panel and a briefing panel. Keep attendance saving separate from briefing Save. Attendance saves on each change (amended 2026-10-04); the counts follow the chosen statuses and equal the saved baseline used for generation except while a save is in flight, when Generate waits.
+Use one event page with the event title and ended status, an attendance panel, a feedback panel and a briefing panel. Keep attendance Save separate from briefing Save. Recalculate displayed attendance counts as selections change and label them as unsaved; retain saved counts as the factual baseline used for generation (explicit save restored 2026-10-04 after a same-day save-on-change trial).
 
 The briefing panel presents content under the brief's four questions, with short section headings (Summary · Themes · Disagreements · Suggestions for you; amended 2026-10-04, user-approved), and shows saved content or a selected generated preview/editor, alongside generation status and a New briefing ready notice when an incoming candidate exists. Its header holds the actions: Edit and Generate in the read view (Edit and Accept preview while a generated preview is shown; Generate is offered again once it is accepted or the saved briefing is shown), Cancel and Save while editing. Automatic completion never changes the active editor. The coordinator selects a candidate for text editing and later saves it explicitly; source references remain inspectable and read-only. Activating a briefing item reveals the notes it cites, with their IDs, inline below the item, avoiding a separate navigation flow.
 

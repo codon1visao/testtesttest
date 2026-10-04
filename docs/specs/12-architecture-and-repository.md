@@ -343,7 +343,7 @@ apps/web/src/
 ├─ state/ui-store.ts               # Zustand: cross-panel UI state only
 ├─ features/                       # UI LAYER
 │  ├─ event/        event-page.tsx · event-header.tsx
-│  ├─ attendance/   attendance-panel.tsx · use-attendance-autosave.ts
+│  ├─ attendance/   attendance-panel.tsx · use-attendance-form.ts
 │  ├─ feedback/     feedback-panel.tsx · source-reference.tsx
 │  ├─ briefing/     briefing-panel.tsx · briefing-editor.tsx · use-briefing-form.ts · generation-status.tsx
 │  │                · batch-status.tsx · freshness-notice.tsx · incoming-preview-notice.tsx
@@ -354,7 +354,7 @@ apps/web/src/
 | State | Owner |
 | --- | --- |
 | Event aggregate, job status, slots | React Query `["event", EVENT_ID]` |
-| Attendance change in flight | `use-attendance-autosave` (local state; no draft: each change saves at once, amended 2026-10-04). A newer saved view replaces what is shown whenever no save or check is in flight |
+| Attendance draft | React Hook Form. `reset()` only after a successful save, explicit Discard, or conflict reload |
 | Briefing text draft | React Hook Form keyed by `slot + generationId + briefingRevision`. Reset only on explicit select, save or discard. |
 | `attendanceDirty`, `briefingDirty`, `briefingEditing`, `briefingHeld`, active view, open source disclosures | Zustand |
 | Already-announced job outcomes | `sessionStorage`, once per `jobId` |
