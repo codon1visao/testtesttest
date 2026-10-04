@@ -189,7 +189,7 @@ The frontend stack is selected in [T1](10-frontend-technologies.md). The backend
 | D15: Relational schema | Normalised MySQL schema with composite FKs enforcing citation and text-only-save rules, `preview_slots` table, binary-collated IDs, CHECK constraints, hand-written migrations ([T4](13-data-model-and-transactions.md)) | JSON document columns (fewer tables, no DB-level evidence integrity) | Confirmed by user, 2026-10-03 |
 | D16: Briefing answers the four questions | "What happened" = code-built attendance overview (fact, states when attendance is incomplete) + one model-written feedback summary (reported, ≥ 1 cited note, ≤ 600 chars); UI headings follow the brief's four questions; internal keys unchanged | Attendance-only overview left the feedback side of "what happened" unanswered | Confirmed by user, 2026-10-03 |
 
-All decisions are confirmed. Implementation starts with the workspace scaffold and the BullMQ spike in [T5 §6](14-generation-queue-implementation.md#6-spike-first-build-step). Specify an upstream producer separately before implementing a live automatic note-arrival path. The implementation followed in Plans 1–5.
+All decisions are confirmed. Implementation began with the workspace scaffold and the BullMQ spike in [T5 §6](14-generation-queue-implementation.md#6-spike-first-build-step); the test feedback form and script (A15, F3) are the upstream producer for automatic note arrival. The implementation followed in Plans 1–5.
 
 ## Coverage and final demonstration
 

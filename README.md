@@ -16,6 +16,7 @@ This build serves one seeded event, **E101 · Saturday Walk**, with four registe
 **You need:** Node.js 24 (see `.nvmrc`), pnpm 11 (`corepack enable` picks the pinned version), Docker with Compose, and — only for AI generation — an OpenAI API key.
 
 ```bash
+corepack enable               # once: activates the pinned pnpm
 pnpm install
 cp .env.example .env          # local-only defaults; add OPENAI_API_KEY to enable generation
 pnpm infra:up                 # MySQL 8.4 and Redis 8 on 127.0.0.1
@@ -25,6 +26,7 @@ pnpm dev                      # AI Gateway, event API and web app together
 Open **http://localhost:5173**. On a fresh database it opens E101 with the brief's starting counts: 4 registered · 1 attended · 2 absent · 1 not recorded.
 
 - The first start of the event API creates the schema and seeds E101 once. Later starts keep everything you saved.
+- Adding the OpenAI key later? Restart `pnpm dev` (the apps read `.env` at startup).
 - **Without an OpenAI key** everything works except generation: Generate answers "The AI service has no provider configured", and nothing you saved changes.
 - **Without the AI Gateway running** Generate answers that the AI service is not reachable; the rest of the app is unaffected.
 - The test feedback form is at **http://localhost:5173/events/E101/feedback** (also linked from the Feedback panel as "Open feedback form (test)").
@@ -58,7 +60,7 @@ Open **http://localhost:5173**. On a fresh database it opens E101 with the brief
 
 ## Configuration
 
-All settings come from environment variables. `.env.example` lists every one with local-only defaults; copy it to `.env`. Each app reads **only its own** keys from `.env`, so the event API never sees the OpenAI key. Invalid values stop the app at startup with a message naming the variable.
+All settings come from environment variables. `.env.example` lists every one with local-only defaults; copy it to `.env`. Each app reads **only its own** keys from `.env`, so the event API never receives the OpenAI key (keep it in `.env` rather than exporting it in your shell). Invalid values stop the app at startup with a message naming the variable.
 
 | Variable                                                          | Default                                               | Used by               | Meaning                                                                                                                          |
 | ----------------------------------------------------------------- | ----------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -74,7 +76,7 @@ All settings come from environment variables. `.env.example` lists every one wit
 | `FEEDBACK_SUBMISSION_ENABLED` / `FEEDBACK_MAX_NOTES_PER_EVENT`    | `true` / `100`                                        | API                   | The test feedback channel and its note limit                                                                                     |
 | `GATEWAY_DAILY_CALL_LIMIT`                                        | `40`                                                  | Gateway               | Independent in-memory daily backstop on provider calls                                                                           |
 
-The remaining variables (timeouts, cache TTL, log level, token limit) are documented inline in `.env.example`.
+The remaining variables (hosts, timeouts and deadlines, cache TTL, log level, reasoning effort, token limit) are documented inline in `.env.example`.
 
 ## Resetting the data
 
@@ -90,6 +92,7 @@ pnpm dev
 
 `pnpm db:reset`:
 
+- refuses any database other than `event_desk` or `event_desk_test`;
 - **refuses to run while the event API answers** on its health check (or when it cannot confirm the API is stopped), so no save or returning generation can race it;
 - drops and recreates the application database **`event_desk`** — saved attendance, saved briefings, previews, generation snapshots, outcomes and added notes are all removed;
 - deletes only this application's Redis keys: **`event-desk:*`** (cache, cooldown, budget) and **`bull:briefing-batch:*`** (the batch queue). It never runs `FLUSHALL` and never touches other databases;
@@ -211,11 +214,13 @@ Each decision has a short record in [`docs/adr`](docs/adr/README.md) (context, o
 
 - Every cited ID is a real note that was in the input this generation read. The backend validates it, and a composite foreign key rejects anything else. A model that cites F99, or a note added later, has its whole candidate rejected; nothing partial is stored.
 - **Section rules.** A theme cites at least two different notes, and so does a conflict. A suggestion cites at least one note. The feedback summary cites one to eight. Sections have at most 10 items and items at most 8 sources. Text lengths are bounded.
-- Counts and the attendance overview come from saved records in code. The model cannot change attendance or invent reasons for absence: it has no tools and no write path.
+- Counts and the attendance overview come from saved records in code. The model cannot change attendance: it has no tools and no write path, and it receives only the counts, never the roster.
 - **Edits stay text-only.** A save cannot add or remove items, change references or alter provenance. The request schema has no field for them, and the database stores no references with the saved text.
 - **Freshness is reported, never guessed.** It comes from comparing the stored snapshot with saved records.
 
 **Not proven, so the coordinator reviews:**
+
+- **That model wording never speculates about attendance or reasons for absence.** It is a prompt rule plus your review.
 
 - **That the cited notes support the wording.** Two valid IDs can still sit under an unsupported claim. The app says so beside every briefing: _"References identify the source notes; they do not automatically prove that the wording is supported. Review the notes before saving."_
 - **That a conflict has one note per side.** The code requires two different notes; the prompt asks for one per opposing view, and the coordinator checks it.
@@ -251,13 +256,10 @@ CI (GitHub Actions) runs the first three as three jobs on every pull request and
 ## Known limitations
 
 - **One coordinator, one event, local only.** There is no authentication, event creation or deployment, as the brief allows. The feedback form and script are a test channel standing in for the club's real form.
-- **Run one event-API process.** The one-Generate-at-a-time guard, the live-update notifier and the cache-bypass flag live in memory.
+- **Run one event-API process** (see [How it works](#how-it-works)).
 - **Many open tabs can slow the page.** Each tab holds one live-update stream, and browsers allow only about six HTTP/1.1 connections per site, so with six or more tabs open new requests may wait. Close spare tabs.
 - **Model wording varies between runs.** The evidence rules are checked by code; the wording rules (no people-language, exact note counts, no suggestions built on off-topic notes) are prompt instructions at version `briefing.v6.2026-10-04`, plus your review. In the manual live checks of 2026-10-04 with this prompt version, the evidence rules passed, but the model still sometimes wrote "participants" in a suggestion or added a suggestion about a note that asked for nothing. Read the wording before saving.
-- **Rare crash paths end visibly, never with a replayed call.** In both cases the run is recorded as failed, and the coordinator can generate again:
-  - A batch job interrupted twice (two crashes or shutdowns while it is being processed) is recorded as failed (`INTERNAL`) when the next instance takes it up.
-  - A batch whose dispatch marker could not be cleared after a temporary failure ends as "outcome unknown" instead of retrying.
-- **The automatic batch window is fixed.** A note that arrives just after a cutoff waits for the next window, by design.
+- **Rare crash paths end visibly, never with a replayed call.** If a batch is interrupted twice, or its state cannot be confirmed after a temporary failure, it is recorded as failed or "outcome unknown", and the coordinator can generate again.
 
 ## What was reused
 
