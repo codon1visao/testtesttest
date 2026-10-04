@@ -328,7 +328,7 @@ describe("briefing editor", () => {
     await user.type(field(region, "Theme 1"), " Landed.");
     await user.click(region.getByRole("button", { name: "Save" }));
     expect(await region.findByText("Could not check the saved briefing")).toBeTruthy();
-    for (const label of ["Attendance overview", "Feedback summary", "Theme 1"]) {
+    for (const label of ["Feedback summary", "Theme 1"]) {
       expect(isLocked(field(region, label))).toBe(true);
     }
     expect(isLocked(region.getByRole("button", { name: "Check again" }))).toBe(false);
@@ -443,7 +443,7 @@ describe("briefing editor", () => {
     expect(region.getByRole("button", { name: "Edit" })).toBeTruthy();
   });
 
-  it("titles a saved briefing plainly, with when it was last saved as supporting text beside it", async () => {
+  it("Spec 05: the editor title is visually hidden; it still names the briefing, with no saved time or provenance line", async () => {
     api.view = {
       ...api.view,
       selectedPreview: null,
@@ -453,9 +453,46 @@ describe("briefing editor", () => {
     renderApp();
     const region = await panel();
     const heading = await region.findByRole("heading", { level: 3, name: "Saved briefing" });
-    const lastSaved = region.getByText(/^Last saved /);
-    expect(heading.contains(lastSaved)).toBe(false);
-    expect(heading.parentElement?.contains(lastSaved)).toBe(true);
+    // StyleX's dev class names identify Astryx VisuallyHidden's clip block.
+    expect(heading.closest("[class*='VisuallyHidden']")).not.toBeNull();
+    expect(region.getByRole("article", { name: "Saved briefing" })).toBeTruthy();
+    expect(region.queryByText(/^Last saved /)).toBeNull();
+    expect(region.queryByText(/^Generated /)).toBeNull();
+    expect(region.queryByText(new RegExp(preview.provenance.model))).toBeNull();
+  });
+
+  it("Spec 05: no attendance overview in the read or edit view; Save sends it unchanged", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    expect(region.queryByText(preview.content.attendanceOverview)).toBeNull();
+    await startEditing(user, region);
+    expect(region.queryByLabelText("Attendance overview")).toBeNull();
+    expect(region.queryByText("Check edited wording against the counts.")).toBeNull();
+    expect(region.queryByText(/^Saved records now: /)).toBeNull();
+    await user.type(field(region, "Theme 1"), " Edited.");
+    await user.click(region.getByRole("button", { name: "Save" }));
+    expect(await region.findByRole("heading", { name: "Saved briefing" })).toBeTruthy();
+    const sent = SaveBriefingRequestSchema.parse(api.saveRequests[0]);
+    expect(sent.textEdits.attendanceOverview).toBe(preview.content.attendanceOverview);
+  });
+
+  it("M1: a server error on the attendance overview, which has no input, is shown in a banner", async () => {
+    mswServer.use(
+      http.put("/api/events/:eventId/briefing", () =>
+        apiErrorResponse(
+          422,
+          "CONTENT_INVALID",
+          "The attendance overview is invalid.",
+          "textEdits.attendanceOverview",
+        ),
+      ),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await startEditing(user, region);
+    await user.click(region.getByRole("button", { name: "Save" }));
+    expect(await region.findByText("The attendance overview is invalid.")).toBeTruthy();
+    expect(region.getByText("Briefing was not saved")).toBeTruthy();
   });
 
   it("F6: says nothing about freshness while the briefing is current", async () => {

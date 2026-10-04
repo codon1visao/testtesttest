@@ -1,3 +1,4 @@
+import { Badge } from "@astryxdesign/core/Badge";
 import { Banner } from "@astryxdesign/core/Banner";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
@@ -30,6 +31,8 @@ const VIEW_OF_SLOT: Record<EditableSlot, ActiveView> = { selected: "preview", sa
 const styles = stylex.create({
   // The editor's buttons render into this element; they take part in the actions group's gap.
   actionsSlot: { display: "contents" },
+  // The actions group sits at the end of the header row; the heading and its badge at the start.
+  headerActions: { marginInlineStart: "auto" },
 });
 
 function isActiveView(value: string): value is ActiveView {
@@ -228,9 +231,12 @@ export function BriefingPanel({
   return (
     <section aria-label="Briefing">
       <VStack gap={3}>
-        <HStack gap={3} justify="between" align="center">
+        <HStack gap={2} align="center">
           <Heading level={2}>Briefing</Heading>
-          <HStack gap={2} align="center">
+          {/* Spec 05 (amended 2026-10-04): marks a generated preview in the editor, whose own title
+              is visually hidden. */}
+          {base?.slot === "selected" ? <Badge variant="warning" label="Unsaved preview" /> : null}
+          <HStack gap={2} align="center" xstyle={styles.headerActions}>
             <div ref={setActionsSlot} {...stylex.props(styles.actionsSlot)} />
             {briefingEditing ? null : <GenerateBriefingButton control={generate} />}
           </HStack>

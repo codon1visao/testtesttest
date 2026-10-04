@@ -20,17 +20,15 @@ const renderView = (content: BriefingContent = CONTENT) =>
   );
 
 describe("briefing read view (spec 2026-10-04)", () => {
-  it("leads with the feedback summary, then the attendance overview, before every list", () => {
+  it("leads with the feedback summary before every list, and shows no attendance overview", () => {
     renderView();
     const summary = screen.getByText(CONTENT.feedbackSummary.text);
-    const overview = screen.getByText(CONTENT.attendanceOverview);
     const firstTheme = screen.getByText("Requests for more rest-break time.");
     expect(
-      summary.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING,
+      summary.compareDocumentPosition(firstTheme) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(
-      overview.compareDocumentPosition(firstTheme) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    // Spec 05 (amended 2026-10-04): the overview is generated and saved, but not shown.
+    expect(screen.queryByText(CONTENT.attendanceOverview)).toBeNull();
   });
 
   it("asks the brief's four questions in order: summary, themes, disagreements, suggestions", () => {

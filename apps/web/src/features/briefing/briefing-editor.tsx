@@ -1,18 +1,18 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { VStack } from "@astryxdesign/core/Layout";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
+import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { assertNever, type EventId, type EventView } from "@event-desk/contracts";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type Control, Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { useUiStore } from "../../state/ui-store";
-import { formatAttendanceCounts } from "../attendance/attendance-counts";
 import type { RefetchEvent } from "../attendance/use-attendance-autosave";
 import { SourceDisclosure } from "../feedback/source-disclosure";
-import { formatTimestamp, SECTION_COPY } from "./briefing-copy";
+import { SECTION_COPY } from "./briefing-copy";
 import { BriefingContentView } from "./briefing-content-view";
 import type {
   BriefingFieldPath,
@@ -286,18 +286,14 @@ export function BriefingEditor({
     <article aria-labelledby={headingId}>
       {actionsSlot === null ? null : createPortal(actions, actionsSlot)}
       <VStack gap={3}>
-        <HStack gap={2} align="center" wrap="wrap">
+        {/* Spec 05 (amended 2026-10-04): visually hidden. It still names the article and takes
+            focus after cancel, discard, reload, save and switch; the panel header's Unsaved preview
+            badge marks a generated preview for sighted users. */}
+        <VisuallyHidden as="div">
           <Heading level={3} id={headingId} ref={headingRef} tabIndex={-1}>
             {title}
           </Heading>
-          {base.slot !== "saved" || briefing.savedAt === undefined ? null : (
-            <Text type="supporting">Last saved {formatTimestamp(briefing.savedAt)}</Text>
-          )}
-        </HStack>
-        <Text type="supporting">
-          Generated {formatTimestamp(briefing.provenance.generatedAt)} · {briefing.provenance.model}{" "}
-          · {briefing.trigger === "manual" ? "requested by you" : "automatic"}
-        </Text>
+        </VisuallyHidden>
         <FreshnessNotice briefing={live} members={view.members} counts={view.counts} />
         <form
           noValidate
@@ -321,21 +317,6 @@ export function BriefingEditor({
                       notes={view.feedback}
                       disclosureScope={`${scope}:feedbackSummary`}
                     />
-                    <TextField
-                      control={control}
-                      name="attendanceOverview"
-                      label="Attendance overview"
-                      isDisabled={fieldsDisabled}
-                    />
-                    <VStack gap={0}>
-                      <Text type="supporting">Check edited wording against the counts.</Text>
-                      <Text type="supporting">
-                        Generated from: {formatAttendanceCounts(briefing.provenance.input.counts)}
-                      </Text>
-                      <Text type="supporting">
-                        Saved records now: {formatAttendanceCounts(view.counts)}
-                      </Text>
-                    </VStack>
                   </SummaryCard>
                 }
                 renderItems={(section) =>

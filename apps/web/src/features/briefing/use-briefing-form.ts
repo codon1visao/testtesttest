@@ -95,8 +95,10 @@ export function useBriefingForm(
         code === "REFERENCE_INVALID"
           ? null
           : formFieldForApiField(error instanceof ApiError ? error.field : undefined);
-      // A path with no rendered input (an item index the draft does not have) gets the banner.
-      const current: unknown = path === null ? undefined : form.getValues(path);
+      // A path with no rendered input (an item index the draft does not have, or the attendance
+      // overview, which is saved unchanged and has no field) gets the banner.
+      const current: unknown =
+        path === null || path === "attendanceOverview" ? undefined : form.getValues(path);
       if (path === null || current === undefined) showSaveNotice({ kind: "invalid", message });
       else {
         form.setError(path, { type: "server", message });

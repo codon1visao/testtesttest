@@ -94,14 +94,16 @@ describe("briefing panel", () => {
     for (const question of ["Summary", "Themes", "Disagreements", "Suggestions for you"]) {
       expect(region.getByRole("heading", { name: question })).toBeTruthy();
     }
-    expect(
-      region.getByText(
-        "4 registered members: 1 attended, 2 absent, 1 not recorded (attendance is incomplete).",
-      ),
-    ).toBeTruthy();
     expect(region.getByText(/Requests for more rest-break time\./)).toBeTruthy();
     expect(region.getByRole("button", { name: "Sources (8)" })).toBeTruthy();
-    expect(region.getByText(/fixture-model · requested by you/)).toBeTruthy();
+    // Spec 05 (amended 2026-10-04): neither the overview nor the provenance line is shown.
+    expect(
+      region.queryByText(
+        "4 registered members: 1 attended, 2 absent, 1 not recorded (attendance is incomplete).",
+      ),
+    ).toBeNull();
+    expect(region.queryByText(/fixture-model/)).toBeNull();
+    expect(region.getByText("Unsaved preview")).toBeTruthy();
     expect(api.generationRequests).toEqual([{ baseAttendanceRevision: 0 }]);
     expect((await screen.findAllByText("Briefing generated")).length).toBeGreaterThan(0);
     expect(api.selectRequests).toEqual([
@@ -390,7 +392,7 @@ describe("briefing panel", () => {
       expect(api.selectRequests).toHaveLength(1);
     });
     expect(isLocked(region.getByLabelText("Theme 1"))).toBe(true);
-    expect(isLocked(region.getByLabelText("Attendance overview"))).toBe(true);
+    expect(isLocked(region.getByLabelText("Feedback summary"))).toBe(true);
     await waitFor(() => {
       expectReadItem(region, "Themes", "Second preview theme.");
     });
@@ -536,7 +538,7 @@ describe("briefing panel", () => {
     const region = await panel();
     expect(await region.findByText("New automatic briefing ready to review.")).toBeTruthy();
     expect(region.getByRole("heading", { name: "Saved briefing" })).toBeTruthy();
-    expect(region.getByText(/^Last saved /)).toBeTruthy();
+    expect(region.queryByText("Unsaved preview")).toBeNull();
     expect(api.selectRequests).toHaveLength(0);
   });
 
@@ -549,6 +551,9 @@ describe("briefing panel", () => {
     ).toBeTruthy();
     expect(region.queryAllByRole("textbox")).toHaveLength(0);
     expect(region.queryAllByRole("region")).toHaveLength(0);
+    // Read-only: its own title, no provenance line; no editor, so no Unsaved preview badge.
+    expect(region.queryByText(/fixture-model/)).toBeNull();
+    expect(region.queryByText("Unsaved preview")).toBeNull();
     const toggle = region.getByRole("button", { name: "Sources (8)" });
     await user.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
@@ -645,6 +650,20 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
 
   beforeEach(() => {
     api.view = { ...api.view, selectedPreview: preview, savedBriefing: saved, briefingRevision: 1 };
+  });
+
+  it("marks the generated preview with an Unsaved preview badge in the header, not the saved briefing", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    expect(await region.findByRole("heading", { name: PREVIEW_TITLE })).toBeTruthy();
+    const header = region.getByRole("heading", { level: 2, name: "Briefing" }).parentElement;
+    const badge = region.getByText("Unsaved preview");
+    expect(header?.contains(badge)).toBe(true);
+    await user.click(option(region, "Saved briefing"));
+    expect(await region.findByRole("heading", { name: "Saved briefing" })).toBeTruthy();
+    expect(region.queryByText("Unsaved preview")).toBeNull();
+    await user.click(option(region, "Generated preview"));
+    expect(await region.findByText("Unsaved preview")).toBeTruthy();
   });
 
   it("switches the editor between the generated preview and the saved briefing", async () => {

@@ -38,7 +38,8 @@ function EvidenceRow({
 
 /**
  * A briefing's content, read-only (spec 2026-10-04): the feedback summary first and highlighted,
- * then the recurring themes and disagreements side by side, then suggestions. Model and human text
+ * then the recurring themes and disagreements side by side, then suggestions. The attendance
+ * overview is stored and saved but not shown (spec 05, amended 2026-10-04). Model and human text
  * is rendered as plain text (S1).
  */
 export function BriefingContentView({
@@ -56,7 +57,6 @@ export function BriefingContentView({
       summary={
         <SummaryCard>
           <Text type="large">{content.feedbackSummary.text}</Text>
-          <Text type="supporting">{content.attendanceOverview}</Text>
           <SourceDisclosure
             sourceIds={content.feedbackSummary.sourceIds}
             notes={notes}
