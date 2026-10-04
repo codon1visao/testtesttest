@@ -294,7 +294,8 @@ export function BriefingEditor({
         <Button
           variant="primary"
           label="Accept preview"
-          isDisabled={editor.isBusy || isLocked}
+          // An unavailable generation would fail the same way again: Reload first.
+          isDisabled={editor.isBusy || isLocked || editor.notice?.kind === "unavailable"}
           isLoading={editor.isSaving}
           onClick={() => void editor.submit()}
         />

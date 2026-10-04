@@ -89,7 +89,7 @@ These are small consistency guards for one coordinator who may refresh or open a
 | F6-04 | An attendance change fails to save (or is still saving) | Persisted freshness never changed; Generate waits while it is saving |
 | F6-05 | Save unchanged attendance | Current briefing stays current |
 | F6-06 (D5) | Change then revert saved attendance | Earlier briefing shows as current again because it matches the saved records; any human edits remain |
-| F6-07 | Regenerate after saving human edits | Preview is separate; saved wording/references unchanged until explicit replacement Save |
+| F6-07 | Regenerate after saving human edits | Preview is separate; saved wording/references unchanged until the preview is explicitly accepted (**Accept preview**) or saved from its edit view |
 | F6-08 | Regeneration fails | Previous preview and saved human work remain recoverable |
 | F6-09 | Edit the briefing text; a new preview arrives from elsewhere (another tab or an automatic batch) | Generate is not offered while editing; the result is held as an incoming preview with **Review new preview**; editor text untouched; switching to it requires Save, Discard or Cancel |
 | F6-10 | Attendance changes while a model call is in flight | Completed preview uses the old snapshot and is immediately labelled stale |
@@ -97,7 +97,7 @@ These are small consistency guards for one coordinator who may refresh or open a
 | F6-12 | Manually edit/save an out-of-date briefing | Edited content persists; stale flag cannot be cleared by saving |
 | F6-13 | Regenerate from current attendance, then explicitly save | Replacement preserves new provenance; stale clears if attendance has not changed again |
 | F6-14 | Backend restarts during generation | No fabricated completed result; previous saved briefing/preview survive |
-| F6-15 | Follow the example from saved human edits through attendance change and regeneration | Human wording and fixed references survive the attendance save and generation; only explicit replacement Save replaces them |
+| F6-15 | Follow the example from saved human edits through attendance change and regeneration | Human wording and fixed references survive the attendance save and generation; only an explicit **Accept preview** (or Save from the preview's edit view) replaces them |
 | F6-16 | Attendance save fails while a briefing editor is dirty | Earlier saved freshness remains, the change reverts with "{Name} was not saved", and no human draft text is lost |
 | F6-17 | Attendance changes after a new preview is returned but before it is saved | Saving preserves that preview's baseline and marks the saved replacement stale; it cannot be presented as current |
 | F6-18 | A note is added (form or script) while a preview is being edited | Existing content shows “new notes since this briefing”; the batch does not overwrite the editor's base or text; its result appears only as incoming content |

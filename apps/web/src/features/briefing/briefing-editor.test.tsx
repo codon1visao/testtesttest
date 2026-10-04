@@ -230,6 +230,54 @@ describe("briefing editor", () => {
     expect(region.getAllByText(message)).toHaveLength(1);
   });
 
+  it("Accept preview lost response: a failed check stays on screen through a newer background read", async () => {
+    mswServer.use(saveThenLoseResponse());
+    const { user } = renderApp();
+    const region = await panel();
+    let reads = 0;
+    mswServer.use(
+      http.get("/api/events/:eventId", () => {
+        reads += 1;
+        return reads === 1 ? HttpResponse.error() : undefined;
+      }),
+    );
+    await user.click(region.getByRole("button", { name: "Accept preview" }));
+    expect(await region.findByText("Could not check the saved briefing")).toBeTruthy();
+    // A background read now shows a newer revision: the clean editor keeps its base and notice.
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => {
+      expect(reads).toBe(2);
+    });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(region.getByText("Could not check the saved briefing")).toBeTruthy();
+    await user.click(region.getByRole("button", { name: "Check again" }));
+    expect(await region.findByText("Your briefing changes were saved.")).toBeTruthy();
+    expect(region.getByRole("heading", { name: "Saved briefing" })).toBeTruthy();
+  });
+
+  it("Accept preview is unavailable once the preview can no longer be saved", async () => {
+    mswServer.use(
+      http.put("/api/events/:eventId/briefing", () =>
+        apiErrorResponse(
+          409,
+          "GENERATION_NOT_AVAILABLE",
+          "This briefing is no longer available to save. Reload to see the latest briefing.",
+        ),
+      ),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Accept preview" }));
+    expect(await region.findByText("This briefing can no longer be saved")).toBeTruthy();
+    await waitFor(() => {
+      expect(isLocked(region.getByRole("button", { name: /^Accept preview/ }))).toBe(true);
+    });
+    expect(region.getByRole("button", { name: "Reload saved briefing" })).toBeTruthy();
+  });
+
   it("Review Focus 5 / F5-05: opening a source with the keyboard keeps the draft", async () => {
     const { user } = renderApp();
     const region = await panel();

@@ -31,8 +31,8 @@ export type BriefingNotice =
  * The briefing text draft (F5). It is created from its base once; the panel remounts it (by
  * editorKey) only after an explicit select, save or discard, or while it is clean (T3 §11).
  * `onReset` runs just before an explicit discard or reload drops the draft, so a remounted editor
- * can take focus on its heading. `areFieldsShown`: the text areas are on screen; without them (Accept
- * preview in the read view) a server field error has nowhere to land and goes to the banner.
+ * can take focus on its heading. `areFieldsShown`: the text areas are on screen; without them
+ * (Accept preview in the read view) a field error has nowhere to land and goes to the banner.
  */
 export function useBriefingForm(
   eventId: EventId,
@@ -151,7 +151,18 @@ export function useBriefingForm(
     }
   };
 
-  const submit = (event?: BaseSyntheticEvent) => form.handleSubmit(saveDraft)(event);
+  // Client-side errors land on their fields; without text areas on screen (Accept preview) they
+  // would be invisible, so the banner says where to look.
+  const showHiddenInvalid = () => {
+    if (!areFieldsShown) {
+      showSaveNotice({
+        kind: "invalid",
+        message: "Some text cannot be saved as it is. Select Edit to see which.",
+      });
+    }
+  };
+  const submit = (event?: BaseSyntheticEvent) =>
+    form.handleSubmit(saveDraft, showHiddenInvalid)(event);
 
   /** After a failed re-read: check again whether exactly the last submitted text was saved. */
   const checkAgain = async () => {
@@ -200,8 +211,13 @@ export function useBriefingForm(
 
   const isSaving = save.isPending || checking;
   // A clean editor keeps its base while saving and while a conflict or unavailable notice waits for
-  // Reload; the panel would otherwise follow the refreshed view and remount it without the notice.
-  const holdsBase = isSaving || notice?.kind === "conflict" || notice?.kind === "unavailable";
+  // Reload, or a failed check for Check again; the panel would otherwise follow the refreshed view
+  // and remount it without the notice. ("unconfirmed" has no action, so it does not hold.)
+  const holdsBase =
+    isSaving ||
+    notice?.kind === "conflict" ||
+    notice?.kind === "unavailable" ||
+    notice?.kind === "check-failed";
   const setBriefingHeld = useUiStore((state) => state.setBriefingHeld);
   useEffect(() => {
     setBriefingHeld(holdsBase);

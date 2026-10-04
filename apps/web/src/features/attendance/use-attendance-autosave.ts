@@ -82,7 +82,8 @@ export function useAttendanceAutosave(eventId: EventId, view: EventView, refetch
   };
 
   // Lost response: one re-read decides whether exactly the submitted statuses were saved. If the
-  // re-read fails, the outcome stays unknown: the change stays shown and locked until a check works.
+  // re-read fails, the outcome stays unknown: the change stays shown and locked until a check
+  // works.
   const reconcile = async (change: PendingChange): Promise<boolean> => {
     setChecking(true);
     try {

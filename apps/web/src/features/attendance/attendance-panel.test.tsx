@@ -270,7 +270,8 @@ describe("attendance panel", () => {
     expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
     expect(lockedStates(region)).toEqual([false, false, false, false]);
     expect(useUiStore.getState().attendanceDirty).toBe(false);
-    // The toast text is also announced through Astryx's screen-reader live region, so it occurs twice.
+    // The toast text is also announced through Astryx's screen-reader live region, so it occurs
+    // twice.
     expect(await screen.findAllByText(/^Attendance was not saved:/)).not.toHaveLength(0);
 
     await chooseOption(user, region, "Drew", "Attended");

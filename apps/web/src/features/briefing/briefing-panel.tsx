@@ -68,7 +68,8 @@ export function BriefingPanel({
   // briefing), until the view shows it in the editor's slot.
   const [opened, setOpened] = useState<OpenedBase | null>(null);
   // A clean editor follows the saved records; a dirty draft keeps its base until save, discard or
-  // explicit choice (T3 §11), and so does an editor holding a save or its conflict notice. Adjusted during render, React's pattern for state derived from props.
+  // explicit choice (T3 §11), and so does an editor holding a save or its conflict notice.
+  // Adjusted during render, React's pattern for state derived from props.
   // An explicit select is adopted from the view, not from the response: the response arrives before
   // the refreshed view, and a base ahead of the view would be pulled back to the old one as soon as
   // the remounted editor reports itself clean.
@@ -199,8 +200,9 @@ export function BriefingPanel({
   // F4 step 7: only a clean editor follows this tab's own result; the flag is read on arrival.
   // The clean editor then follows the view like any other clean editor; its fields stay locked
   // while the select is in flight.
-  // The opened preview offers Accept preview instead of Generate (amended 2026-10-04), so a Generate
-  // button that still has focus unmounts: the new editor's heading takes focus instead of <body>.
+  // The opened preview offers Accept preview instead of Generate (amended 2026-10-04), so a
+  // Generate button that still has focus unmounts: the new editor's heading takes focus instead of
+  // <body>.
   const generateButtonRef = useRef<HTMLDivElement>(null);
   const autoSelect = (preview: BriefingView) => {
     if (useUiStore.getState().briefingDirty) return;
@@ -210,8 +212,9 @@ export function BriefingPanel({
     setAutoSelecting(preview.provenance.generationId);
     openPreview(preview.provenance.generationId, false);
   };
-  // A generated preview in the editor offers Accept preview instead of Generate (spec 05/F6, amended
-  // 2026-10-04): it is accepted, or the saved briefing switched to, before generating again.
+  // A generated preview in the editor offers Accept preview instead of Generate (spec 05/F6,
+  // amended 2026-10-04): it is accepted, or the saved briefing switched to, before generating
+  // again.
   const isPreviewShown = base?.slot === "selected";
   const generate = useGenerateControl(eventId, view, autoSelect, isPreviewShown);
 

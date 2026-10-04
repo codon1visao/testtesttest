@@ -90,8 +90,8 @@ function NoticeBanner({
           title="Could not check the saved attendance"
           description={`It is not known whether your change to ${notice.name} was saved. ${notice.message}`}
           endContent={
-            // While checking it stays focusable (aria-disabled through the tooltip), so a check that
-            // fails again leaves keyboard focus where it was.
+            // While checking it stays focusable (aria-disabled through the tooltip), so a check
+            // that fails again leaves keyboard focus where it was.
             <Button
               label="Check again"
               variant="secondary"

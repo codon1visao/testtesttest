@@ -356,7 +356,7 @@ apps/web/src/
 | Event aggregate, job status, slots | React Query `["event", EVENT_ID]` |
 | Attendance change in flight | `use-attendance-autosave` (local state; no draft: each change saves at once, amended 2026-10-04). A newer saved view replaces what is shown whenever no save or check is in flight |
 | Briefing text draft | React Hook Form keyed by `slot + generationId + briefingRevision`. Reset only on explicit select, save or discard. |
-| `attendanceDirty`, `briefingDirty`, active view, open source disclosures | Zustand |
+| `attendanceDirty`, `briefingDirty`, `briefingEditing`, `briefingHeld`, active view, open source disclosures | Zustand |
 | Already-announced job outcomes | `sessionStorage`, once per `jobId` |
 
 Generate and Retry both use `use-generate-briefing` (a synchronous mutation; the button shows **Generating…**, and is not offered while the briefing is being edited or a generated preview is shown, where **Accept preview** takes its place). Retry shows a confirmation dialog first when the code is `AI_OUTCOME_UNKNOWN`. On success the result is auto-selected if the briefing form is clean. Batch progress comes from `generation.batch` in the event query, kept current by the change stream.
