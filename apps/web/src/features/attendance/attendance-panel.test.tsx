@@ -5,6 +5,7 @@ import { delay, http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useUiStore } from "../../state/ui-store";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
+import { commonAncestor } from "../../testing/dom";
 import { mswServer } from "../../testing/msw-server";
 import { renderApp } from "../../testing/render-app";
 import { chooseOption } from "../../testing/selector";
@@ -113,6 +114,35 @@ describe("attendance panel", () => {
     await user.click(discardButton(region));
     expect(tileValues(region)).toEqual(["4", "1", "2", "1"]);
     expect(region.queryByText("Unsaved")).toBeNull();
+  });
+
+  it("the Unsaved and Saving… badges sit in the card header, beside the heading, announced politely", async () => {
+    const release = holdSaves();
+    const { user } = renderApp();
+    const region = await panel();
+    await chooseOption(user, region, "Chris", "Attended");
+    const unsaved = region.getByText("Unsaved");
+    const header = commonAncestor(heading(region), unsaved);
+    const counts = region.getByLabelText("Attendance counts");
+    expect(header.contains(counts)).toBe(false);
+    expect(unsaved.closest("[aria-live='polite']")).not.toBeNull();
+    // The strip's own live region still announces the counts as a whole.
+    expect(unsaved.closest("[aria-live]")).not.toBe(counts.closest("[aria-live]"));
+    await user.click(saveButton(region));
+    const saving = await region.findByText("Saving…");
+    expect(commonAncestor(heading(region), saving).contains(counts)).toBe(false);
+    release();
+    await toastShown("Attendance saved");
+  });
+
+  it("Discard and Save changes form one row of their own after the table", async () => {
+    renderApp();
+    const region = await panel();
+    const row = commonAncestor(discardButton(region), saveButton(region));
+    expect(within(row as HTMLElement).getAllByRole("button")).toHaveLength(2);
+    const table = region.getByRole("table", { name: "Member attendance" });
+    expect(row.contains(table)).toBe(false);
+    expect(table.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("offers exactly the three states, labelled Not recorded (not Absent)", async () => {

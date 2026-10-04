@@ -20,11 +20,12 @@ import {
   type EventId,
   type EventView,
 } from "@event-desk/contracts";
+import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { useEffect, useRef, useState } from "react";
 import { Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
-import { AttendanceCounts } from "./attendance-counts";
+import { AttendanceCounts, AttendanceStatusBadge } from "./attendance-counts";
 import { type AttendanceNotice, type RefetchEvent, useAttendanceForm } from "./use-attendance-form";
 
 const styles = stylex.create({
@@ -34,7 +35,12 @@ const styles = stylex.create({
   nameColumn: { overflowWrap: "anywhere" },
   actionsColumn: { width: "1%", maxWidth: "none", whiteSpace: "nowrap" },
   // Discard and Save changes at the bottom right of the card, in visual (and tab) order.
-  actions: { alignSelf: "flex-end" },
+  // One full-width row of two equal halves: Discard, then Save changes (visual and tab order).
+  actions: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: spacingVars["--spacing-2"],
+  },
 });
 
 const ATTENDANCE_OPTIONS = ATTENDANCE_STATUSES.map((status) => ({
@@ -133,9 +139,13 @@ export function AttendancePanel({
   return (
     <section aria-label="Attendance" ref={sectionRef}>
       <VStack gap={3}>
-        <Heading level={2} ref={headingRef} tabIndex={-1}>
-          Attendance
-        </Heading>
+        {/* The draft state sits in the card's top-right corner, beside the heading. */}
+        <HStack gap={2} align="center" justify="between">
+          <Heading level={2} ref={headingRef} tabIndex={-1}>
+            Attendance
+          </Heading>
+          <AttendanceStatusBadge isDirty={attendance.isDirty} isSaving={attendance.isSaving} />
+        </HStack>
         <form
           noValidate
           onSubmit={(event) => {
@@ -147,7 +157,6 @@ export function AttendancePanel({
               saved={view.counts}
               draft={deriveAttendanceCounts(attendance.draft)}
               isDirty={attendance.isDirty}
-              isSaving={attendance.isSaving}
             />
             <Table aria-label="Member attendance" density="compact">
               <TableHeader>
@@ -206,10 +215,11 @@ export function AttendancePanel({
             {/* Always shown; usable only while there are unsaved changes. While saving, Save changes
                 stays focusable (aria-disabled through the tooltip), so a failed save leaves keyboard
                 focus on it. */}
-            <HStack gap={2} justify="end" xstyle={styles.actions}>
+            <div {...stylex.props(styles.actions)}>
               <Button
                 variant="secondary"
                 label="Discard"
+                width="100%"
                 isDisabled={!attendance.isDirty || attendance.isBusy}
                 onClick={() => {
                   attendance.discard();
@@ -220,11 +230,12 @@ export function AttendancePanel({
                 type="submit"
                 variant="primary"
                 label="Save changes"
+                width="100%"
                 isDisabled={!attendance.isDirty || attendance.isBusy}
                 isLoading={attendance.isSaving}
                 {...(attendance.isSaving ? { tooltip: "Saving attendance…" } : {})}
               />
-            </HStack>
+            </div>
           </VStack>
         </form>
       </VStack>
