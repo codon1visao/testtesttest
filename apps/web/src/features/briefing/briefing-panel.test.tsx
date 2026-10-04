@@ -8,6 +8,7 @@ import { FakeEventApi } from "../../testing/fake-event-api";
 import { FakeEventSource } from "../../testing/fake-event-source";
 import { mswServer } from "../../testing/msw-server";
 import { renderApp } from "../../testing/render-app";
+import { chooseOption } from "../../testing/selector";
 
 let api: FakeEventApi;
 
@@ -128,7 +129,7 @@ describe("briefing panel", () => {
   it("F4 step 1: is disabled while attendance has unsaved changes, and says why", async () => {
     const { user } = renderApp();
     const attendance = within(await screen.findByRole("region", { name: "Attendance" }));
-    await user.selectOptions(attendance.getByRole("combobox", { name: "Chris" }), "attended");
+    await chooseOption(user, attendance, "Chris", "Attended");
     const region = await panel();
     expect(generateButton(region).disabled).toBe(true);
     expect(

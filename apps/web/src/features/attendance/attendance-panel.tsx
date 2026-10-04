@@ -1,20 +1,35 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Field } from "@astryxdesign/core/Field";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { Selector } from "@astryxdesign/core/Selector";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+} from "@astryxdesign/core/Table";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import {
   ATTENDANCE_LABELS,
   ATTENDANCE_STATUSES,
+  AttendanceStatusSchema,
   assertNever,
   deriveAttendanceCounts,
   type EventId,
   type EventView,
 } from "@event-desk/contracts";
 import { useRef, useState } from "react";
+import { Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { AttendanceCounts } from "./attendance-counts";
 import { type AttendanceNotice, type RefetchEvent, useAttendanceForm } from "./use-attendance-form";
+
+const ATTENDANCE_OPTIONS = ATTENDANCE_STATUSES.map((status) => ({
+  value: status,
+  label: ATTENDANCE_LABELS[status],
+}));
 
 function NoticeBanner({
   notice,
@@ -104,29 +119,49 @@ export function AttendancePanel({
           }}
         >
           <VStack gap={3}>
-            {attendance.draft.map((member, index) => {
-              const inputId = `attendance-${member.id}`;
-              return (
-                <Field key={member.id} label={names.get(member.id) ?? member.id} inputID={inputId}>
-                  <select
-                    id={inputId}
-                    disabled={attendance.isBusy}
-                    {...attendance.form.register(`members.${index}.attendance`)}
-                  >
-                    {ATTENDANCE_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {ATTENDANCE_LABELS[status]}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              );
-            })}
             <AttendanceCounts
               saved={view.counts}
               draft={deriveAttendanceCounts(attendance.draft)}
               isDirty={attendance.isDirty}
             />
+            <Table aria-label="Member attendance" density="compact">
+              <TableHeader>
+                <TableRow isHeaderRow>
+                  <TableHeaderCell scope="col">Name</TableHeaderCell>
+                  <TableHeaderCell scope="col">Actions</TableHeaderCell>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {attendance.draft.map((member, index) => {
+                  const name = names.get(member.id) ?? member.id;
+                  return (
+                    <TableRow key={member.id}>
+                      <TableCell>{name}</TableCell>
+                      <TableCell>
+                        <Controller
+                          control={attendance.form.control}
+                          name={`members.${index}.attendance`}
+                          render={({ field }) => (
+                            // The Name column shows the member visually; the label names the control.
+                            <Selector
+                              label={name}
+                              isLabelHidden
+                              options={ATTENDANCE_OPTIONS}
+                              value={field.value}
+                              isDisabled={attendance.isBusy}
+                              onChange={(value) => {
+                                const status = AttendanceStatusSchema.safeParse(value);
+                                if (status.success) field.onChange(status.data);
+                              }}
+                            />
+                          )}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
             {attendance.isDirty ? (
               <Text>
                 Unsaved attendance changes. Save or discard them before generating a briefing.

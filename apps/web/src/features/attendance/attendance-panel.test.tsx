@@ -7,6 +7,7 @@ import { useUiStore } from "../../state/ui-store";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
 import { mswServer } from "../../testing/msw-server";
 import { renderApp } from "../../testing/render-app";
+import { chooseOption } from "../../testing/selector";
 
 const M03 = MemberIdSchema.parse("M03");
 const M04 = MemberIdSchema.parse("M04");
@@ -19,7 +20,7 @@ beforeEach(() => {
 
 const panel = async () => within(await screen.findByRole("region", { name: "Attendance" }));
 const select = (region: Awaited<ReturnType<typeof panel>>, name: string) =>
-  region.getByRole<HTMLSelectElement>("combobox", { name });
+  region.getByRole<HTMLButtonElement>("combobox", { name });
 /**
  * The "Attendance saved" toast. Astryx also announces its text in a document-level live region, so
  * a plain findByText finds two elements whenever both are present at its first check (under load)
@@ -47,8 +48,8 @@ describe("attendance panel", () => {
   it("F2-01: shows each member's saved status and the saved counts", async () => {
     renderApp();
     const region = await panel();
-    expect(select(region, "Alex").value).toBe("attended");
-    expect(select(region, "Chris").value).toBe("not_recorded");
+    expect(select(region, "Alex").textContent).toBe("Attended");
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
     expect(
       region.getByText("Saved counts: 4 registered · 1 attended · 2 absent · 1 not recorded"),
     ).toBeTruthy();
@@ -58,17 +59,17 @@ describe("attendance panel", () => {
   });
 
   it("offers exactly the three states, labelled Not recorded (not Absent)", async () => {
-    renderApp();
-    const options = within(select(await panel(), "Chris"))
-      .getAllByRole("option")
-      .map((o) => o.textContent);
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(select(region, "Chris"));
+    const options = region.getAllByRole("option").map((o) => o.textContent);
     expect(options).toEqual(["Attended", "Absent", "Not recorded"]);
   });
 
   it("F2-02: previews unsaved counts while keeping the saved baseline", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     expect(
       region.getByText("Unsaved counts: 4 registered · 2 attended · 2 absent · 0 not recorded"),
     ).toBeTruthy();
@@ -82,7 +83,7 @@ describe("attendance panel", () => {
   it("F2-03: saves all members in one request with the draft's base revision", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     await toastShown("Attendance saved");
     expect(api.attendanceRequests).toEqual([
@@ -108,21 +109,21 @@ describe("attendance panel", () => {
   it("discards back to the saved values without asking (explicit action)", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Discard attendance changes" }));
-    expect(select(region, "Chris").value).toBe("not_recorded");
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
     expect(region.queryByText(/unsaved counts/i)).toBeNull();
   });
 
   it("moves focus to the Attendance heading after a keyboard Discard (the button unmounts)", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     act(() => {
       region.getByRole("button", { name: "Discard attendance changes" }).focus();
     });
     await user.keyboard("{Enter}");
-    expect(select(region, "Chris").value).toBe("not_recorded");
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
     expect(document.activeElement).toBe(region.getByRole("heading", { name: "Attendance" }));
   });
 
@@ -138,12 +139,12 @@ describe("attendance panel", () => {
     );
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(
       await region.findByText("The event store is unavailable. Try again shortly."),
     ).toBeTruthy();
-    expect(select(region, "Chris").value).toBe("attended");
+    expect(select(region, "Chris").textContent).toBe("Attended");
     // The toast text is also announced through Astryx's screen-reader live region, so it occurs twice.
     expect(await screen.findAllByText(/^Attendance was not saved:/)).not.toHaveLength(0);
   });
@@ -151,17 +152,17 @@ describe("attendance panel", () => {
   it("explains a conflict, keeps the draft, and reloads only after confirmation", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     api.saveElsewhere(M04, "attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
-    expect(select(region, "Chris").value).toBe("attended");
+    expect(select(region, "Chris").textContent).toBe("Attended");
     await user.click(region.getByRole("button", { name: "Reload saved attendance" }));
     await user.click(await screen.findByRole("button", { name: "Discard and reload" }));
     await waitFor(() => {
-      expect(select(region, "Drew").value).toBe("attended");
+      expect(select(region, "Drew").textContent).toBe("Attended");
     });
-    expect(select(region, "Chris").value).toBe("not_recorded");
+    expect(select(region, "Chris").textContent).toBe("Not recorded");
     expect(region.queryByText(/saved elsewhere/i)).toBeNull();
     // The Reload button unmounted with the notice; focus lands on a stable target, not <body>.
     await waitFor(() => {
@@ -172,7 +173,7 @@ describe("attendance panel", () => {
   it("keeps the draft and the conflict explanation when the confirmed reload fails", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     api.saveElsewhere(M04, "attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
@@ -183,24 +184,24 @@ describe("attendance panel", () => {
       await region.findByText(/the latest saved attendance could not be loaded/i),
     ).toBeTruthy();
     expect(region.getByText(/saved elsewhere/i)).toBeTruthy();
-    expect(select(region, "Chris").value).toBe("attended");
-    expect(select(region, "Drew").value).toBe("absent");
+    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(select(region, "Drew").textContent).toBe("Absent");
     expect(region.getByRole("button", { name: "Reload saved attendance" })).toBeTruthy();
   });
 
   it("clears the conflict when the draft is reverted by hand and the form adopts the newer records", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     api.saveElsewhere(M04, "attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
     await waitFor(() => {
       expect(region.getByText(/Saved counts: 4 registered · 2 attended/)).toBeTruthy();
     });
-    await user.selectOptions(select(region, "Chris"), "not_recorded");
+    await chooseOption(user, region, "Chris", "Not recorded");
     await waitFor(() => {
-      expect(select(region, "Drew").value).toBe("attended");
+      expect(select(region, "Drew").textContent).toBe("Attended");
     });
     expect(region.queryByText(/saved elsewhere/i)).toBeNull();
   });
@@ -208,14 +209,14 @@ describe("attendance panel", () => {
   it("a refetch never overwrites a dirty draft, and its save still conflicts", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     api.saveElsewhere(M04, "attended");
     refocus();
     await waitFor(() => {
       expect(region.getByText(/Saved counts: 4 registered · 2 attended/)).toBeTruthy();
     });
-    expect(select(region, "Chris").value).toBe("attended");
-    expect(select(region, "Drew").value).toBe("absent");
+    expect(select(region, "Chris").textContent).toBe("Attended");
+    expect(select(region, "Drew").textContent).toBe("Absent");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText(/saved elsewhere/i)).toBeTruthy();
     expect(api.view.members.find((m) => m.id === M03)?.attendance).toBe("not_recorded");
@@ -227,23 +228,23 @@ describe("attendance panel", () => {
     api.saveElsewhere(M04, "attended");
     refocus();
     await waitFor(() => {
-      expect(select(region, "Drew").value).toBe("attended");
+      expect(select(region, "Drew").textContent).toBe("Attended");
     });
   });
 
   it("a draft reverted by hand follows the saved records that arrived while it was dirty", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     api.saveElsewhere(M04, "attended");
     refocus();
     await waitFor(() => {
       expect(region.getByText(/Saved counts: 4 registered · 2 attended/)).toBeTruthy();
     });
-    expect(select(region, "Drew").value).toBe("absent");
-    await user.selectOptions(select(region, "Chris"), "not_recorded");
+    expect(select(region, "Drew").textContent).toBe("Absent");
+    await chooseOption(user, region, "Chris", "Not recorded");
     await waitFor(() => {
-      expect(select(region, "Drew").value).toBe("attended");
+      expect(select(region, "Drew").textContent).toBe("Attended");
     });
   });
 
@@ -256,7 +257,7 @@ describe("attendance panel", () => {
     );
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText("Your attendance changes were saved.")).toBeTruthy();
     expect(region.queryByText(/unsaved attendance changes/i)).toBeNull();
@@ -271,7 +272,7 @@ describe("attendance panel", () => {
     );
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText("Your attendance changes were saved.")).toBeTruthy();
     expect(screen.queryByText(/attendance was not saved/i)).toBeNull();
@@ -284,10 +285,10 @@ describe("attendance panel", () => {
     mswServer.use(http.put("/api/events/:eventId/attendance", () => HttpResponse.error()));
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText(/could not confirm the save/i)).toBeTruthy();
-    expect(select(region, "Chris").value).toBe("attended");
+    expect(select(region, "Chris").textContent).toBe("Attended");
   });
 
   it("says the check failed (not a mismatch) when the re-read after a lost response fails", async () => {
@@ -301,12 +302,12 @@ describe("attendance panel", () => {
     );
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     await user.click(region.getByRole("button", { name: "Save attendance" }));
     expect(await region.findByText("Could not check the saved records")).toBeTruthy();
     expect(region.getByText(/your selections are kept/i)).toBeTruthy();
     expect(region.queryByText(/do not match your selections/i)).toBeNull();
-    expect(select(region, "Chris").value).toBe("attended");
+    expect(select(region, "Chris").textContent).toBe("Attended");
     expect(region.getByText(/unsaved attendance changes/i)).toBeTruthy();
   });
 
@@ -329,7 +330,7 @@ describe("attendance panel", () => {
     );
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     const save = region.getByRole<HTMLButtonElement>("button", { name: "Save attendance" });
     await user.click(save);
     await waitFor(() => {
@@ -343,7 +344,7 @@ describe("attendance panel", () => {
     await user.click(save);
     expect(await region.findByText(/could not confirm the save/i)).toBeTruthy();
     expect(select(region, "Chris").disabled).toBe(false);
-    expect(select(region, "Chris").value).toBe("attended");
+    expect(select(region, "Chris").textContent).toBe("Attended");
     expect(puts).toBe(1);
     expect(reads).toBe(1);
   });
@@ -358,7 +359,7 @@ describe("attendance panel", () => {
     );
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     const save = region.getByRole("button", { name: "Save attendance" });
     await user.dblClick(save);
     expect(select(region, "Alex").disabled).toBe(true);
@@ -376,18 +377,42 @@ describe("attendance panel", () => {
       await user.tab();
       expect(document.activeElement).toBe(select(region, name));
     }
-    // jsdom has no native select popup; selectOptions on the focused select stands in for the arrow keys.
-    await user.selectOptions(select(region, "Drew"), "attended");
+    // Drew is Absent: Enter opens the list on it, ArrowUp moves to Attended, Enter picks it.
+    await user.keyboard("{Enter}");
+    expect(await region.findByRole("listbox")).toBeTruthy();
+    await user.keyboard("{ArrowUp}{Enter}");
+    expect(select(region, "Drew").textContent).toBe("Attended");
+    expect(document.activeElement).toBe(select(region, "Drew"));
     await user.tab();
     expect(document.activeElement).toBe(region.getByRole("button", { name: "Save attendance" }));
     await user.keyboard("{Enter}");
     await toastShown("Attendance saved");
   });
 
+  it("shows the members as a table with Name and Actions columns", async () => {
+    renderApp();
+    const region = await panel();
+    const table = region.getByRole("table", { name: "Member attendance" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["Name", "Actions"]);
+    const rows = within(table)
+      .getAllByRole("row")
+      .filter((row) => within(row).queryAllByRole("columnheader").length === 0);
+    expect(rows.map((row) => within(row).getAllByRole("cell")[0]?.textContent)).toEqual([
+      "Alex",
+      "Bea",
+      "Chris",
+      "Drew",
+    ]);
+  });
+
   it("warns before leaving while attendance is unsaved", async () => {
     const { user } = renderApp();
     const region = await panel();
-    await user.selectOptions(select(region, "Chris"), "attended");
+    await chooseOption(user, region, "Chris", "Attended");
     const event = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
