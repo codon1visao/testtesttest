@@ -88,7 +88,7 @@ describe("briefing panel", () => {
       ),
     ).toBeTruthy();
     expect(region.getByText(/Requests for more rest-break time\./)).toBeTruthy();
-    expect(region.getAllByRole("button", { name: "Read source F05" }).length).toBeGreaterThan(0);
+    expect(region.getByRole("button", { name: "Sources (8)" })).toBeTruthy();
     expect(region.getByText(/fixture-model · requested by you/)).toBeTruthy();
     expect(api.generationRequests).toEqual([{ baseAttendanceRevision: 0 }]);
     expect((await screen.findAllByText("Briefing generated")).length).toBeGreaterThan(0);
@@ -471,8 +471,7 @@ describe("briefing panel", () => {
     expect(region.queryAllByRole("textbox")).toHaveLength(0);
     expect(region.queryAllByRole("region")).toHaveLength(0);
     expect(region.getByText(/References identify the source notes/)).toBeTruthy();
-    const [toggle] = region.getAllByRole("button", { name: "Read source F05" });
-    if (toggle === undefined) throw new Error("source toggle missing");
+    const toggle = region.getByRole("button", { name: "Sources (8)" });
     await user.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     await user.click(region.getByRole("button", { name: "Review new preview" }));
@@ -654,7 +653,7 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
     const { user } = renderApp();
     const region = await panel();
     const themeToggle = () => {
-      const [, toggle] = region.getAllByRole("button", { name: "Read source F05" });
+      const [toggle] = region.getAllByRole("button", { name: "Sources (2)" });
       if (toggle === undefined) throw new Error("theme source toggle missing");
       return toggle;
     };
@@ -666,7 +665,7 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
       await region.findByRole("heading", { name: /^Saved briefing · last saved / }),
     ).toBeTruthy();
     expect(themeToggle().getAttribute("aria-expanded")).toBe("true");
-    const [summaryToggle] = region.getAllByRole("button", { name: "Read source F05" });
-    expect(summaryToggle?.getAttribute("aria-expanded")).toBe("false");
+    const summaryToggle = region.getByRole("button", { name: "Sources (8)" });
+    expect(summaryToggle.getAttribute("aria-expanded")).toBe("false");
   });
 });

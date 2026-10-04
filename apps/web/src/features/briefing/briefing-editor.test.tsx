@@ -77,8 +77,7 @@ describe("briefing editor", () => {
       await region.findByRole("heading", { name: /^Saved briefing · last saved / }),
     ).toBeTruthy();
     expect(field(region, "Theme 1").value).toBe("People asked for longer rest breaks.");
-    // F05 is cited by the feedback summary and by Theme 1, so there is more than one toggle.
-    expect(region.getAllByRole("button", { name: "Read source F05" }).length).toBeGreaterThan(0);
+    expect(region.getByRole("button", { name: "Sources (8)" })).toBeTruthy();
     const sent = SaveBriefingRequestSchema.parse(api.saveRequests[0]);
     expect(sent.textEdits.themes).toEqual(["People asked for longer rest breaks."]);
     expect(api.view.savedBriefing?.content.themes).toEqual([
@@ -101,7 +100,7 @@ describe("briefing editor", () => {
     const region = await panel();
     const theme = field(region, "Theme 1");
     await user.type(theme, " Edited.");
-    const toggle = region.getAllByRole("button", { name: "Read source F05" })[1];
+    const toggle = region.getAllByRole("button", { name: "Sources (2)" })[0];
     if (toggle === undefined) throw new Error("theme source toggle missing");
     toggle.focus();
     await user.keyboard("{Enter}");

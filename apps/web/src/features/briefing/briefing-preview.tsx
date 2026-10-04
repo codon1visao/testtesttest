@@ -6,7 +6,7 @@ import {
   type EvidenceItem,
   LIST_SECTIONS,
 } from "@event-desk/contracts";
-import { SourceReferences } from "../feedback/source-reference";
+import { SourceDisclosure } from "../feedback/source-disclosure";
 import { EVIDENCE_LIMIT_NOTICE, formatTimestamp, SECTION_COPY } from "./briefing-copy";
 import { FreshnessNotice } from "./freshness-notice";
 
@@ -22,7 +22,7 @@ function EvidenceText({
   return (
     <VStack gap={1}>
       <Text>{item.text}</Text>
-      <SourceReferences
+      <SourceDisclosure
         sourceIds={item.sourceIds}
         notes={view.feedback}
         disclosureScope={disclosureScope}

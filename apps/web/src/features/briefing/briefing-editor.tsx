@@ -9,7 +9,7 @@ import { type Control, Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { formatAttendanceCounts } from "../attendance/attendance-counts";
 import type { RefetchEvent } from "../attendance/use-attendance-form";
-import { SourceReferences } from "../feedback/source-reference";
+import { SourceDisclosure } from "../feedback/source-disclosure";
 import { EVIDENCE_LIMIT_NOTICE, formatTimestamp, SECTION_COPY } from "./briefing-copy";
 import type {
   BriefingFieldPath,
@@ -252,7 +252,7 @@ export function BriefingEditor({
                 label="Feedback summary"
                 isDisabled={fieldsDisabled}
               />
-              <SourceReferences
+              <SourceDisclosure
                 sourceIds={content.feedbackSummary.sourceIds}
                 notes={view.feedback}
                 disclosureScope={`${briefing.provenance.generationId}:feedbackSummary`}
@@ -274,7 +274,7 @@ export function BriefingEditor({
                             label={`${SECTION_COPY[section].itemLabel} ${String(index + 1)}`}
                             isDisabled={fieldsDisabled}
                           />
-                          <SourceReferences
+                          <SourceDisclosure
                             sourceIds={item.sourceIds}
                             notes={view.feedback}
                             disclosureScope={`${briefing.provenance.generationId}:${section}.${String(index)}`}

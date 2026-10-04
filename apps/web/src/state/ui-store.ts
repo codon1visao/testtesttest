@@ -11,9 +11,9 @@ interface UiState {
   setBriefingDirty: (dirty: boolean) => void;
   activeView: ActiveView;
   setActiveView: (view: ActiveView) => void;
-  /** Open source disclosures, by `${disclosureScope}:${feedbackId}`; they survive editor remounts. */
+  /** Open source disclosures, by item scope (`${generationId}:themes.0`); they survive editor remounts. */
   openSources: Readonly<Record<string, true>>;
-  toggleSource: (key: string) => void;
+  setSourceOpen: (key: string, open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -30,12 +30,11 @@ export const useUiStore = create<UiState>()((set) => ({
     set({ activeView });
   },
   openSources: {},
-  toggleSource: (key) => {
+  setSourceOpen: (key, open) => {
     set(({ openSources }) => ({
-      openSources:
-        openSources[key] === true
-          ? Object.fromEntries(Object.entries(openSources).filter(([open]) => open !== key))
-          : { ...openSources, [key]: true },
+      openSources: open
+        ? { ...openSources, [key]: true }
+        : Object.fromEntries(Object.entries(openSources).filter(([openKey]) => openKey !== key)),
     }));
   },
 }));
