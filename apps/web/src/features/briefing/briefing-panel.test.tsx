@@ -95,7 +95,13 @@ describe("briefing panel", () => {
       expect(region.getByRole("heading", { name: question })).toBeTruthy();
     }
     expect(region.getByText(/Requests for more rest-break time\./)).toBeTruthy();
-    expect(region.getByRole("button", { name: "Sources (8)" })).toBeTruthy();
+    // Each item row opens its sources; the summary shows none (spec 03, amended 2026-10-04).
+    expect(
+      within(sectionItem(region, "Themes")).getByRole("button", {
+        name: "Requests for more rest-break time.",
+      }),
+    ).toBeTruthy();
+    expect(region.queryByRole("button", { name: /^Sources/ })).toBeNull();
     // Spec 05 (amended 2026-10-04): neither the overview nor the provenance line is shown.
     expect(
       region.queryByText(
@@ -580,7 +586,9 @@ describe("briefing panel", () => {
     // Read-only: its own title, no provenance line; no editor, so no Unsaved preview badge.
     expect(region.queryByText(/fixture-model/)).toBeNull();
     expect(region.queryByText("Unsaved preview")).toBeNull();
-    const toggle = region.getByRole("button", { name: "Sources (8)" });
+    const toggle = within(sectionItem(region, "Themes")).getByRole("button", {
+      name: "Requests for more rest-break time.",
+    });
     await user.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(within(disclosedBy(toggle)).getByText(EVIDENCE_NOTE)).toBeTruthy();
@@ -636,7 +644,7 @@ describe("briefing panel", () => {
     expect(region.getByRole("radiogroup", { name: "Briefing to show" })).toBeTruthy();
   });
 
-  it("shows a visible caption above the preview/saved switch", async () => {
+  it("shows no visible caption above the preview/saved switch, which keeps its accessible name", async () => {
     api.view = {
       ...api.view,
       savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME },
@@ -649,9 +657,10 @@ describe("briefing panel", () => {
       }),
     };
     renderApp();
-    const caption = await (await panel()).findByText("Briefing to show");
-    // The switch already has this accessible name: the visible caption is not read twice (P22).
-    expect(caption.closest("[aria-hidden='true']")).not.toBeNull();
+    const region = await panel();
+    expect(await region.findByRole("radiogroup", { name: "Briefing to show" })).toBeTruthy();
+    // The name is the control's own (visually hidden) label, not a visible caption.
+    expect(region.queryByText("Briefing to show")).toBeNull();
   });
 });
 
@@ -806,8 +815,8 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
     expect(await region.findByRole("heading", { name: "Saved briefing" })).toBeTruthy();
     const [row] = within(sectionItem(region, "Themes")).getAllByRole("button");
     expect(row?.getAttribute("aria-expanded")).toBe("true");
-    expect(region.getByRole("button", { name: "Sources (8)" }).getAttribute("aria-expanded")).toBe(
-      "false",
-    );
+    // Only that item: another item's sources stay closed.
+    const [other] = within(sectionItem(region, "Disagreements")).getAllByRole("button");
+    expect(other?.getAttribute("aria-expanded")).toBe("false");
   });
 });

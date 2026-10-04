@@ -31,6 +31,14 @@ describe("briefing read view (spec 2026-10-04)", () => {
     expect(screen.queryByText(CONTENT.attendanceOverview)).toBeNull();
   });
 
+  it("shows no sources for the summary; its items keep theirs (spec 03, amended 2026-10-04)", () => {
+    renderView();
+    const summary = screen.getByRole("heading", { name: "Summary" }).parentElement;
+    expect(summary === null ? [] : within(summary).queryAllByRole("button")).toHaveLength(0);
+    expect(useUiStore.getState().openSources["g1:feedbackSummary"]).toBeUndefined();
+    expect(within(sectionItem(screen, "Themes")).getAllByRole("button")).toHaveLength(1);
+  });
+
   it("asks the brief's four questions in order: summary, themes, disagreements, suggestions", () => {
     renderView();
     expect(screen.getAllByRole("heading", { level: 4 }).map((h) => h.textContent)).toEqual([

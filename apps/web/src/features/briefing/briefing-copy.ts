@@ -2,7 +2,7 @@ import type { ListSection } from "@event-desk/contracts";
 
 /**
  * Section names for the brief's four questions (docs/specs/README.md), kept short: "Summary" is the
- * overview and feedback summary, then themes, disagreements and suggestions for the coordinator.
+ * feedback summary, then themes, disagreements and suggestions for the coordinator.
  */
 export const SECTION_COPY = {
   themes: {

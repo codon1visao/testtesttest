@@ -544,6 +544,19 @@ describe("briefing editor", () => {
     expectReadItem(region, "Themes", "Requests for more rest-break time. Landed.");
   });
 
+  it("the edit view's summary has no sources disclosure; every item keeps its own", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    await startEditing(user, region);
+    const summary = region.getByRole("heading", { name: "Summary" }).parentElement;
+    expect(summary === null ? [] : within(summary).queryAllByRole("button")).toHaveLength(0);
+    const items =
+      preview.content.themes.length +
+      preview.content.conflicts.length +
+      preview.content.suggestions.length;
+    expect(region.getAllByRole("button", { name: /^Sources \(\d+\)$/ })).toHaveLength(items);
+  });
+
   it("opens read-only; Edit shows the text areas and focuses the feedback summary", async () => {
     const { user } = renderApp();
     const region = await panel();

@@ -3,7 +3,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { Heading, Text } from "@astryxdesign/core/Text";
+import { Heading } from "@astryxdesign/core/Text";
 import type { BriefingView, EventId, EventView, GenerationId } from "@event-desk/contracts";
 import * as stylex from "@stylexjs/stylex";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -279,10 +279,8 @@ export function BriefingPanel({
         {reconciled ? <Banner status="success" title="Your briefing changes were saved." /> : null}
         {canSwitch ? (
           <div>
-            {/* Visible only: the switch below carries the same accessible name. */}
-            <div aria-hidden="true">
-              <Text type="supporting">Briefing to show</Text>
-            </div>
+            {/* No visible caption (amended 2026-10-04): the label names the switch for assistive
+                technology; its two options say what they show. */}
             <SegmentedControl
               label="Briefing to show"
               value={VIEW_OF_SLOT[base.slot]}

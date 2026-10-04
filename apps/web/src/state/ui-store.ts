@@ -11,8 +11,8 @@ interface UiState {
   setBriefingDirty: (dirty: boolean) => void;
   /**
    * The editor keeps its base although it is clean: a save is in flight, or it shows a conflict or
-   * an unavailable generation with Reload. Otherwise the refreshed view would remount it and drop
-   * the notice (Accept preview saves a clean editor).
+   * an unavailable generation with Reload, or a failed check with Check again. Otherwise the
+   * refreshed view would remount it and drop the notice (Accept preview saves a clean editor).
    */
   briefingHeld: boolean;
   setBriefingHeld: (held: boolean) => void;

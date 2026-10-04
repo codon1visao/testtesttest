@@ -333,11 +333,6 @@ export function BriefingEditor({
                       label="Feedback summary"
                       isDisabled={fieldsDisabled}
                     />
-                    <SourceDisclosure
-                      sourceIds={content.feedbackSummary.sourceIds}
-                      notes={view.feedback}
-                      disclosureScope={`${scope}:feedbackSummary`}
-                    />
                   </SummaryCard>
                 }
                 renderItems={(section) =>

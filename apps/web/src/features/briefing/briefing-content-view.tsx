@@ -56,12 +56,8 @@ export function BriefingContentView({
     <BriefingSectionsLayout
       summary={
         <SummaryCard>
+          {/* Its cited notes stay in the data, not on screen (spec 03, amended 2026-10-04). */}
           <Text type="large">{content.feedbackSummary.text}</Text>
-          <SourceDisclosure
-            sourceIds={content.feedbackSummary.sourceIds}
-            notes={notes}
-            disclosureScope={`${disclosureScope}:feedbackSummary`}
-          />
         </SummaryCard>
       }
       renderItems={(section) =>
