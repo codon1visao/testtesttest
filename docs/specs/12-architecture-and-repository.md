@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Frontend technologies](10-frontend-technologies.md) · [Backend technologies](11-backend-technologies.md) · [Data model and transactions (T4)](13-data-model-and-transactions.md) · [Queue implementation (T5)](14-generation-queue-implementation.md) · [Spec review](../reviews/2026-10-03-spec-review.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Every decision in §1 is confirmed. §9 and §13 updated 2026-10-03 to match the implemented AI Gateway (user-approved).
+Status: **Confirmed by the user on 2026-10-03.** Every decision in §1 is confirmed. §9 and §13 updated 2026-10-03 to match the implemented AI Gateway (user-approved). Amended 2026-10-04 (user-approved): the Generate button reads **Generating…** while busy and is not offered while the briefing is being edited.
 
 This project must solve the client's problem **and** demonstrate deliberate architecture and code quality. §10 lists the engineering principles that apply to every app and package.
 
@@ -359,7 +359,7 @@ apps/web/src/
 | `attendanceDirty`, `briefingDirty`, active view, open source disclosures | Zustand |
 | Already-announced job outcomes | `sessionStorage`, once per `jobId` |
 
-Generate and Retry both use `use-generate-briefing` (a synchronous mutation; the button shows **Generating briefing…**). Retry shows a confirmation dialog first when the code is `AI_OUTCOME_UNKNOWN`. On success the result is auto-selected if the briefing form is clean. Batch progress comes from `generation.batch` in the event query, kept current by the change stream.
+Generate and Retry both use `use-generate-briefing` (a synchronous mutation; the button shows **Generating…**, and is not offered while the briefing is being edited). Retry shows a confirmation dialog first when the code is `AI_OUTCOME_UNKNOWN`. On success the result is auto-selected if the briefing form is clean. Batch progress comes from `generation.batch` in the event query, kept current by the change stream.
 
 ## 12. Testing
 

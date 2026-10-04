@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Exact read-only notes, stable references, anonymity, inline source inspection, and the test feedback form and script (an extension beyond the brief). Amended 2026-10-04 (user-approved): one source disclosure per briefing item.
+Status: **Confirmed by the user on 2026-10-03.** Exact read-only notes, stable references, anonymity, inline source inspection, and the test feedback form and script (an extension beyond the brief). Amended 2026-10-04 (user-approved): one source disclosure per briefing item. Amended 2026-10-04 (user-approved): read-view rows show the item text only; activating a row reveals the cited notes with their IDs, and the evidence-limit note sits at the bottom of every opened sources view instead of near the briefing.
 
 ## Outcome and scope
 
@@ -32,12 +32,12 @@ Read-only is a coordinator permission, not a trust level. Treat every note as un
 ## Reading and inspection flow
 
 1. Show all notes in stable ID order in a read-only feedback panel: the eight seeded notes plus any added ones. Notes added after the displayed briefing was generated are marked **New since this briefing**.
-2. In each briefing theme, conflict and suggestion, show the cited IDs adjacent to that item's text.
-3. Activating an item's source disclosure reveals every note the item cites, each with its ID and complete original wording.
+2. Each briefing theme, conflict and suggestion has its own source disclosure: in the read view the row shows the item's text only, and the row itself is the disclosure.
+3. Activating an item's source disclosure reveals every note the item cites, each with its ID and complete original wording, followed by the evidence-limit note.
 4. Multiple references on one item are revealed together by that one disclosure, and each note stays readable on its own.
 5. Closing or opening a note preserves briefing edits and scroll position as far as practical.
 
-UI: one accessible inline disclosure per briefing item — the item's row in the read view, **Sources (n)** beside its text area while editing — with `aria-expanded` and a relationship to the revealed notes; it reveals every note the item cites, and the cited IDs stay visible next to the item's text. The full feedback panel remains available even when a note is not cited. Source text is rendered as plain text; never execute HTML or treat text as application instructions.
+UI: one accessible inline disclosure per briefing item — the item's row (its text only) in the read view, a small **Sources (n)** beside its text area while editing — with `aria-expanded` and a relationship to the revealed notes; it reveals every note the item cites with its ID, aligned under the item's text, then the evidence-limit note. The full feedback panel remains available even when a note is not cited. Source text is rendered as plain text; never execute HTML or treat text as application instructions.
 
 ## Reference contract
 
@@ -52,7 +52,7 @@ An unknown ID must never look like verified evidence. Generation containing one 
 
 ## Evidence limits
 
-Make this limitation visible near the briefing: **References identify the source notes; they do not automatically prove that the wording is supported. Review the notes before saving.**
+Make this limitation visible where the evidence is read: at the bottom of every opened sources view, show **Sources show where wording came from; they don't prove it. Check before saving.**
 
 ID membership checks establish that a note exists. Counting distinct IDs establishes how many notes were cited, not whether they form a meaningful theme. Neither check establishes factual truth, semantic agreement, the number of distinct respondents, identities, attendance, unanimity or agreement to an action. Human text edits may change a claim's meaning while its references stay fixed; saving does not certify that the revised wording is supported. Keeping the original notes inspectable lets the coordinator review these limits directly.
 
@@ -70,7 +70,7 @@ F08 records no extra suggestions. It is not evidence that the respondent endorse
 | F3-06 | Inspect sources using only the keyboard | Controls have meaningful names, visible focus and announced expanded state |
 | F3-07 | Source text contains markup or imperative wording in a robustness check | Rendered as data; no script execution, application action or attendance change |
 | F3-08 | Feedback loading fails | Error and Retry; do not show an empty collection as successful data |
-| F3-09 | Edit a briefing item's wording | Its cited IDs stay visible and inspectable; no control can change the reference association |
+| F3-09 | Edit a briefing item's wording | Its cited notes and their IDs stay inspectable through the item's disclosure; no control can change the reference association |
 
 ## Adding feedback (test extension)
 

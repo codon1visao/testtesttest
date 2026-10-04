@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Text-only editing, explicit save, and saving a separate preview to replace the saved briefing (D1/D2). Amended 2026-10-04 (user-approved): read view first, Edit briefing and Cancel edit.
+Status: **Confirmed by the user on 2026-10-03.** Text-only editing, explicit save, and saving a separate preview to replace the saved briefing (D1/D2). Amended 2026-10-04 (user-approved): read view first, Edit briefing and Cancel edit. Amended 2026-10-04 (user-approved): the actions sit in the briefing header — read view **Edit** and **Generate**, edit view **Cancel** and **Save**; saving happens only from the edit view, and the button reads **Save** in every case.
 
 ## Outcome and scope
 
@@ -12,11 +12,11 @@ Contribution to the [client goal](README.md#product-goal-solve-the-client-situat
 
 ## Editing flow
 
-1. Open the selected generated preview or saved briefing in the editor. When a new incoming candidate is ready, use **Review new preview** to select it after resolving local edits; selection does not save/replace the saved briefing. The briefing opens in a read view — the highlighted feedback summary, themes and disagreements side by side, then follow-ups; **Edit briefing** opens the text areas, and a selected preview can also be saved from the read view.
+1. Open the selected generated preview or saved briefing in the editor. When a new incoming candidate is ready, use **Review new preview** to select it after resolving local edits; selection does not save/replace the saved briefing. The briefing opens in a read view — the highlighted summary, themes and disagreements side by side, then suggestions. The briefing header holds the actions: **Edit** (and **Generate**) in the read view; **Edit** opens the text areas, and the header then offers **Cancel** and **Save** instead. There is no Save in the read view.
 2. Show the attendance snapshot used for generation and the current saved counts beside the editable attendance overview.
 3. Edit the attendance overview, the feedback summary and the text of themes, conflicts and suggestions.
 4. Inspect the fixed references through [F3](03-feedback-and-sources.md). Reference IDs and original source notes are read-only; there are no controls to add, remove or reorder items.
-5. Select **Save briefing**. When editing a preview while a saved briefing exists, label the action **Save and replace briefing** so its effect is explicit.
+5. Select **Save** in the edit view. The label is **Save** in every case; when the edit view shows a preview while a saved briefing exists, its heading "Generated preview — not saved as briefing" makes the effect explicit: saving replaces the saved briefing. A selected preview can be saved without changing its text.
 6. On success, display the persisted response as the new saved baseline. On failure, retain the complete local text draft and show retryable feedback.
 
 Controls are labelled text areas for the overview and existing item text, with adjacent read-only source disclosure controls. Section labels and item positions remain fixed. No source checkboxes, item Add/Remove actions, drag reordering or rich-text document structure controls are provided.
@@ -33,7 +33,7 @@ Background generation may continue while this editor is open. A ready result onl
 - Human editing does not make a stale briefing current. Generation provenance is read-only.
 - Do not silently rewrite, summarize, regenerate or alter source associations during save.
 - Trim only for validation; preserve the coordinator's actual saved wording and meaningful formatting such as line breaks. Reference normalization happens during generation, not human editing.
-- Fixed references are not a guarantee of semantic support after text editing. Keep the evidence-limit notice and source inspection available; do not label saved human text as automatically verified.
+- Fixed references are not a guarantee of semantic support after text editing. Keep the evidence-limit note (at the bottom of every opened sources view) and source inspection available; do not label saved human text as automatically verified.
 - Theme wording should continue to describe the meaningful pattern or common concern supported by its fixed notes, following the [theme definition](04-ai-briefing-generation.md#theme-terminology). Changing it to a general topic label does not establish a theme, even when the retained IDs pass validation. This is a human review responsibility, not a claimed automated semantic check.
 
 ## When attendance changes during editing
@@ -62,12 +62,12 @@ Saving a preview promotes it to the saved briefing and clears that same preview 
 | Preview | Mark “Generated preview — not saved as briefing”; saved briefing stays available |
 | Editing | Mark unsaved changes; source inspection remains available |
 | Saving | Prevent duplicate saves and changes to submitted editor fields until resolution |
-| Saved | Show a clear success indication and last saved time |
+| Saved | Show a clear success indication; the heading reads "Saved briefing" with "Last saved …" as supporting text beside it |
 | Validation failed | Identify the section/item and problem; preserve all draft text and fixed references |
 | Save failed | Preserve draft and last confirmed saved briefing; show Retry |
 | Revision conflict | Preserve local draft; show current saved state for review without replaying an overwrite automatically |
 
-In the edit view, **Cancel edit** sits beside **Save briefing**: without changes it closes the text areas; with unsaved changes it requires explicit confirmation before losing them. Switching between preview and saved content or regenerating while dirty follows [F6](06-freshness-and-regeneration.md). Refresh/closing may lose unsaved local changes; use a browser exit warning where supported and distinguish this from guaranteed persistence of saved work.
+In the edit view, **Cancel** sits beside **Save** in the briefing header: without changes it closes the text areas; with unsaved changes it requires explicit confirmation before losing them. **Generate** is not offered while the text areas are open. Switching between preview and saved content or regenerating while dirty follows [F6](06-freshness-and-regeneration.md). Refresh/closing may lose unsaved local changes; use a browser exit warning where supported and distinguish this from guaranteed persistence of saved work.
 
 A lost save response may mean the write succeeded. Re-fetch and compare the content/generation ID before reporting an outcome. Keep the local draft until the coordinator can reconcile an ambiguous result.
 
@@ -83,8 +83,8 @@ A lost save response may mean the write succeeded. Re-fetch and compare the cont
 | F5-06 | Save fails or two tabs save from the same revision | Failed/stale save cannot overwrite newer saved work; local draft retained |
 | F5-07 | Edit and save a stale briefing | Human wording persists but stale status remains |
 | F5-08 | Edit the attendance overview | Roster/counts unchanged; snapshot and current counts remain inspectable |
-| F5-09 | Save a preview while a prior briefing exists | Explicit replacement action; only then is the saved briefing replaced |
-| F5-10 | Cancel edit with changes or try to switch drafts while dirty | Explicit choice before losing human changes; cancelling preserves them |
+| F5-09 | Save a preview while a prior briefing exists | The replacement happens only on **Save** from the preview's edit view, titled "Generated preview — not saved as briefing"; until then the saved briefing is unchanged |
+| F5-10 | Cancel with changes or try to switch drafts while dirty | Explicit choice before losing human changes; cancelling preserves them |
 | F5-11 | Submit altered provenance fields | Request rejected; freshness cannot be reset by client metadata |
 | F5-12 | Save changed attendance while this editor has unsaved text | Out-of-date warning and counts update in place; draft text and original references survive |
 | F5-13 | A retained stored reference is invalid or the selected generation is unavailable | Save rejected clearly; no silent reference substitution or binding to another preview |

@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): the prompt contract is a list of binding rules; the exact wording is versioned in the AI Gateway. Real backend model call, grounded and referenced output, separate preview and text-only editing (D1/D2), deterministic attendance overview, synchronous manual generation, and the evidence rules including two-note conflicts (D12).
+Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): the prompt contract is a list of binding rules; the exact wording is versioned in the AI Gateway. Real backend model call, grounded and referenced output, separate preview and text-only editing (D1/D2), deterministic attendance overview, synchronous manual generation, and the evidence rules including two-note conflicts (D12). Amended 2026-10-04 (user-approved): the button reads **Generate** (busy: **Generating…**) and is not offered while the briefing is being edited.
 
 ## Outcome and scope
 
@@ -36,13 +36,13 @@ There are two triggers. Both use one shared generation service ([T5](14-generati
 
 **Coordinator Generate: synchronous, not queued** (confirmed 2026-10-03):
 
-1. The coordinator selects **Generate briefing** (or **Retry** after a failure; Retry is simply Generate again). Attendance must have no unsaved changes; unsaved briefing text does not block generation, because the result never touches the editor.
+1. The coordinator selects **Generate** in the briefing header (or **Retry** after a failure; Retry is simply Generate again). Attendance must have no unsaved changes, and the briefing must not be open for editing: Generate is offered only in the read view, so an open edit is saved or cancelled first ([F6](06-freshness-and-regeneration.md)). The result never touches the editor.
 2. `POST /api/events/E101/briefing-generations` with `{ baseAttendanceRevision }`. The event API checks the revision, the provider cooldown and the daily budget before any paid call. A second click or tab while a manual generation is running joins the same call.
 3. In one consistent read, capture saved attendance, derived counts and the event's complete current feedback set.
 4. Call the internal [AI Gateway over TCP](09-ai-gateway.md) on its `interactive` lane, which automatic work cannot occupy. Only the Gateway calls OpenAI, using its fixed developer instructions and untrusted feedback in a separate user-data message under [S1](08-openai-security.md).
 5. Handle refusal/incomplete output, parse and validate the candidate, and attach server-owned provenance (`trigger: manual`, input capture time).
 6. Commit into the incoming slot. A manual result always takes priority over automatic results ([F7](07-generation-queue.md#coordinator-priority)). Never overwrite the saved briefing or the selected preview.
-7. Respond `201` with the generated preview. The UI shows **Generating briefing…** until then. Afterwards it selects the result for review if the editor has no unsaved changes; otherwise it shows **Review new preview**.
+7. Respond `201` with the generated preview. The button shows **Generating…** until then. Afterwards it selects the result for review if the editor has no unsaved changes; otherwise it shows **Review new preview**.
 8. If the browser disconnects, the server still finishes and commits, so the result appears after a refresh. There is no automatic retry. Failures return a specific error code, and the coordinator can press Retry.
 
 **Automatic: new feedback is batched** under [F7](07-generation-queue.md). One generation per fixed window reads all notes at execution time and shows its own collecting/generating state in the briefing panel.

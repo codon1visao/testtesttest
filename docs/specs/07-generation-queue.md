@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Generation content rules](04-ai-briefing-generation.md) · [OpenAI security](08-openai-security.md) · [AI Gateway](09-ai-gateway.md) · [Queue implementation (T5)](14-generation-queue-implementation.md)
 
-Status: **Confirmed by the user on 2026-10-03.** This replaces the earlier "latest request wins + FIFO winners" design (former D9).
+Status: **Confirmed by the user on 2026-10-03.** This replaces the earlier "latest request wins + FIFO winners" design (former D9). Amended 2026-10-04 (user-approved): UI labels — the coordinator's save button reads **Save**, the manual button **Generating…** while busy, and the failed-batch banner's button **Generate now**.
 
 - **Automatic batching.** When new feedback notes arrive for an event, they are batched in a fixed window, and each window produces **one** generation that uses all of the event's notes at that moment.
 - **Manual generation bypasses the queue.** The coordinator's **Generate** does not use the queue. It runs synchronously ([F4](04-ai-briefing-generation.md#generation-flow)) and **takes priority** over automatic work.
@@ -72,7 +72,7 @@ The worker never writes the saved briefing or the selected preview (the editor's
 
 | Slot | Who may replace it? | Purpose |
 | --- | --- | --- |
-| Saved briefing | Coordinator's explicit Save / Save and replace briefing | Durable human-approved wording |
+| Saved briefing | Coordinator's explicit Save (from the edit view of the saved briefing or of the selected preview) | Durable human-approved wording |
 | Selected generated preview | Coordinator's explicit selection (manual: automatic when the editor is clean) | Stable server-owned structure, sources and provenance for the editor |
 | Incoming preview | Manual or batch generation, under the rules above | Latest candidate waiting for review; holds no human edits |
 
@@ -90,9 +90,9 @@ The coordinator sees automatic work as it happens, in the briefing panel. All st
 | Retry wait | "Automatic briefing will retry at 14:02:40 (attempt 2 of 3)." |
 | Ready | "New automatic briefing ready to review." |
 | Skipped | No banner, since there was no new input; the outcome is visible in the status details only |
-| Failed | "Automatic briefing failed: AI service unavailable. Your saved briefing is unchanged." with a **Generate** button |
+| Failed | "Automatic briefing failed: AI service unavailable. Your saved briefing is unchanged." with a **Generate now** button |
 
-The manual generation state ("Generating briefing…" on the button and panel) is shown separately, so both can be visible at once.
+The manual generation state ("Generating…" on the button, "Generating briefing…" in the panel) is shown separately, so both can be visible at once.
 
 **How the page learns about changes.** The event page subscribes to `GET /api/events/E101/changes` (Server-Sent Events). The server sends a `changed` message whenever the event view changes: a new note, batch state, result, or save. The client then re-fetches the cached event read. Notes added by the script or another tab therefore appear without a reload. If the stream disconnects, the page falls back to polling every 5 s (every 1 s while a batch is collecting or generating).
 

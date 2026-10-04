@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): a retry after a lost response keeps the draft's base revision. Amended 2026-10-04 (user-approved): attendance is a Name/Actions table with an Astryx Selector per member. Three-state attendance, application-calculated counts, backend persistence, explicit batch saving and revision-based conflict checks.
+Status: **Confirmed by the user on 2026-10-03.** Amended 2026-10-04 (user-approved): a retry after a lost response keeps the draft's base revision. Amended 2026-10-04 (user-approved): attendance is a Name/Actions table with an Astryx Selector per member. Amended 2026-10-04 (user-approved): the counts are four stat tiles; unsaved changes show "saved → draft" on the changed tiles with an "Unsaved" badge. Three-state attendance, application-calculated counts, backend persistence, explicit batch saving and revision-based conflict checks.
 
 ## Outcome and scope
 
@@ -17,6 +17,8 @@ Contribution to the [client goal](README.md#product-goal-solve-the-client-situat
 1. Open E101 and read the saved attendance and counts from [F1](01-event-and-persistence.md).
 2. Change one or more member controls among Attended, Absent and Not recorded.
 3. See counts recalculate immediately from the current selections, labelled as unsaved. Keep the saved totals distinguishable as the generation baseline.
+
+Show the counts as four stat tiles — **Registered**, **Attended**, **Absent** and **Not recorded** — each with its value above its label. With unsaved changes, an **Unsaved** badge appears above the tiles, and each tile whose draft value differs from the saved value shows `saved → draft` (for example `1 → 2`); unchanged tiles show the plain value.
 4. Select **Save attendance** to persist all selections in one request.
 5. On success, replace the saved baseline with the response, clear the dirty state and update briefing freshness using [F6](06-freshness-and-regeneration.md).
 6. On failure, retain selections, show the failure and allow a deliberate retry.
@@ -77,7 +79,7 @@ A lost response is ambiguous: the backend may already have persisted the save. F
 | ID | Given / when | Expected result |
 | --- | --- | --- |
 | F2-01 | Initial records load | Counts are 4 registered, 1 attended, 2 absent, 1 not recorded |
-| F2-02 | Change Chris to Attended before save | Counts immediately preview 4/2/2/0 with an unsaved label; saved baseline remains 4/1/2/1 |
+| F2-02 | Change Chris to Attended before save | Counts immediately preview 4/2/2/0 with an unsaved label; saved baseline remains 4/1/2/1 (tiles: Attended `1 → 2`, Not recorded `1 → 0`, "Unsaved" badge) |
 | F2-03 | Save that change and refresh/restart | Chris remains Attended; totals 4/2/2/0; any existing briefing reflects the out-of-date state |
 | F2-04 | Set all members to Not recorded and save | Totals 4/0/0/4; no implied absence |
 | F2-05 | Submit unknown state, duplicate/missing member or client totals | Request rejected; persisted records unchanged |
