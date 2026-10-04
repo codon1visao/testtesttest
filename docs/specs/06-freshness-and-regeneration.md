@@ -2,7 +2,7 @@
 
 [All specifications](README.md) · [Source brief](../project-brief.md)
 
-Status: **Confirmed by the user on 2026-10-03.** Snapshot-comparison freshness (D5), separate previews (D1) and protection of saved human edits. Amended 2026-10-04 (user-approved): Generate is not offered while the briefing is being edited (save or cancel first); a result arriving from elsewhere while editing is still held as an incoming preview (F6-09); nothing is shown when the briefing is current.
+Status: **Confirmed by the user on 2026-10-03.** Snapshot-comparison freshness (D5), separate previews (D1) and protection of saved human edits. Amended 2026-10-04 (user-approved): Generate is not offered while the briefing is being edited (save or cancel first); a result arriving from elsewhere while editing is still held as an incoming preview (F6-09); nothing is shown when the briefing is current. Amended 2026-10-04 (user-approved): attendance saves on each change ([F2](02-attendance.md)), so there is no unsaved attendance draft; Generate waits while an attendance save is in flight. The freshness logic is unchanged.
 
 ## Outcome and scope
 
@@ -18,7 +18,7 @@ The brief requires: **If attendance changes, mark the briefing as out of date.**
 
 - An actual saved attendance change marks any older preview/saved briefing out of date.
 - If an editor is open, update its out-of-date warning and current counts in place. Preserve its unsaved text, original source references and generation baseline. Do not automatically regenerate or replace its overview wording.
-- Unsaved attendance changes do not change the persisted stale flag. Show a separate unsaved-attendance warning and block manual generation until resolved. Automatic work uses saved attendance and does not read or save browser drafts.
+- An attendance save in flight does not change the persisted stale flag; only its success does. Block manual generation while it (or the re-read that decides its outcome) is in flight, and say so. Automatic work uses saved attendance only.
 - A newly added feedback note (test form or script, [F3](03-feedback-and-sources.md#adding-feedback-test-extension)) also makes earlier content out of date and schedules an automatic batch under F7. Show what changed: the changed members and/or the new note IDs (for example “2 new notes since this briefing: F09, F10”). Existing source IDs and texts never change.
 - No-op saves do not make a current briefing stale.
 - Changing members while leaving aggregate counts equal still makes the briefing stale.
@@ -42,11 +42,10 @@ isStale = attendanceChangedSinceGeneration || feedbackChangedSinceGeneration
 
 1. With saved seed counts 4 registered / 1 attended / 2 absent / 1 not recorded, generate a briefing preview from those saved records.
 2. Inspect F05/F06, edit the text of their generated rest-break item and Save. Its original references remain F05/F06, and the human wording survives refresh/restart.
-3. Change Chris from Not recorded to Attended. The attendance controls immediately show unsaved counts 4/2/2/0 and an unsaved-attendance warning. The saved briefing is not rewritten.
-4. Save attendance successfully. Saved counts become 4/2/2/0, and the existing briefing is marked out of date. Saved human wording, F05/F06 associations and the original overview stay intact. Any open editor also keeps its unsaved text.
-5. The coordinator may keep the stale briefing, or continue text editing and save it with the stale flag retained. Saving wording is not regeneration.
-6. If the coordinator chooses Generate, a separate preview is generated synchronously from the updated saved attendance. Generate is offered only while the briefing is not being edited: any open edit is saved or cancelled first, so no typed text is caught under the result. The old saved human briefing remains available. A failed generation changes neither saved wording nor references.
-7. Inspect the new preview's sources, optionally edit its text, then explicitly Save it from its edit view. Only this action replaces the saved human briefing; the replacement is current only if attendance has not changed again.
+3. Change Chris from Not recorded to Attended; the change saves at once. Saved counts become 4/2/2/0, and the existing briefing is marked out of date. Saved human wording, F05/F06 associations and the original overview stay intact. Any open editor also keeps its unsaved text.
+4. The coordinator may keep the stale briefing, or continue text editing and save it with the stale flag retained. Saving wording is not regeneration.
+5. If the coordinator chooses Generate, a separate preview is generated synchronously from the updated saved attendance. Generate is offered only while the briefing is not being edited: any open edit is saved or cancelled first, so no typed text is caught under the result. The old saved human briefing remains available. A failed generation changes neither saved wording nor references.
+6. Inspect the new preview's sources, optionally edit its text, then explicitly Save it from its edit view. Only this action replaces the saved human briefing; the replacement is current only if attendance has not changed again.
 
 This is the connection between the brief's **Inspect and edit** and **Keep work trustworthy** outcomes. Attendance changes trigger a warning, not an automatic rewrite or forced replacement.
 
@@ -87,7 +86,7 @@ These are small consistency guards for one coordinator who may refresh or open a
 | F6-01 | Generate and save from current saved attendance | Briefing is current and remains associated with the attendance used to generate it |
 | F6-02 | Save an actual attendance change | Saved briefing and any preview based on the earlier attendance show out-of-date text |
 | F6-03 | Refresh/restart after F6-02 | Out-of-date state remains; original saved human wording remains |
-| F6-04 | Make unsaved attendance changes, then discard | Unsaved warning clears; persisted freshness never changed |
+| F6-04 | An attendance change fails to save (or is still saving) | Persisted freshness never changed; Generate waits while it is saving |
 | F6-05 | Save unchanged attendance | Current briefing stays current |
 | F6-06 (D5) | Change then revert saved attendance | Earlier briefing shows as current again because it matches the saved records; any human edits remain |
 | F6-07 | Regenerate after saving human edits | Preview is separate; saved wording/references unchanged until explicit replacement Save |

@@ -36,7 +36,7 @@ There are two triggers. Both use one shared generation service ([T5](14-generati
 
 **Coordinator Generate: synchronous, not queued** (confirmed 2026-10-03):
 
-1. The coordinator selects **Generate** in the briefing header (or **Retry** after a failure; Retry is simply Generate again). Attendance must have no unsaved changes, and the briefing must not be open for editing: Generate is offered only in the read view, so an open edit is saved or cancelled first ([F6](06-freshness-and-regeneration.md)). The result never touches the editor.
+1. The coordinator selects **Generate** in the briefing header (or **Retry** after a failure; Retry is simply Generate again). No attendance save may be in flight ([F2](02-attendance.md) saves each change at once; Generate waits for it), and the briefing must not be open for editing: Generate is offered only in the read view, so an open edit is saved or cancelled first ([F6](06-freshness-and-regeneration.md)). The result never touches the editor.
 2. `POST /api/events/E101/briefing-generations` with `{ baseAttendanceRevision }`. The event API checks the revision, the provider cooldown and the daily budget before any paid call. A second click or tab while a manual generation is running joins the same call.
 3. In one consistent read, capture saved attendance, derived counts and the event's complete current feedback set.
 4. Call the internal [AI Gateway over TCP](09-ai-gateway.md) on its `interactive` lane, which automatic work cannot occupy. Only the Gateway calls OpenAI, using its fixed developer instructions and untrusted feedback in a separate user-data message under [S1](08-openai-security.md).
@@ -138,7 +138,7 @@ Keep saved content and the active editor available while work runs. A worker fai
 | F4-11 | Review the briefing for usefulness with the supplied notes | F05/F06 are synthesised as a recurring rest-break theme, F07 remains a single route-length suggestion, both known disagreements remain visible, and possible follow-ups are grounded and tentative; valid formatting alone is not a pass |
 | F4-12 | A generated theme cites only F05 or repeats F05 twice | Candidate rejected: fewer than two distinct supporting notes; existing work remains intact |
 | F4-13 | A theme uses a broad topic label or unrelated notes despite citing two valid IDs | Structural checks alone cannot certify it; product review rejects the grouping as a theme unless its text and sources establish a meaningful pattern or common concern |
-| F4-18 (D16) | Review the generated briefing for the supplied records | What happened shows the code-built overview with “attendance is incomplete” and a cited feedback summary; the summary states no counts, attendance or consensus |
+| F4-18 (D16) | Review the generated briefing for the supplied records | What happened has the code-built overview with “attendance is incomplete” (stored and saved; since 2026-10-04 not shown in the UI, where the attendance tiles carry the counts) and a cited feedback summary under Summary; the summary states no counts, attendance or consensus |
 | F4-14 | Output contains one well-supported theme and the required conflicts/follow-ups | No request to invent extra themes; absence of a theme quota is preserved |
 | F4-15 (D12) | A generated conflict about start time cites only F03, or repeats F03 twice | Candidate rejected: fewer than two distinct sources for a conflict; the opposing view cannot be silently dropped from the evidence |
 
