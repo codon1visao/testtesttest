@@ -1,8 +1,9 @@
 import { focusManager } from "@tanstack/react-query";
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { delay, http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
+import { FakeEventSource } from "../../testing/fake-event-source";
 import { mswServer } from "../../testing/msw-server";
 import { renderApp } from "../../testing/render-app";
 
@@ -23,11 +24,40 @@ describe("event page", () => {
     expect(screen.getByText("Ended")).toBeTruthy();
   });
 
-  it("orders the panels for reading: attendance slot, feedback, briefing", async () => {
+  it("puts the briefing first, then attendance and feedback", async () => {
     renderApp();
     await screen.findByRole("heading", { level: 1, name: "Saturday Walk" });
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(["Attendance", "Feedback", "Briefing"]);
+    expect(headings).toEqual(["Briefing", "Attendance", "Feedback"]);
+  });
+
+  it("is a dashboard: the event in the top bar, the three panels in the one main landmark", async () => {
+    renderApp();
+    const title = await screen.findByRole("heading", { level: 1, name: "Saturday Walk" });
+    // Astryx renders the top bar as <div role="banner">, not a <header> element.
+    expect(title.closest("[role='banner']")).not.toBeNull();
+    expect(screen.getAllByRole("main")).toHaveLength(1);
+    const main = within(screen.getByRole("main"));
+    for (const name of ["Briefing", "Attendance", "Feedback"]) {
+      expect(main.getByRole("region", { name })).toBeTruthy();
+    }
+  });
+
+  it("says in the top bar whether live updates are on; polling covers a closed stream", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Saturday Walk" });
+    expect(screen.getByText("Polling for updates")).toBeTruthy();
+    await waitFor(() => {
+      expect(FakeEventSource.instances).toHaveLength(1);
+    });
+    act(() => {
+      FakeEventSource.instances[0]?.open();
+    });
+    expect(await screen.findByText("Live updates")).toBeTruthy();
+    act(() => {
+      FakeEventSource.instances[0]?.fail();
+    });
+    expect(await screen.findByText("Polling for updates")).toBeTruthy();
   });
 
   it("F1-08: shows an error with Retry when the API is unreachable, then recovers", async () => {

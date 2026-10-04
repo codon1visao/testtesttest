@@ -1,7 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
+import { Card } from "@astryxdesign/core/Card";
 import { VStack } from "@astryxdesign/core/Layout";
+import { Text } from "@astryxdesign/core/Text";
 import { type EventId, EventIdSchema } from "@event-desk/contracts";
-import * as stylex from "@stylexjs/stylex";
 import { useParams } from "react-router";
 import { describeApiError } from "../../data/http/api-error";
 import { useEventChanges } from "../../data/queries/use-event-changes";
@@ -15,11 +16,8 @@ import { AttendancePanel } from "../attendance/attendance-panel";
 import { displayedBriefing } from "../briefing/active-briefing";
 import { BriefingPanel } from "../briefing/briefing-panel";
 import { FeedbackPanel } from "../feedback/feedback-panel";
-import { EventHeader } from "./event-header";
-
-const styles = stylex.create({
-  page: { maxWidth: 960, marginInline: "auto", padding: "1.5rem" },
-});
+import { DashboardGrid, EventDashboardLayout } from "./event-dashboard-layout";
+import { EventHeader, LiveStatus } from "./event-header";
 
 export function EventPage() {
   const { eventId = "" } = useParams();
@@ -42,32 +40,35 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
   );
   const activeView = useUiStore((state) => state.activeView);
 
+  const appTitle = <Text weight="bold">Event Desk</Text>;
   if (query.isPending) {
     return (
-      <main {...stylex.props(styles.page)}>
+      <EventDashboardLayout heading={appTitle}>
         <LoadingState label="Loading event…" />
-      </main>
+      </EventDashboardLayout>
     );
   }
   if (query.isLoadingError) {
     if (query.error.code === "EVENT_NOT_FOUND") return <NotFoundPage title="Event not found" />;
     return (
-      <main {...stylex.props(styles.page)}>
+      <EventDashboardLayout heading={appTitle}>
         <LoadErrorState
           title="The event could not be loaded"
           reason={describeApiError(query.error)}
           onRetry={() => void query.refetch()}
         />
-      </main>
+      </EventDashboardLayout>
     );
   }
 
   const view = query.data;
   const displayed = displayedBriefing(view, activeView);
   return (
-    <main {...stylex.props(styles.page)}>
-      <VStack gap={6}>
-        <EventHeader event={view.event} />
+    <EventDashboardLayout
+      heading={<EventHeader event={view.event} />}
+      endContent={<LiveStatus live={live} />}
+    >
+      <VStack gap={4}>
         {query.isRefetchError ? (
           <Banner
             status="warning"
@@ -75,19 +76,33 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
             description={`It could not be refreshed: ${describeApiError(query.error)}`}
           />
         ) : null}
-        <PanelErrorBoundary name="Attendance">
-          <AttendancePanel eventId={eventId} view={view} refetch={query.refetch} />
-        </PanelErrorBoundary>
-        <PanelErrorBoundary name="Feedback">
-          <FeedbackPanel
-            notes={view.feedback}
-            newSinceBriefing={new Set(displayed?.freshness.newFeedbackIds ?? [])}
-          />
-        </PanelErrorBoundary>
-        <PanelErrorBoundary name="Briefing">
-          <BriefingPanel eventId={eventId} view={view} refetch={query.refetch} />
-        </PanelErrorBoundary>
+        <DashboardGrid
+          main={
+            <Card padding={4}>
+              <PanelErrorBoundary name="Briefing">
+                <BriefingPanel eventId={eventId} view={view} refetch={query.refetch} />
+              </PanelErrorBoundary>
+            </Card>
+          }
+          side={
+            <>
+              <Card padding={4}>
+                <PanelErrorBoundary name="Attendance">
+                  <AttendancePanel eventId={eventId} view={view} refetch={query.refetch} />
+                </PanelErrorBoundary>
+              </Card>
+              <Card padding={4}>
+                <PanelErrorBoundary name="Feedback">
+                  <FeedbackPanel
+                    notes={view.feedback}
+                    newSinceBriefing={new Set(displayed?.freshness.newFeedbackIds ?? [])}
+                  />
+                </PanelErrorBoundary>
+              </Card>
+            </>
+          }
+        />
       </VStack>
-    </main>
+    </EventDashboardLayout>
   );
 }
