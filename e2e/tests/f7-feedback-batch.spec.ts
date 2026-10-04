@@ -47,4 +47,6 @@ test("F7-15 / F3-10: notes from the feedback form reach the open coordinator pag
       .getByText("Requests for more rest-break time (background, 11 notes).", { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Discard and review" })).toHaveCount(0);
+  // The reviewed preview is marked in the header until it is saved (spec 05, amended 2026-10-04).
+  await expect(briefing.getByText("Unsaved preview", { exact: true })).toBeVisible();
 });
