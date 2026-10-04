@@ -1,9 +1,12 @@
 import { GenerationIdSchema } from "@event-desk/contracts";
 import { buildBriefingView, buildSeedEventView } from "@event-desk/contracts/testing";
+import type { FieldErrors } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 import {
+  type BriefingFormValues,
   draftMatchesSaved,
   editorKey,
+  firstErrorField,
   formFieldForApiField,
   toEditorBase,
   toFormValues,
@@ -60,5 +63,20 @@ describe("briefing form model (D2)", () => {
     );
     expect(editorKey(base)).toBe(`selected:${ID}:2`);
     expect(editorKey(toEditorBase(buildSeedEventView(), "preview"))).toBe("none");
+  });
+
+  it("names the first field with an error, in screen order", () => {
+    const values = toFormValues(buildBriefingView().content);
+    const server = { type: "server", message: "x" };
+    expect(firstErrorField({}, values)).toBeNull();
+    const errors: FieldErrors<BriefingFormValues> = {
+      attendanceOverview: server,
+      conflicts: [undefined, { text: server }],
+    };
+    expect(firstErrorField(errors, values)).toBe("attendanceOverview");
+    expect(firstErrorField({ ...errors, feedbackSummary: server }, values)).toBe("feedbackSummary");
+    expect(firstErrorField({ conflicts: [undefined, { text: server }] }, values)).toBe(
+      "conflicts.1.text",
+    );
   });
 });

@@ -11,11 +11,13 @@ import { formatAttendanceCounts } from "../attendance/attendance-counts";
 import type { RefetchEvent } from "../attendance/use-attendance-form";
 import { SourceDisclosure } from "../feedback/source-disclosure";
 import { EVIDENCE_LIMIT_NOTICE, formatTimestamp, SECTION_COPY } from "./briefing-copy";
-import type {
-  BriefingFieldPath,
-  BriefingFormOutput,
-  BriefingFormValues,
-  EditorBase,
+import { BriefingContentView } from "./briefing-content-view";
+import {
+  type BriefingFieldPath,
+  type BriefingFormOutput,
+  type BriefingFormValues,
+  type EditorBase,
+  firstErrorField,
 } from "./briefing-form-model";
 import { BriefingSectionsLayout, SummaryCard } from "./briefing-sections";
 import { BriefingPreview } from "./briefing-preview";
@@ -163,6 +165,10 @@ export function BriefingEditor({
 }) {
   const editor = useBriefingForm(eventId, base, refetch, onSaved, onReset);
   const [confirming, setConfirming] = useState<"discard" | "reload" | null>(null);
+  // The briefing opens read-only (spec 2026-10-04); Edit briefing opens the text areas. Local state:
+  // a remount (after a save, or a clean editor following the view) returns to the read view, and a
+  // dirty draft never remounts, so typed text is never hidden or replaced without a choice.
+  const [isEditing, setIsEditing] = useState(false);
   // The dialog is a native modal: while it is open the page is inert, and on close the browser
   // returns focus to the trigger, which a reset unmounts. Focus moves only once it has closed.
   // A request counter (not a boolean cleared in the effect): each request is handled once.
@@ -189,9 +195,45 @@ export function BriefingEditor({
   const requestFocusAfterClose = () => {
     setFocusAfterClose((count) => count + 1);
   };
+  // A field to focus once the text areas are on screen: the first after Edit briefing, the failing
+  // one after a field error. A request counter, like the others.
+  const [fieldFocus, setFieldFocus] = useState<{ path: BriefingFieldPath; request: number } | null>(
+    null,
+  );
+  const handledFieldFocus = useRef(0);
+  useEffect(() => {
+    if (fieldFocus === null || fieldFocus.request === handledFieldFocus.current) return;
+    handledFieldFocus.current = fieldFocus.request;
+    editor.form.setFocus(fieldFocus.path);
+  }, [fieldFocus, editor.form]);
+  const requestFieldFocus = (path: BriefingFieldPath) => {
+    setFieldFocus((current) => ({ path, request: (current?.request ?? 0) + 1 }));
+  };
+  // A field error needs its field: a save started from the read view opens the editor on it.
+  // Adjusted during render, React's pattern for state derived from props.
+  const errorField = firstErrorField(editor.form.formState.errors, editor.form.getValues());
+  if (errorField !== null && !isEditing) {
+    setIsEditing(true);
+    requestFieldFocus(errorField);
+  }
+  const startEditing = () => {
+    setIsEditing(true);
+    requestFieldFocus("feedbackSummary");
+  };
+  // Without changes Cancel edit just closes the text areas; with changes it asks first (F5-10).
+  const cancelEditing = () => {
+    if (editor.isDirty) {
+      setConfirming("discard");
+      return;
+    }
+    editor.form.clearErrors();
+    setIsEditing(false);
+    requestFocusAfterClose();
+  };
 
   const { briefing } = base;
   const content = briefing.content;
+  const scope = briefing.provenance.generationId;
   // Freshness follows the saved records even while the draft keeps its base (F5-12).
   const live =
     [view.selectedPreview, view.savedBriefing].find(
@@ -210,6 +252,15 @@ export function BriefingEditor({
   const canSave = base.slot === "selected" || editor.isDirty;
   const control = editor.form.control;
   const fieldsDisabled = editor.areFieldsLocked || isLocked;
+  const saveButton = (
+    <Button
+      type="submit"
+      variant="primary"
+      label={saveLabel}
+      isDisabled={!canSave || editor.isBusy}
+      isLoading={editor.isSaving}
+    />
+  );
 
   return (
     <article aria-labelledby={headingId}>
@@ -230,55 +281,63 @@ export function BriefingEditor({
           }}
         >
           <VStack gap={4}>
-            <BriefingSectionsLayout
-              summary={
-                <SummaryCard>
-                  <TextField
-                    control={control}
-                    name="feedbackSummary"
-                    label="Feedback summary"
-                    isDisabled={fieldsDisabled}
-                  />
-                  <SourceDisclosure
-                    sourceIds={content.feedbackSummary.sourceIds}
-                    notes={view.feedback}
-                    disclosureScope={`${briefing.provenance.generationId}:feedbackSummary`}
-                  />
-                  <TextField
-                    control={control}
-                    name="attendanceOverview"
-                    label="Attendance overview"
-                    isDisabled={fieldsDisabled}
-                  />
-                  <VStack gap={0}>
-                    <Text type="supporting">Check edited wording against the counts.</Text>
-                    <Text type="supporting">
-                      Generated from: {formatAttendanceCounts(briefing.provenance.input.counts)}
-                    </Text>
-                    <Text type="supporting">
-                      Saved records now: {formatAttendanceCounts(view.counts)}
-                    </Text>
-                  </VStack>
-                </SummaryCard>
-              }
-              renderItems={(section) =>
-                content[section].map((item, index) => (
-                  <VStack gap={1}>
+            {isEditing ? (
+              <BriefingSectionsLayout
+                summary={
+                  <SummaryCard>
                     <TextField
                       control={control}
-                      name={`${section}.${index}.text`}
-                      label={`${SECTION_COPY[section].itemLabel} ${String(index + 1)}`}
+                      name="feedbackSummary"
+                      label="Feedback summary"
                       isDisabled={fieldsDisabled}
                     />
                     <SourceDisclosure
-                      sourceIds={item.sourceIds}
+                      sourceIds={content.feedbackSummary.sourceIds}
                       notes={view.feedback}
-                      disclosureScope={`${briefing.provenance.generationId}:${section}.${String(index)}`}
+                      disclosureScope={`${scope}:feedbackSummary`}
                     />
-                  </VStack>
-                ))
-              }
-            />
+                    <TextField
+                      control={control}
+                      name="attendanceOverview"
+                      label="Attendance overview"
+                      isDisabled={fieldsDisabled}
+                    />
+                    <VStack gap={0}>
+                      <Text type="supporting">Check edited wording against the counts.</Text>
+                      <Text type="supporting">
+                        Generated from: {formatAttendanceCounts(briefing.provenance.input.counts)}
+                      </Text>
+                      <Text type="supporting">
+                        Saved records now: {formatAttendanceCounts(view.counts)}
+                      </Text>
+                    </VStack>
+                  </SummaryCard>
+                }
+                renderItems={(section) =>
+                  content[section].map((item, index) => (
+                    <VStack gap={1}>
+                      <TextField
+                        control={control}
+                        name={`${section}.${index}.text`}
+                        label={`${SECTION_COPY[section].itemLabel} ${String(index + 1)}`}
+                        isDisabled={fieldsDisabled}
+                      />
+                      <SourceDisclosure
+                        sourceIds={item.sourceIds}
+                        notes={view.feedback}
+                        disclosureScope={`${scope}:${section}.${String(index)}`}
+                      />
+                    </VStack>
+                  ))
+                }
+              />
+            ) : (
+              <BriefingContentView
+                content={content}
+                notes={view.feedback}
+                disclosureScope={scope}
+              />
+            )}
             <div role="status" aria-live="polite">
               {editor.isSaving ? (
                 <Text>Saving briefing…</Text>
@@ -313,23 +372,28 @@ export function BriefingEditor({
               />
             ) : null}
             <HStack gap={2}>
-              <Button
-                type="submit"
-                variant="primary"
-                label={saveLabel}
-                isDisabled={!canSave || editor.isBusy}
-                isLoading={editor.isSaving}
-              />
-              {editor.isDirty ? (
-                <Button
-                  variant="secondary"
-                  label="Discard edits"
-                  isDisabled={editor.isBusy}
-                  onClick={() => {
-                    setConfirming("discard");
-                  }}
-                />
-              ) : null}
+              {isEditing ? (
+                <>
+                  {saveButton}
+                  <Button
+                    variant="secondary"
+                    label="Cancel edit"
+                    isDisabled={editor.isBusy}
+                    onClick={cancelEditing}
+                  />
+                </>
+              ) : (
+                <>
+                  {/* A selected preview can be saved as it is (spec 2026-10-04). */}
+                  {base.slot === "selected" ? saveButton : null}
+                  <Button
+                    variant={base.slot === "selected" ? "secondary" : "primary"}
+                    label="Edit briefing"
+                    isDisabled={fieldsDisabled}
+                    onClick={startEditing}
+                  />
+                </>
+              )}
             </HStack>
           </VStack>
         </form>
@@ -345,6 +409,7 @@ export function BriefingEditor({
         onConfirm={() => {
           setConfirming(null);
           editor.discard();
+          setIsEditing(false);
           requestFocusAfterClose();
         }}
       />
@@ -359,7 +424,9 @@ export function BriefingEditor({
         onConfirm={() => {
           setConfirming(null);
           void editor.reloadLatest().then((reloaded) => {
-            if (reloaded) requestFocusAfterClose();
+            if (!reloaded) return;
+            setIsEditing(false);
+            requestFocusAfterClose();
           });
         }}
       />

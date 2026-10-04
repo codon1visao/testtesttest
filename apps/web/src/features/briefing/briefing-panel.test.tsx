@@ -4,6 +4,7 @@ import { focusManager } from "@tanstack/react-query";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+import { expectReadItem, sectionItem, startEditing } from "../../testing/briefing-queries";
 import { FakeEventApi } from "../../testing/fake-event-api";
 import { FakeEventSource } from "../../testing/fake-event-source";
 import { mswServer } from "../../testing/msw-server";
@@ -43,6 +44,7 @@ const otherPreview = (n: number, theme: string) => {
 /** Disabled natively or through aria-disabled. */
 const isLocked = (element: HTMLElement) =>
   (element instanceof HTMLTextAreaElement && element.disabled) ||
+  (element instanceof HTMLButtonElement && element.disabled) ||
   element.getAttribute("aria-disabled") === "true";
 
 const panel = async () => within(await screen.findByRole("region", { name: "Briefing" }));
@@ -287,6 +289,7 @@ describe("briefing panel", () => {
     api.generationReplies.push({ kind: "preview", preview: second });
     const { user } = renderApp();
     const region = await panel();
+    await startEditing(user, region);
     const theme = region.getByLabelText<HTMLTextAreaElement>("Theme 1");
     await user.type(theme, " My draft.");
     await user.click(generateButton(region));
@@ -307,9 +310,7 @@ describe("briefing panel", () => {
     await user.click(region.getByRole("button", { name: "Review new preview" }));
     await user.click(await screen.findByRole("button", { name: "Discard and review" }));
     await waitFor(() => {
-      expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
-        "Second preview theme.",
-      );
+      expectReadItem(region, "Which themes recur", "Second preview theme.");
     });
     expect(api.selectRequests).toEqual([
       {
@@ -323,13 +324,14 @@ describe("briefing panel", () => {
     });
   });
 
-  it("F4 step 7: the fields are locked while the automatic select is in flight, so no draft is typed on a base it replaces", async () => {
+  it("F4 step 7: an open clean editor is locked while the automatic select is in flight, then shows the new preview", async () => {
     const second = otherPreview(4, "Second preview theme.");
     api.view = { ...api.view, selectedPreview: buildBriefingView() };
     api.generationReplies.push({ kind: "preview", preview: second });
     api.selectDelayMs = 300;
     const { user } = renderApp();
     const region = await panel();
+    await startEditing(user, region);
     expect(isLocked(region.getByLabelText("Theme 1"))).toBe(false);
     await user.click(generateButton(region));
     await waitFor(() => {
@@ -338,11 +340,9 @@ describe("briefing panel", () => {
     expect(isLocked(region.getByLabelText("Theme 1"))).toBe(true);
     expect(isLocked(region.getByLabelText("Attendance overview"))).toBe(true);
     await waitFor(() => {
-      expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
-        "Second preview theme.",
-      );
+      expectReadItem(region, "Which themes recur", "Second preview theme.");
     });
-    expect(isLocked(region.getByLabelText("Theme 1"))).toBe(false);
+    expect(isLocked(region.getByRole("button", { name: "Edit briefing" }))).toBe(false);
     expect(region.queryByText("New briefing ready to review")).toBeNull();
   });
 
@@ -369,11 +369,9 @@ describe("briefing panel", () => {
     expect(await region.findByText("Selected in another tab.", { exact: false })).toBeTruthy();
     release();
     await waitFor(() => {
-      expect(isLocked(region.getByLabelText("Theme 1"))).toBe(false);
+      expect(isLocked(region.getByRole("button", { name: "Edit briefing" }))).toBe(false);
     });
-    expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
-      "Selected in another tab.",
-    );
+    expectReadItem(region, "Which themes recur", "Selected in another tab.");
   });
 
   it("F6-09: a preview another tab selected under a dirty draft is announced; reviewing it only switches the editor", async () => {
@@ -382,6 +380,7 @@ describe("briefing panel", () => {
     api.view = { ...api.view, selectedPreview: first };
     const { user } = renderApp();
     const region = await panel();
+    await startEditing(user, region);
     await user.type(region.getByLabelText<HTMLTextAreaElement>("Theme 1"), " Late draft.");
     api.view = { ...api.view, selectedPreview: second, incomingPreview: null };
     refocus();
@@ -393,9 +392,7 @@ describe("briefing panel", () => {
     await user.click(region.getByRole("button", { name: "Review new preview" }));
     await user.click(await screen.findByRole("button", { name: "Discard and review" }));
     await waitFor(() => {
-      expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
-        "Second preview theme.",
-      );
+      expectReadItem(region, "Which themes recur", "Second preview theme.");
     });
     // Already selected on the server: reviewing it makes no select request.
     expect(api.selectRequests).toHaveLength(0);
@@ -412,6 +409,7 @@ describe("briefing panel", () => {
     api.view = { ...api.view, selectedPreview: first };
     const { user } = renderApp();
     const region = await panel();
+    await startEditing(user, region);
     await user.type(region.getByLabelText<HTMLTextAreaElement>("Theme 1"), " My draft.");
     // Another tab selected a preview, and a newer one is waiting; this tab's draft keeps its base.
     api.view = { ...api.view, selectedPreview: elsewhere, incomingPreview: incoming };
@@ -494,6 +492,7 @@ describe("briefing panel", () => {
     api.view = { ...api.view, savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME } };
     const { user } = renderApp();
     const region = await panel();
+    await startEditing(user, region);
     await user.type(region.getByLabelText<HTMLTextAreaElement>("Theme 1"), " Edited.");
     const other = buildBriefingView({
       provenance: {
@@ -512,15 +511,14 @@ describe("briefing panel", () => {
     expect(
       await region.findByRole("heading", { name: /^Saved briefing · last saved / }),
     ).toBeTruthy();
-    expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
-      "Requests for more rest-break time. Edited.",
-    );
+    expectReadItem(region, "Which themes recur", "Requests for more rest-break time. Edited.");
   });
 
   it("P22: discarding the saved briefing's edits while another tab selected a preview keeps the saved briefing", async () => {
     api.view = { ...api.view, savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME } };
     const { user } = renderApp();
     const region = await panel();
+    await startEditing(user, region);
     await user.type(region.getByLabelText<HTMLTextAreaElement>("Theme 1"), " Edited.");
     api.view = { ...api.view, selectedPreview: otherPreview(5, "Selected in another tab.") };
     await waitFor(() => {
@@ -528,12 +526,10 @@ describe("briefing panel", () => {
     });
     FakeEventSource.instances[0]?.emit("changed", '{"version":2}');
     await region.findByText(/ready to review/);
-    await user.click(region.getByRole("button", { name: "Discard edits" }));
+    await user.click(region.getByRole("button", { name: "Cancel edit" }));
     await user.click(await screen.findByRole("button", { name: "Discard" }));
     await waitFor(() => {
-      expect(region.getByLabelText<HTMLTextAreaElement>("Theme 1").value).toBe(
-        "Requests for more rest-break time.",
-      );
+      expectReadItem(region, "Which themes recur", "Requests for more rest-break time.");
     });
     expect(region.getByRole("heading", { name: /^Saved briefing · last saved / })).toBeTruthy();
     // The other tab's preview is still there to switch to; the editor did not jump to it.
@@ -587,26 +583,27 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
     const region = await panel();
     expect(await region.findByRole("heading", { name: PREVIEW_TITLE })).toBeTruthy();
     expect(option(region, "Generated preview").getAttribute("aria-checked")).toBe("true");
-    expect(theme(region).value).toBe("Requests for more rest-break time.");
+    expectReadItem(region, "Which themes recur", "Requests for more rest-break time.");
     expect(region.getByRole("button", { name: "Save and replace briefing" })).toBeTruthy();
 
     await user.click(option(region, "Saved briefing"));
     expect(
       await region.findByRole("heading", { name: /^Saved briefing · last saved / }),
     ).toBeTruthy();
-    expect(theme(region).value).toBe("Saved theme wording.");
+    expectReadItem(region, "Which themes recur", "Saved theme wording.");
     expect(option(region, "Saved briefing").getAttribute("aria-checked")).toBe("true");
     await expectHeadingFocused(/^Saved briefing/);
 
     await user.click(option(region, "Generated preview"));
     expect(await region.findByRole("heading", { name: PREVIEW_TITLE })).toBeTruthy();
-    expect(theme(region).value).toBe("Requests for more rest-break time.");
+    expectReadItem(region, "Which themes recur", "Requests for more rest-break time.");
     await expectHeadingFocused(/^Generated preview/);
   });
 
   it("F5-10: switching while dirty asks first; Cancel keeps the draft, confirming switches and focuses the heading", async () => {
     const { user } = renderApp();
     const region = await panel();
+    await startEditing(user, region);
     await user.type(theme(region), " My draft.");
     await user.click(option(region, "Saved briefing"));
     expect(await screen.findByText("Discard your edits and switch?")).toBeTruthy();
@@ -623,7 +620,7 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
     await user.click(option(region, "Saved briefing"));
     await user.click(await screen.findByRole("button", { name: "Discard and switch" }));
     await waitFor(() => {
-      expect(theme(region).value).toBe("Saved theme wording.");
+      expectReadItem(region, "Which themes recur", "Saved theme wording.");
     });
     expect(region.queryByText("Unsaved changes to the briefing text.")).toBeNull();
     await expectHeadingFocused(/^Saved briefing/);
@@ -635,8 +632,9 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
     const region = await panel();
     await user.click(option(region, "Saved briefing"));
     await waitFor(() => {
-      expect(theme(region).value).toBe("Saved theme wording.");
+      expectReadItem(region, "Which themes recur", "Saved theme wording.");
     });
+    await startEditing(user, region);
     await user.clear(theme(region));
     await user.type(theme(region), "Edited saved wording.");
     await user.click(region.getByRole("button", { name: "Save briefing" }));
@@ -651,7 +649,7 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
       await region.findByRole("heading", { name: /^Saved briefing · last saved / }),
     ).toBeTruthy();
     await waitFor(() => {
-      expect(theme(region).value).toBe("Edited saved wording.");
+      expectReadItem(region, "Which themes recur", "Edited saved wording.");
     });
     // The preview is still there to switch back to.
     await user.click(option(region, "Generated preview"));
@@ -662,11 +660,11 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
     api.view = { ...api.view, savedBriefing: null, briefingRevision: 0 };
     const { user } = renderApp();
     const region = await panel();
-    const themeToggle = () => {
-      const [toggle] = region.getAllByRole("button", { name: "Sources (2)" });
-      if (toggle === undefined) throw new Error("theme source toggle missing");
-      return toggle;
-    };
+    const themeToggle = () =>
+      within(sectionItem(region, "Which themes recur")).getByRole("button", {
+        name: "Sources (2)",
+      });
+    await startEditing(user, region);
     await user.click(themeToggle());
     expect(themeToggle().getAttribute("aria-expanded")).toBe("true");
     await user.type(theme(region), " Saved.");
@@ -674,8 +672,10 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
     expect(
       await region.findByRole("heading", { name: /^Saved briefing · last saved / }),
     ).toBeTruthy();
-    expect(themeToggle().getAttribute("aria-expanded")).toBe("true");
-    const summaryToggle = region.getByRole("button", { name: "Sources (8)" });
-    expect(summaryToggle.getAttribute("aria-expanded")).toBe("false");
+    const [row] = within(sectionItem(region, "Which themes recur")).getAllByRole("button");
+    expect(row?.getAttribute("aria-expanded")).toBe("true");
+    expect(region.getByRole("button", { name: "Sources (8)" }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
   });
 });

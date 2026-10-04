@@ -9,6 +9,7 @@ import {
   type SaveBriefingRequest,
   TEXT_LIMITS,
 } from "@event-desk/contracts";
+import { type FieldErrors, get } from "react-hook-form";
 import { z } from "zod";
 import type { ActiveView } from "../../state/ui-store";
 import { activeBriefing, type EditableSlot } from "./active-briefing";
@@ -88,6 +89,30 @@ export function formFieldForApiField(field: string | undefined): BriefingFieldPa
   return section === undefined || match?.[2] === undefined
     ? null
     : `${section}.${Number(match[2])}.text`;
+}
+
+/** The editor's fields in screen order: the summary card first, then each section's items. */
+function fieldPaths(values: BriefingFormValues): BriefingFieldPath[] {
+  return [
+    "feedbackSummary",
+    "attendanceOverview",
+    ...LIST_SECTIONS.flatMap((section) =>
+      values[section].map((_, index): BriefingFieldPath => `${section}.${index}.text`),
+    ),
+  ];
+}
+
+/** The first field with an error, so a save started from the read view can open on it. */
+export function firstErrorField(
+  errors: FieldErrors<BriefingFormValues>,
+  values: BriefingFormValues,
+): BriefingFieldPath | null {
+  return (
+    fieldPaths(values).find((path) => {
+      const error: unknown = get(errors, path);
+      return error !== undefined;
+    }) ?? null
+  );
 }
 
 export interface EditorBase {
