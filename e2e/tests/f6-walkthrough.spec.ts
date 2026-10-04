@@ -22,8 +22,10 @@ const themeItem = (briefing: Locator) =>
     .locator(":scope > li")
     .first();
 // The briefing header's actions (spec 2026-10-04): Edit and Generate, or Cancel and Save.
-const action = (briefing: Locator, name: "Edit" | "Generate" | "Cancel" | "Save") =>
-  briefing.getByRole("button", { name, exact: true });
+const action = (
+  briefing: Locator,
+  name: "Edit" | "Generate" | "Accept preview" | "Cancel" | "Save",
+) => briefing.getByRole("button", { name, exact: true });
 const editBriefing = (briefing: Locator) => action(briefing, "Edit").click();
 // The editor's title is visually hidden (spec 05, amended 2026-10-04): it names the briefing and
 // takes focus; the header's "Unsaved preview" badge is what marks a generated preview on screen.
@@ -61,6 +63,9 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await action(briefing, "Generate").click();
   await expect(editorTitle(briefing, PREVIEW_TITLE)).toBeAttached();
   await expect(unsavedPreviewBadge(briefing)).toBeVisible();
+  // A shown preview offers Accept preview in place of Generate (spec 05, amended 2026-10-04).
+  await expect(action(briefing, "Accept preview")).toBeVisible();
+  await expect(action(briefing, "Generate")).toHaveCount(0);
 
   // 2. Review Focus 5: inspect F05/F06 by keyboard while editing; the draft survives; save.
   await editBriefing(briefing);
@@ -158,8 +163,8 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
     themeItem(briefing).getByText("Several people asked for longer rest breaks.", { exact: true }),
   ).toBeVisible();
 
-  // 6. Generate from the read view: the clean editor opens the new preview (F4 step 7). Inspect its
-  // sources, then Save from its edit view, which replaces the saved briefing.
+  // 6. Generate from the saved briefing's read view: the clean editor opens the new preview (F4
+  // step 7). Inspect its sources, then Accept preview, which replaces the saved briefing.
   await action(briefing, "Generate").click();
   await expect(editorTitle(briefing, PREVIEW_TITLE)).toBeAttached();
   await expect(unsavedPreviewBadge(briefing)).toBeVisible();
@@ -175,6 +180,9 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   await page.getByRole("button", { name: "Discard and switch" }).click();
   await expect(editorTitle(briefing, "Saved briefing")).toBeFocused();
   await expect(unsavedPreviewBadge(briefing)).toHaveCount(0);
+  // On the saved briefing Generate is offered again; on the preview, Accept preview.
+  await expect(action(briefing, "Generate")).toBeVisible();
+  await expect(action(briefing, "Accept preview")).toHaveCount(0);
   // The hidden title sits inside its briefing (the article is positioned), so focusing it keeps
   // the briefing in view instead of scrolling the page to its top.
   const titleBox = await editorTitle(briefing, "Saved briefing").boundingBox();
@@ -195,9 +203,11 @@ test("F6 example / F6-15: edit, save, change attendance, regenerate, replace", a
   // Clicking the theme row reveals its notes (spec 2026-10-04).
   await themeItem(briefing).getByRole("button").first().click();
   await expect(themeItem(briefing).getByText(F05)).toBeVisible();
-  await editBriefing(briefing);
-  await action(briefing, "Save").click();
+  await expect(action(briefing, "Generate")).toHaveCount(0);
+  // Accept preview keeps it unchanged as the saved briefing, replacing the earlier one.
+  await action(briefing, "Accept preview").click();
   await expect(editorTitle(briefing, "Saved briefing")).toBeAttached();
+  await expect(action(briefing, "Generate")).toBeVisible();
   await expect(unsavedPreviewBadge(briefing)).toHaveCount(0);
   // The new briefing is current: no freshness warning.
   await expect(briefing.getByText(OUT_OF_DATE)).toHaveCount(0);

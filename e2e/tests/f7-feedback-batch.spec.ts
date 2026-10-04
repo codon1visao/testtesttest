@@ -49,4 +49,7 @@ test("F7-15 / F3-10: notes from the feedback form reach the open coordinator pag
   await expect(page.getByRole("button", { name: "Discard and review" })).toHaveCount(0);
   // The reviewed preview is marked in the header until it is saved (spec 05, amended 2026-10-04).
   await expect(briefing.getByText("Unsaved preview", { exact: true })).toBeVisible();
+  // It can be kept as it is with Accept preview; Generate waits until then.
+  await expect(briefing.getByRole("button", { name: "Accept preview", exact: true })).toBeVisible();
+  await expect(briefing.getByRole("button", { name: "Generate", exact: true })).toHaveCount(0);
 });
