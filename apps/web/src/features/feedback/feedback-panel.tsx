@@ -17,9 +17,9 @@ import { EVENT_ID } from "../../config";
 const styles = stylex.create({
   // Astryx Badge may shrink with an ellipsis; the note ID must always be readable in full.
   noteId: { flexShrink: 0 },
-  // Let long unbroken note text wrap inside the row instead of forcing horizontal scroll.
   // The ID column is only as wide as its content; the Note column takes the rest.
   idColumn: { width: "1%", maxWidth: "none", wordBreak: "normal", overflowWrap: "normal" },
+  // Let long unbroken note text wrap inside the row instead of forcing horizontal scroll.
   noteText: { minWidth: 0, overflowWrap: "anywhere" },
 });
 

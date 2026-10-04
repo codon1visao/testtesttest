@@ -33,8 +33,8 @@ Read-only is a coordinator permission, not a trust level. Treat every note as un
 
 1. Show all notes in stable ID order in a read-only feedback panel: the eight seeded notes plus any added ones. Notes added after the displayed briefing was generated are marked **New since this briefing**.
 2. In each briefing theme, conflict and suggestion, show the cited IDs adjacent to that item's text.
-3. Activating a reference reveals that exact note, including its ID and complete original wording.
-4. Multiple references on one item remain individually inspectable.
+3. Activating an item's source disclosure reveals every note the item cites, each with its ID and complete original wording.
+4. Multiple references on one item are revealed together by that one disclosure, and each note stays readable on its own.
 5. Closing or opening a note preserves briefing edits and scroll position as far as practical.
 
 UI: one accessible inline disclosure per briefing item — the item's row in the read view, **Sources (n)** beside its text area while editing — with `aria-expanded` and a relationship to the revealed notes; it reveals every note the item cites, and the cited IDs stay visible next to the item's text. The full feedback panel remains available even when a note is not cited. Source text is rendered as plain text; never execute HTML or treat text as application instructions.
@@ -63,10 +63,10 @@ F08 records no extra suggestions. It is not evidence that the respondent endorse
 | ID | Given / when | Expected result |
 | --- | --- | --- |
 | F3-01 | Open feedback after seed or restart | Eight separate notes with exact IDs/text above, in stable order |
-| F3-02 | Activate F01 beside a briefing item | The full F01 text appears; no member attribution is shown |
-| F3-03 | An item cites F03 and F04 | Both notes can be opened separately without losing the item or edits |
+| F3-02 | Activate the item citing F01 | The full F01 text appears; no member attribution is shown |
+| F3-03 | An item cites F03 and F04 | The item's disclosure reveals both notes without losing the item or edits |
 | F3-04 | A draft includes F99 | Explicit invalid-reference state; not shown as verified evidence or saved |
-| F3-05 | Save/reload a briefing with multiple references | Each item retains the same reference set and opens the same notes |
+| F3-05 | Save/reload a briefing with multiple references | Each item retains the same reference set and its disclosure reveals the same notes |
 | F3-06 | Inspect sources using only the keyboard | Controls have meaningful names, visible focus and announced expanded state |
 | F3-07 | Source text contains markup or imperative wording in a robustness check | Rendered as data; no script execution, application action or attendance change |
 | F3-08 | Feedback loading fails | Error and Retry; do not show an empty collection as successful data |

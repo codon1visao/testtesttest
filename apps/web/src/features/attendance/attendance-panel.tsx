@@ -28,9 +28,11 @@ import { AttendanceCounts } from "./attendance-counts";
 import { type AttendanceNotice, type RefetchEvent, useAttendanceForm } from "./use-attendance-form";
 
 const styles = stylex.create({
-  // The Name column takes only what it needs; the Actions column gets the rest so the status
-  // label in the Selector is never cut off.
-  nameColumn: { width: "1%", maxWidth: "none", whiteSpace: "nowrap" },
+  // The Actions cell is only as wide as its Selector, so the status label is never cut off; the
+  // Name column takes the rest and wraps (member names can be up to 120 characters).
+  // Astryx cells default to maxWidth 0, so the narrow cell needs maxWidth none.
+  nameColumn: { overflowWrap: "anywhere" },
+  actionsColumn: { width: "1%", maxWidth: "none", whiteSpace: "nowrap" },
 });
 
 const ATTENDANCE_OPTIONS = ATTENDANCE_STATUSES.map((status) => ({
@@ -137,7 +139,9 @@ export function AttendancePanel({
                   <TableHeaderCell scope="col" xstyle={styles.nameColumn}>
                     Name
                   </TableHeaderCell>
-                  <TableHeaderCell scope="col">Actions</TableHeaderCell>
+                  <TableHeaderCell scope="col" xstyle={styles.actionsColumn}>
+                    Actions
+                  </TableHeaderCell>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -146,7 +150,7 @@ export function AttendancePanel({
                   return (
                     <TableRow key={member.id}>
                       <TableCell xstyle={styles.nameColumn}>{name}</TableCell>
-                      <TableCell>
+                      <TableCell xstyle={styles.actionsColumn}>
                         <Controller
                           control={attendance.form.control}
                           name={`members.${index}.attendance`}

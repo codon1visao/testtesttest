@@ -210,7 +210,7 @@ export function BriefingEditor({
     setFieldFocus((current) => ({ path, request: (current?.request ?? 0) + 1 }));
   };
   // A field error needs its field: a save started from the read view opens the editor on it.
-  // Adjusted during render, React's pattern for state derived from props.
+  // Adjusted during render, React's pattern for state derived from form state.
   const errorField = firstErrorField(editor.form.formState.errors, editor.form.getValues());
   if (errorField !== null && !isEditing) {
     setIsEditing(true);

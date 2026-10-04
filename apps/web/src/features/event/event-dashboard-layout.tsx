@@ -29,15 +29,13 @@ const styles = stylex.create({
  */
 export function EventDashboardLayout({
   heading,
-  endContent,
   children,
 }: {
   heading: ReactNode;
-  endContent?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <AppShell topNav={<TopNav label="Event Desk" heading={heading} endContent={endContent} />}>
+    <AppShell topNav={<TopNav label="Event Desk" heading={heading} />}>
       <div {...stylex.props(styles.content)}>{children}</div>
     </AppShell>
   );
