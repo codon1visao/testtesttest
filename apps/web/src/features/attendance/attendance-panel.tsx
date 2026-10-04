@@ -20,11 +20,18 @@ import {
   type EventId,
   type EventView,
 } from "@event-desk/contracts";
+import * as stylex from "@stylexjs/stylex";
 import { useRef, useState } from "react";
 import { Controller } from "react-hook-form";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { AttendanceCounts } from "./attendance-counts";
 import { type AttendanceNotice, type RefetchEvent, useAttendanceForm } from "./use-attendance-form";
+
+const styles = stylex.create({
+  // The Name column takes only what it needs; the Actions column gets the rest so the status
+  // label in the Selector is never cut off.
+  nameColumn: { width: "1%", maxWidth: "none", whiteSpace: "nowrap" },
+});
 
 const ATTENDANCE_OPTIONS = ATTENDANCE_STATUSES.map((status) => ({
   value: status,
@@ -127,7 +134,9 @@ export function AttendancePanel({
             <Table aria-label="Member attendance" density="compact">
               <TableHeader>
                 <TableRow isHeaderRow>
-                  <TableHeaderCell scope="col">Name</TableHeaderCell>
+                  <TableHeaderCell scope="col" xstyle={styles.nameColumn}>
+                    Name
+                  </TableHeaderCell>
                   <TableHeaderCell scope="col">Actions</TableHeaderCell>
                 </TableRow>
               </TableHeader>
@@ -136,7 +145,7 @@ export function AttendancePanel({
                   const name = names.get(member.id) ?? member.id;
                   return (
                     <TableRow key={member.id}>
-                      <TableCell>{name}</TableCell>
+                      <TableCell xstyle={styles.nameColumn}>{name}</TableCell>
                       <TableCell>
                         <Controller
                           control={attendance.form.control}

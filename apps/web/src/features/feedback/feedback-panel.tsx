@@ -18,6 +18,8 @@ const styles = stylex.create({
   // Astryx Badge may shrink with an ellipsis; the note ID must always be readable in full.
   noteId: { flexShrink: 0 },
   // Let long unbroken note text wrap inside the row instead of forcing horizontal scroll.
+  // The ID column is only as wide as its content; the Note column takes the rest.
+  idColumn: { width: "1%", maxWidth: "none", wordBreak: "normal", overflowWrap: "normal" },
   noteText: { minWidth: 0, overflowWrap: "anywhere" },
 });
 
@@ -54,14 +56,16 @@ export function FeedbackPanel({
           <Table aria-label="Feedback notes" density="compact" verticalAlign="top">
             <TableHeader>
               <TableRow isHeaderRow>
-                <TableHeaderCell scope="col">ID</TableHeaderCell>
+                <TableHeaderCell scope="col" xstyle={styles.idColumn}>
+                  ID
+                </TableHeaderCell>
                 <TableHeaderCell scope="col">Note</TableHeaderCell>
               </TableRow>
             </TableHeader>
             <TableBody>
               {notes.map((note) => (
                 <TableRow key={note.id}>
-                  <TableCell>
+                  <TableCell xstyle={styles.idColumn}>
                     <VStack gap={1}>
                       <span {...stylex.props(styles.noteId)}>
                         <Badge variant="neutral" label={note.id} />
