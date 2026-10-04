@@ -65,7 +65,8 @@ export function EventScreen({ eventId }: { eventId: EventId }) {
   const displayed = displayedBriefing(view, activeView);
   return (
     <EventDashboardLayout
-      heading={<EventHeader event={view.event} status={<LiveStatus live={live} />} />}
+      heading={<EventHeader event={view.event} />}
+      status={<LiveStatus live={live} />}
     >
       <VStack gap={4}>
         {query.isRefetchError ? (

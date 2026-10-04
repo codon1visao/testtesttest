@@ -64,6 +64,8 @@ afterEach(() => {
   for (const region of document.querySelectorAll("[data-astryx-live-region]"))
     region.textContent = "";
   mswServer.resetHandlers();
+  // The theme choice is remembered in localStorage; each test starts without one (light).
+  window.localStorage.clear();
 });
 afterAll(() => {
   mswServer.close();

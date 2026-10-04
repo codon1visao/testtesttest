@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiErrorResponse, FakeEventApi } from "../../testing/fake-event-api";
 import { FakeEventSource } from "../../testing/fake-event-source";
 import { mswServer } from "../../testing/msw-server";
+import { commonAncestor } from "../../testing/dom";
 import { renderApp } from "../../testing/render-app";
 
 let api: FakeEventApi;
@@ -41,6 +42,28 @@ describe("event page", () => {
     for (const name of ["Briefing", "Attendance", "Feedback"]) {
       expect(main.getByRole("region", { name })).toBeTruthy();
     }
+  });
+
+  it("top bar: name with Ended, club below; live status then theme switch on the right", async () => {
+    renderApp();
+    const title = await screen.findByRole("heading", { level: 1, name: "Saturday Walk" });
+    const bar = title.closest("[role='banner']");
+    if (bar === null) throw new Error("no top bar");
+    const ended = within(bar as HTMLElement).getByText("Ended");
+    const club = within(bar as HTMLElement).getByText("Harbour Community Club");
+    // The name line holds the name and the badge; the club name is a line of its own below it.
+    const nameLine = commonAncestor(title, ended);
+    expect(nameLine.contains(club)).toBe(false);
+    expect(nameLine.compareDocumentPosition(club) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const live = within(bar as HTMLElement).getByText("Polling for updates");
+    const toggle = within(bar as HTMLElement).getByRole("button", {
+      name: "Switch to dark theme",
+    });
+    // The right group: live status, then the switch, apart from the title block.
+    const right = commonAncestor(live, toggle);
+    expect(right.contains(title)).toBe(false);
+    expect(live.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(club.compareDocumentPosition(live) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("says in the top bar whether live updates are on; polling covers a closed stream", async () => {
