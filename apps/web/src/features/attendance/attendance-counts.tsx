@@ -55,10 +55,21 @@ const styles = stylex.create({
 });
 
 /**
- * F2 (amended 2026-10-04): the counts as four stat tiles in one row. They count the statuses the
- * Selectors show, which equal the saved records except while a change is being saved.
+ * F2 (amended 2026-10-04): the counts as a one-row stat strip. Saved counts are the factual
+ * baseline; with unsaved changes a changed cell shows "saved → draft" under an Unsaved badge, and
+ * a Saving… badge replaces it while the save is in flight.
  */
-export function AttendanceCounts({ counts, isSaving }: { counts: Counts; isSaving: boolean }) {
+export function AttendanceCounts({
+  saved,
+  draft,
+  isDirty,
+  isSaving,
+}: {
+  saved: Counts;
+  draft: Counts;
+  isDirty: boolean;
+  isSaving: boolean;
+}) {
   return (
     <div aria-live="polite" aria-atomic="true">
       <VStack gap={2}>
@@ -66,22 +77,29 @@ export function AttendanceCounts({ counts, isSaving }: { counts: Counts; isSavin
           <div>
             <Badge label="Saving…" />
           </div>
+        ) : isDirty ? (
+          <div>
+            <Badge variant="warning" label="Unsaved" />
+          </div>
         ) : null}
         <dl aria-label="Attendance counts" {...stylex.props(styles.tiles)}>
-          {TILES.map(({ key, label }) => (
-            <div key={key} {...stylex.props(styles.tile)}>
-              <dt {...stylex.props(styles.term)}>
-                <Text type="supporting" xstyle={styles.label}>
-                  {label}
-                </Text>
-              </dt>
-              <dd {...stylex.props(styles.value)}>
-                <Text type="large" weight="bold" hasTabularNumbers>
-                  {String(counts[key])}
-                </Text>
-              </dd>
-            </div>
-          ))}
+          {TILES.map(({ key, label }) => {
+            const changed = isDirty && draft[key] !== saved[key];
+            return (
+              <div key={key} {...stylex.props(styles.tile)}>
+                <dt {...stylex.props(styles.term)}>
+                  <Text type="supporting" xstyle={styles.label}>
+                    {label}
+                  </Text>
+                </dt>
+                <dd {...stylex.props(styles.value)}>
+                  <Text type="large" weight="bold" hasTabularNumbers>
+                    {changed ? `${String(saved[key])} → ${String(draft[key])}` : String(saved[key])}
+                  </Text>
+                </dd>
+              </div>
+            );
+          })}
         </dl>
       </VStack>
     </div>

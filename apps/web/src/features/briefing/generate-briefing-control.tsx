@@ -24,7 +24,7 @@ export function GenerateBriefingButton({
     <div ref={ref}>
       {/* While busy, Astryx renders aria-disabled (not native disabled) when a tooltip is set, so
           the button keeps keyboard focus (README "Screen and interaction"); press() ignores it.
-          An attendance save in flight keeps it natively disabled: nothing was activated. */}
+          Unsaved attendance keeps it natively disabled: nothing was activated. */}
       <Button
         variant="primary"
         label={busy ? "Generating…" : generation.isError ? "Retry" : "Generate"}
@@ -56,7 +56,7 @@ export function GenerateBriefingStatus({
               : "Generating briefing… This can take up to a minute."}
           </Text>
         ) : attendanceDirty ? (
-          <Text>Wait for attendance to save before generating.</Text>
+          <Text>Save or discard your attendance changes before generating.</Text>
         ) : cooldownUntil !== null ? (
           <Text>
             {`The AI provider is limiting requests. Generate is available again at ${formatClock(cooldownUntil)}.`}

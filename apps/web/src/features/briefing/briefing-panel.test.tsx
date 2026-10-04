@@ -151,27 +151,20 @@ describe("briefing panel", () => {
     expect(document.activeElement?.textContent).toBe("Generated preview — not saved as briefing");
   });
 
-  it("F4 step 1: is disabled while an attendance change is saving, and says why", async () => {
-    const { promise: gate, resolve: release } = Promise.withResolvers<undefined>();
-    mswServer.use(
-      http.put("/api/events/:eventId/attendance", async () => {
-        await gate;
-        return undefined;
-      }),
-    );
+  it("F4 step 1: is disabled while attendance has unsaved changes, and says why", async () => {
     const { user } = renderApp();
     const attendance = within(await screen.findByRole("region", { name: "Attendance" }));
     await chooseOption(user, attendance, "Chris", "Attended");
     const region = await panel();
-    await waitFor(() => {
-      expect(generateButton(region).disabled).toBe(true);
-    });
-    expect(region.getByText("Wait for attendance to save before generating.")).toBeTruthy();
-    release(undefined);
-    await waitFor(() => {
-      expect(generateButton(region).disabled).toBe(false);
-    });
-    expect(region.queryByText("Wait for attendance to save before generating.")).toBeNull();
+    expect(generateButton(region).disabled).toBe(true);
+    expect(
+      region.getByText("Save or discard your attendance changes before generating."),
+    ).toBeTruthy();
+    await user.click(attendance.getByRole("button", { name: "Discard" }));
+    expect(generateButton(region).disabled).toBe(false);
+    expect(
+      region.queryByText("Save or discard your attendance changes before generating."),
+    ).toBeNull();
   });
 
   it("F4-06: explains a failure and retries straight away when the outcome is known", async () => {

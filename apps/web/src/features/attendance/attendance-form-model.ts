@@ -1,43 +1,42 @@
-import type {
-  AttendanceStatus,
-  Member,
-  MemberId,
-  SaveAttendanceRequest,
+import {
+  AttendanceStatusSchema,
+  type Member,
+  MemberIdSchema,
+  type SaveAttendanceRequest,
 } from "@event-desk/contracts";
+import { z } from "zod";
 
-/** One member's status, as saved and as sent. The roster is fixed (F2: no add/remove). */
-export type MemberAttendance = Pick<Member, "id" | "attendance">;
+export const AttendanceFormSchema = z.object({
+  members: z.array(z.object({ id: MemberIdSchema, attendance: AttendanceStatusSchema })),
+});
+export type AttendanceFormValues = z.input<typeof AttendanceFormSchema>;
+export type AttendanceFormOutput = z.output<typeof AttendanceFormSchema>;
 
-/** The saved roster with one member's new status: a save always sends every member (F2). */
-export function withMemberStatus(
-  saved: readonly MemberAttendance[],
-  memberId: MemberId,
-  attendance: AttendanceStatus,
-): MemberAttendance[] {
-  return saved.map((m) => ({
-    id: m.id,
-    attendance: m.id === memberId ? attendance : m.attendance,
-  }));
+/** Saved members already carry validated (branded) IDs, so their values are the schema's output shape. */
+export function toFormValues(
+  members: readonly Pick<Member, "id" | "attendance">[],
+): AttendanceFormOutput {
+  return { members: members.map((m) => ({ id: m.id, attendance: m.attendance })) };
 }
 
 export function toSaveRequest(
-  members: readonly MemberAttendance[],
+  values: AttendanceFormOutput,
   baseAttendanceRevision: number,
 ): SaveAttendanceRequest {
   return {
     baseAttendanceRevision,
-    members: members.map((m) => ({ id: m.id, attendance: m.attendance })),
+    members: values.members.map((m) => ({ id: m.id, attendance: m.attendance })),
   };
 }
 
-/** After a lost response: did the server already save exactly these statuses? */
-export function submittedMatchesSaved(
-  submitted: readonly MemberAttendance[],
-  saved: readonly MemberAttendance[],
+/** After a lost response: did the server already save exactly this draft? */
+export function draftMatchesSaved(
+  values: AttendanceFormValues,
+  saved: readonly Pick<Member, "id" | "attendance">[],
 ): boolean {
   const savedById = new Map(saved.map((m) => [m.id as string, m.attendance]));
   return (
-    submitted.length === saved.length &&
-    submitted.every((m) => savedById.get(m.id) === m.attendance)
+    values.members.length === saved.length &&
+    values.members.every((m) => savedById.get(m.id) === m.attendance)
   );
 }

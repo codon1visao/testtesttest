@@ -11,7 +11,7 @@ import { useIsSavingBriefing } from "../../data/mutations/use-save-briefing";
 import { useSelectPreview } from "../../data/mutations/use-select-preview";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { type ActiveView, useUiStore } from "../../state/ui-store";
-import type { RefetchEvent } from "../attendance/use-attendance-autosave";
+import type { RefetchEvent } from "../attendance/use-attendance-form";
 import type { EditableSlot } from "./active-briefing";
 import { BriefingEditor } from "./briefing-editor";
 import { type EditorBase, editorKey, toEditorBase } from "./briefing-form-model";
