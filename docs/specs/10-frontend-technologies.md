@@ -34,6 +34,10 @@ The official [React versions page](https://react.dev/versions) lists 19.3 as the
 - **React Query:** owns fetched server state and request status. **React Hook Form + Zod:** own editable form drafts and their validation. **Zustand:** owns shared client/UI state; do not duplicate server caches or form drafts in it.
 - Background refreshes and incoming generated previews must preserve dirty attendance/briefing forms, the selected generation and its fixed source references. Reset form baselines only through the explicit save, discard or selection flows in [F2](02-attendance.md), [F5](05-briefing-editor.md) and [F7](07-generation-queue.md).
 
+## Theme and top bar
+
+Amended 2026-10-04 (user-approved): the app starts in **light** mode and does not follow the system setting. A theme switch in the top bar (a moon in light mode, a sun in dark mode; "Switch to dark theme" / "Switch to light theme") toggles light and dark at once for the whole app, including the feedback form, toasts and dialogs. The choice is remembered in this browser (`localStorage` key `event-desk:theme`); a missing, invalid or unreadable value means light. The top bar shows the event name with its Ended badge and the club name below it on the left, and the live-update status and the theme switch pinned to the right, at every width.
+
 ## Mutation feedback
 
 Every mutation action shows one success or error toast, including attendance saves, generation requests/retries, preview selection and briefing saves/replacement. Use a shared policy and [Astryx toast facilities](https://astryx.atmeta.com/components/LayerProvider); avoid duplicate notifications from both the HTTP client and mutation handlers. Keep actionable validation/conflict errors visible beside the relevant form as well.
