@@ -33,8 +33,9 @@ the page; attendance and feedback are scannable tables; `pnpm verify` and `pnpm 
   from the existing `useEventChanges(eventId).live`.
 - Content is a two-column grid: **main** (about two thirds) holds Briefing; **side** (about one third)
   holds Attendance above Feedback. Below roughly 900px it is one column: Briefing, Attendance, Feedback.
-- The refetch-error banner sits above the grid. Loading, load-error and not-found states render
-  inside the same shell. The feedback form page keeps its current layout.
+- The refetch-error banner sits above the grid. Loading and load-error states render inside the
+  same shell. The not-found page and the feedback form page keep their current layouts. The shell
+  provides the page's `main` landmark, so the event screen no longer renders its own `<main>`.
 - Each panel keeps its `PanelErrorBoundary` and its `section` landmark with an accessible name.
 
 ## 3. Briefing (main column)
@@ -101,8 +102,8 @@ among the event's notes still shows the "Source … is unavailable" error badge.
 
 ## 5. Feedback (side column)
 
-- Header: **Feedback (n)** with the "Open feedback form (test)" link on the right, and the existing
-  anonymity note.
+- Header: heading **Feedback** with the "Open feedback form (test)" link on the right, and the
+  existing note-count and anonymity line below it.
 - Astryx `Table` with columns **ID** and **Note**, stable ID order. The **New since this briefing**
   badge sits in the ID cell. Note text is plain text and wraps.
 
