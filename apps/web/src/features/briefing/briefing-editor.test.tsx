@@ -133,6 +133,103 @@ describe("briefing editor", () => {
     expect(SaveBriefingRequestSchema.parse(api.saveRequests[0]).baseBriefingRevision).toBe(1);
   });
 
+  it("Accept preview saves the preview unchanged in one request, replacing the saved briefing", async () => {
+    const savedEarlier = {
+      ...buildBriefingView({
+        provenance: {
+          ...preview.provenance,
+          generationId: GenerationIdSchema.parse("0199a4e8-7c1a-7cc2-9d6e-000000000009"),
+          runId: RunIdSchema.parse("manual:earlier"),
+        },
+      }),
+      savedAt: FIXTURE_TIME,
+    };
+    api.view = { ...api.view, savedBriefing: savedEarlier, briefingRevision: 1 };
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Accept preview" }));
+    expect(await region.findByRole("heading", { name: "Saved briefing" })).toBeTruthy();
+    const texts = (items: readonly { text: string }[]) => items.map((item) => item.text);
+    expect(api.saveRequests).toEqual([
+      {
+        baseBriefingRevision: 1,
+        generationId: preview.provenance.generationId,
+        textEdits: {
+          attendanceOverview: preview.content.attendanceOverview,
+          feedbackSummary: preview.content.feedbackSummary.text,
+          themes: texts(preview.content.themes),
+          conflicts: texts(preview.content.conflicts),
+          suggestions: texts(preview.content.suggestions),
+        },
+      },
+    ]);
+    expect(api.view.savedBriefing?.provenance.generationId).toBe(preview.provenance.generationId);
+    // The saved briefing's read view: Edit and Generate, no Accept preview, no badge.
+    expect(region.getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(region.getByRole("button", { name: "Generate" })).toBeTruthy();
+    expect(region.queryByRole("button", { name: "Accept preview" })).toBeNull();
+    expect(region.queryByText("Unsaved preview")).toBeNull();
+    await expectEditorHeadingFocused(/^Saved briefing/);
+  });
+
+  it("Accept preview shows loading and locks Edit while the save is in flight", async () => {
+    api.saveDelayMs = 150;
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Accept preview" }));
+    expect(await region.findByText("Saving briefing…")).toBeTruthy();
+    const accept = region.getByRole("button", { name: /^Accept preview/ });
+    expect(accept.getAttribute("aria-busy")).toBe("true");
+    expect(isLocked(accept)).toBe(true);
+    expect(isLocked(region.getByRole("button", { name: "Edit" }))).toBe(true);
+    expect(await region.findByRole("heading", { name: "Saved briefing" })).toBeTruthy();
+  });
+
+  it("Accept preview failure: the banner offers Retry save, which sends it again", async () => {
+    mswServer.use(
+      http.put(
+        "/api/events/:eventId/briefing",
+        () => apiErrorResponse(503, "STORE_UNAVAILABLE", "The database is not reachable."),
+        { once: true },
+      ),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Accept preview" }));
+    expect(await region.findByText("Briefing was not saved")).toBeTruthy();
+    await user.click(region.getByRole("button", { name: "Retry save" }));
+    expect(await region.findByRole("heading", { name: "Saved briefing" })).toBeTruthy();
+    expect(api.saveRequests).toHaveLength(1);
+  });
+
+  it("Accept preview conflict: the banner explains it and offers Reload", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    api.saveBriefingElsewhere();
+    await user.click(region.getByRole("button", { name: "Accept preview" }));
+    expect(await region.findByText("The briefing changed elsewhere")).toBeTruthy();
+    expect(region.getByRole("button", { name: "Reload saved briefing" })).toBeTruthy();
+    expect(region.queryAllByRole("textbox")).toHaveLength(0);
+  });
+
+  it("Accept preview: a server field error, with no field on screen, is shown in the error banner", async () => {
+    const message = "Text must be 1-1000 characters and not blank";
+    mswServer.use(
+      http.put("/api/events/:eventId/briefing", () =>
+        apiErrorResponse(422, "CONTENT_INVALID", message, "textEdits.conflicts.0"),
+      ),
+    );
+    const { user } = renderApp();
+    const region = await panel();
+    await user.click(region.getByRole("button", { name: "Accept preview" }));
+    expect(await region.findByText("Briefing was not saved")).toBeTruthy();
+    expect(region.getAllByText(message)).toHaveLength(1);
+    expect(region.queryAllByRole("textbox")).toHaveLength(0);
+    // Not held as a hidden field error either: opening the text areas shows it only in the banner.
+    await startEditing(user, region);
+    expect(region.getAllByText(message)).toHaveLength(1);
+  });
+
   it("Review Focus 5 / F5-05: opening a source with the keyboard keeps the draft", async () => {
     const { user } = renderApp();
     const region = await panel();

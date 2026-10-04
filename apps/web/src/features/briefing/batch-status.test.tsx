@@ -128,10 +128,46 @@ describe("batch status (F7 'Generation state in the UI')", () => {
     });
   });
 
-  it("F6: Generate now is unavailable while the briefing is being edited", async () => {
+  it("Generate now is unavailable while a generated preview is shown, and back on the saved briefing", async () => {
     api.view = {
       ...api.view,
       selectedPreview: buildBriefingView(),
+      savedBriefing: { ...batchPreview(7), savedAt: FIXTURE_TIME },
+      briefingRevision: 1,
+      generation: generation({
+        lastOutcome: {
+          runId: RunIdSchema.parse("batch_a"),
+          trigger: "feedback_batch",
+          status: "failed",
+          code: "GATEWAY_UNAVAILABLE",
+          finishedAt: FIXTURE_TIME,
+        },
+      }),
+    };
+    const { user } = renderApp();
+    const region = await panel();
+    const generateNow = () =>
+      region.getByRole<HTMLButtonElement>("button", { name: "Generate now" });
+    expect(
+      (await region.findByRole<HTMLButtonElement>("button", { name: "Generate now" })).disabled,
+    ).toBe(true);
+    await user.click(generateNow());
+    expect(api.generationRequests).toHaveLength(0);
+    await user.click(
+      within(region.getByRole("radiogroup", { name: "Briefing to show" })).getByRole("radio", {
+        name: "Saved briefing",
+      }),
+    );
+    await waitFor(() => {
+      expect(generateNow().disabled).toBe(false);
+    });
+  });
+
+  it("F6: Generate now is unavailable while the briefing is being edited", async () => {
+    api.view = {
+      ...api.view,
+      savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME },
+      briefingRevision: 1,
       generation: generation({
         lastOutcome: {
           runId: RunIdSchema.parse("batch_a"),

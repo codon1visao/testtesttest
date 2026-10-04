@@ -9,6 +9,13 @@ interface UiState {
   setAttendanceDirty: (dirty: boolean) => void;
   briefingDirty: boolean;
   setBriefingDirty: (dirty: boolean) => void;
+  /**
+   * The editor keeps its base although it is clean: a save is in flight, or it shows a conflict or
+   * an unavailable generation with Reload. Otherwise the refreshed view would remount it and drop
+   * the notice (Accept preview saves a clean editor).
+   */
+  briefingHeld: boolean;
+  setBriefingHeld: (held: boolean) => void;
   /** The briefing editor shows its text areas: the header offers Cancel and Save, not Generate. */
   briefingEditing: boolean;
   setBriefingEditing: (editing: boolean) => void;
@@ -27,6 +34,10 @@ export const useUiStore = create<UiState>()((set) => ({
   briefingDirty: false,
   setBriefingDirty: (briefingDirty) => {
     set({ briefingDirty });
+  },
+  briefingHeld: false,
+  setBriefingHeld: (briefingHeld) => {
+    set({ briefingHeld });
   },
   briefingEditing: false,
   setBriefingEditing: (briefingEditing) => {

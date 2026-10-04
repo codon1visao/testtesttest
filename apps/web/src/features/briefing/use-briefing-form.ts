@@ -31,7 +31,8 @@ export type BriefingNotice =
  * The briefing text draft (F5). It is created from its base once; the panel remounts it (by
  * editorKey) only after an explicit select, save or discard, or while it is clean (T3 §11).
  * `onReset` runs just before an explicit discard or reload drops the draft, so a remounted editor
- * can take focus on its heading.
+ * can take focus on its heading. `areFieldsShown`: the text areas are on screen; without them (Accept
+ * preview in the read view) a server field error has nowhere to land and goes to the banner.
  */
 export function useBriefingForm(
   eventId: EventId,
@@ -39,6 +40,7 @@ export function useBriefingForm(
   refetch: RefetchEvent,
   onSaved: (outcome: { reconciled: boolean }) => void,
   onReset: () => void,
+  areFieldsShown: boolean,
 ) {
   const form = useForm<BriefingFormValues, unknown, BriefingFormOutput>({
     resolver: zodResolver(BriefingFormSchema),
@@ -99,8 +101,9 @@ export function useBriefingForm(
       // overview, which is saved unchanged and has no field) gets the banner.
       const current: unknown =
         path === null || path === "attendanceOverview" ? undefined : form.getValues(path);
-      if (path === null || current === undefined) showSaveNotice({ kind: "invalid", message });
-      else {
+      if (!areFieldsShown || path === null || current === undefined) {
+        showSaveNotice({ kind: "invalid", message });
+      } else {
         form.setError(path, { type: "server", message });
         setFieldErrorFocus((previous) => ({ path, request: (previous?.request ?? 0) + 1 }));
       }
@@ -196,6 +199,19 @@ export function useBriefingForm(
   };
 
   const isSaving = save.isPending || checking;
+  // A clean editor keeps its base while saving and while a conflict or unavailable notice waits for
+  // Reload; the panel would otherwise follow the refreshed view and remount it without the notice.
+  const holdsBase = isSaving || notice?.kind === "conflict" || notice?.kind === "unavailable";
+  const setBriefingHeld = useUiStore((state) => state.setBriefingHeld);
+  useEffect(() => {
+    setBriefingHeld(holdsBase);
+  }, [holdsBase, setBriefingHeld]);
+  useEffect(
+    () => () => {
+      setBriefingHeld(false);
+    },
+    [setBriefingHeld],
+  );
   return {
     form,
     isDirty,

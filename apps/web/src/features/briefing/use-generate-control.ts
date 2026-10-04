@@ -18,7 +18,8 @@ export function mayHaveBeenCharged(error: unknown): boolean {
 
 /**
  * Generate and Retry are the same synchronous call (A6); attendance must be saved first (F4), an open
- * briefing editor must be saved or cancelled first (F6, amended 2026-10-04), and a provider cooldown
+ * briefing editor must be saved or cancelled first and a shown generated preview accepted or
+ * switched away from first (F6, amended 2026-10-04), and a provider cooldown
  * (F8) holds it until the server says it ends. One state for the header button and the status shown
  * below it.
  */
@@ -27,6 +28,8 @@ export function useGenerateControl(
   view: EventView,
   /** After THIS tab's Generate succeeds (F4 step 7): the panel decides whether to open it. */
   onGenerated?: (preview: BriefingView) => void,
+  /** The editor shows a generated preview: it is accepted (or the saved briefing shown) first. */
+  isPreviewShown = false,
 ) {
   const generation = useGenerateBriefing(eventId);
   const attendanceDirty = useUiStore((state) => state.attendanceDirty);
@@ -63,7 +66,7 @@ export function useGenerateControl(
     );
   };
   const press = () => {
-    if (busy || attendanceDirty || cooling || briefingEditing) return;
+    if (busy || attendanceDirty || cooling || briefingEditing || isPreviewShown) return;
     if (generation.isError && mayHaveBeenCharged(generation.error)) setConfirmingRetry(true);
     else start();
   };
@@ -75,7 +78,7 @@ export function useGenerateControl(
     /** A generation started in another tab is running. */
     elsewhere,
     cooldownUntil,
-    canGenerate: !busy && !attendanceDirty && !cooling && !briefingEditing,
+    canGenerate: !busy && !attendanceDirty && !cooling && !briefingEditing && !isPreviewShown,
     press,
     confirmingRetry,
     confirmRetry: () => {

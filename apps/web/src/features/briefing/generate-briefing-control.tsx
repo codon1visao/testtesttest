@@ -3,6 +3,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import type { EventView } from "@event-desk/contracts";
+import type { Ref } from "react";
 import { ApiError, describeApiError } from "../../data/http/api-error";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { BatchStatus } from "./batch-status";
@@ -10,10 +11,17 @@ import { formatClock } from "./batch-status-text";
 import type { GenerateControl } from "./use-generate-control";
 
 /** Generate (or Retry), on the right of the Briefing section's header; hidden while editing. */
-export function GenerateBriefingButton({ control }: { control: GenerateControl }) {
+export function GenerateBriefingButton({
+  control,
+  ref,
+}: {
+  control: GenerateControl;
+  /** Lets the panel tell whether the button has focus before it unmounts. */
+  ref?: Ref<HTMLDivElement>;
+}) {
   const { busy, generation, attendanceDirty, cooldownUntil, press } = control;
   return (
-    <div>
+    <div ref={ref}>
       {/* While busy, Astryx renders aria-disabled (not native disabled) when a tooltip is set, so
           the button keeps keyboard focus (README "Screen and interaction"); press() ignores it.
           An attendance save in flight keeps it natively disabled: nothing was activated. */}

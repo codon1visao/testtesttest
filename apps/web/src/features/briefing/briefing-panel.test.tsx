@@ -136,7 +136,13 @@ describe("briefing panel", () => {
       await region.findByRole("heading", { name: "Generated preview — not saved as briefing" }),
     ).toBeTruthy();
     expect(api.generationRequests).toHaveLength(1);
-    expect(document.activeElement).toBe(generateButton(region));
+    // The opened preview offers Accept preview instead of Generate (amended 2026-10-04): the
+    // button that had focus is gone, so focus moves to the new editor's heading, never <body>.
+    expect(queryGenerate(region)).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement?.tagName).toBe("H3");
+    });
+    expect(document.activeElement?.textContent).toBe("Generated preview — not saved as briefing");
   });
 
   it("F4 step 1: is disabled while an attendance change is saving, and says why", async () => {
@@ -285,7 +291,12 @@ describe("briefing panel", () => {
   });
 
   it("header actions: Edit then Generate in the read view; Cancel then Save while editing, without Generate", async () => {
-    api.view = { ...api.view, selectedPreview: buildBriefingView() };
+    // The saved briefing: a generated preview offers Accept preview instead (tested below).
+    api.view = {
+      ...api.view,
+      savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME },
+      briefingRevision: 1,
+    };
     const { user } = renderApp();
     const region = await panel();
     const heading = region.getByRole("heading", { level: 2, name: "Briefing" });
@@ -359,7 +370,12 @@ describe("briefing panel", () => {
 
   it("F4 step 7: Edit is locked while the automatic select is in flight, then the editor shows the new preview", async () => {
     const second = otherPreview(4, "Second preview theme.");
-    api.view = { ...api.view, selectedPreview: buildBriefingView() };
+    // Generated from the saved briefing's read view: Generate is not offered over a shown preview.
+    api.view = {
+      ...api.view,
+      savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME },
+      briefingRevision: 1,
+    };
     api.generationReplies.push({ kind: "preview", preview: second });
     api.selectDelayMs = 300;
     const { user } = renderApp();
@@ -379,7 +395,12 @@ describe("briefing panel", () => {
 
   it("F4 step 7: an editor opened while generating is locked during the automatic select, then shows the new preview", async () => {
     const second = otherPreview(4, "Second preview theme.");
-    api.view = { ...api.view, selectedPreview: buildBriefingView() };
+    // Generated from the saved briefing's read view: Generate is not offered over a shown preview.
+    api.view = {
+      ...api.view,
+      savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME },
+      briefingRevision: 1,
+    };
     api.generationReplies.push({ kind: "preview", preview: second, delayMs: 150 });
     api.selectDelayMs = 300;
     const { user } = renderApp();
@@ -402,7 +423,12 @@ describe("briefing panel", () => {
 
   it("F4 step 7 / F6-09: this tab's own result never replaces a draft typed while it was generating", async () => {
     const second = otherPreview(4, "Second preview theme.");
-    api.view = { ...api.view, selectedPreview: buildBriefingView() };
+    // Generated from the saved briefing's read view: Generate is not offered over a shown preview.
+    api.view = {
+      ...api.view,
+      savedBriefing: { ...buildBriefingView(), savedAt: FIXTURE_TIME },
+      briefingRevision: 1,
+    };
     api.generationReplies.push({ kind: "preview", preview: second, delayMs: 150 });
     const { user } = renderApp();
     const region = await panel();
@@ -650,6 +676,28 @@ describe("preview and saved briefing (spec 05 'saved briefing stays available', 
 
   beforeEach(() => {
     api.view = { ...api.view, selectedPreview: preview, savedBriefing: saved, briefingRevision: 1 };
+  });
+
+  it("header: [Edit] [Accept preview] while the preview is shown, no Generate; [Edit] [Generate] on the saved briefing", async () => {
+    const { user } = renderApp();
+    const region = await panel();
+    expect(await region.findByRole("heading", { name: PREVIEW_TITLE })).toBeTruthy();
+    const header = region.getByRole("heading", { level: 2, name: "Briefing" }).parentElement;
+    const edit = region.getByRole("button", { name: "Edit" });
+    const accept = region.getByRole("button", { name: "Accept preview" });
+    expect(header?.contains(edit) && header.contains(accept)).toBe(true);
+    expect(edit.compareDocumentPosition(accept) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(queryGenerate(region)).toBeNull();
+
+    await user.click(option(region, "Saved briefing"));
+    expect(await region.findByRole("heading", { name: "Saved briefing" })).toBeTruthy();
+    expect(region.queryByRole("button", { name: "Accept preview" })).toBeNull();
+    expect(region.getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(generateButton(region).disabled).toBe(false);
+
+    await user.click(option(region, "Generated preview"));
+    expect(await region.findByRole("button", { name: "Accept preview" })).toBeTruthy();
+    expect(queryGenerate(region)).toBeNull();
   });
 
   it("marks the generated preview with an Unsaved preview badge in the header, not the saved briefing", async () => {

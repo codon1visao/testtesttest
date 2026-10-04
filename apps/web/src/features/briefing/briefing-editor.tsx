@@ -174,12 +174,12 @@ export function BriefingEditor({
   onReset: () => void;
   consumePendingFocus: () => boolean;
 }) {
-  const editor = useBriefingForm(eventId, base, refetch, onSaved, onReset);
-  const [confirming, setConfirming] = useState<"discard" | "reload" | null>(null);
   // The briefing opens read-only (spec 2026-10-04); Edit opens the text areas. Local state: a
   // remount (after a save, or a clean editor following the view) returns to the read view, and a
   // dirty draft never remounts, so typed text is never hidden or replaced without a choice.
   const [isEditing, setIsEditing] = useState(false);
+  const editor = useBriefingForm(eventId, base, refetch, onSaved, onReset, isEditing);
+  const [confirming, setConfirming] = useState<"discard" | "reload" | null>(null);
   // Mirrored for the panel, which offers Generate only while the text areas are closed.
   const setBriefingEditing = useUiStore((state) => state.setBriefingEditing);
   useEffect(() => {
@@ -286,7 +286,20 @@ export function BriefingEditor({
       />
     </>
   ) : (
-    <Button variant="secondary" label="Edit" isDisabled={fieldsDisabled} onClick={startEditing} />
+    <>
+      <Button variant="secondary" label="Edit" isDisabled={fieldsDisabled} onClick={startEditing} />
+      {/* The read view's way to save a generated preview: unchanged, through the same save as the
+          edit view's Save, replacing any saved briefing (spec 05, amended 2026-10-04). */}
+      {base.slot === "selected" ? (
+        <Button
+          variant="primary"
+          label="Accept preview"
+          isDisabled={editor.isBusy || isLocked}
+          isLoading={editor.isSaving}
+          onClick={() => void editor.submit()}
+        />
+      ) : null}
+    </>
   );
 
   return (
