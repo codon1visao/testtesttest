@@ -270,3 +270,8 @@ CI (GitHub Actions) runs the first three as three jobs on every pull request and
 **Libraries:** React, Vite, TanStack Query, React Hook Form, Zustand, React Router, Axios, the Astryx design system, Express, TypeORM with mysql2, ioredis, BullMQ, Zod, pino, the OpenAI Agents SDK and Vitest, Testing Library, MSW and Playwright. Exact versions are pinned in each `package.json` and `pnpm-lock.yaml`.
 
 **How it was built:** the specs in `docs/specs` were written and confirmed first, with every decision recorded as an ADR. The work was then implemented plan by plan (`docs/superpowers/plans`), with AI coding assistance (Claude Code). Every change went through tests, an independent review and a final whole-branch review before merging.
+
+## Failure checks and results
+
+The reproducible generation and save failures, their automated checks with actual results, and the
+manual switches that reproduce them are in [docs/checks-and-results.md](docs/checks-and-results.md).
